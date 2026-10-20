@@ -61,6 +61,7 @@ export class WispRelay extends DurableObject {
   private clients = new Set<WebSocket>();
   private pendingStreams = new Set<number>();
   private closedStreams = new Set<number>();
+  private loggedGuestData = new Set<number>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -122,6 +123,10 @@ export class WispRelay extends DurableObject {
         return;
       }
       try {
+        if (!this.loggedGuestData.has(streamId)) {
+          console.log("WISP_FIRST_GUEST_DATA", JSON.stringify({ streamId, bytes: payload.byteLength, prefix: new TextDecoder().decode(payload.subarray(0, 80)) }));
+          this.loggedGuestData.add(streamId);
+        }
         await stream.writer.write(payload);
         socket.send(continuePacket(streamId, INITIAL_BUFFER));
       } catch {
@@ -137,6 +142,7 @@ export class WispRelay extends DurableObject {
       if (streamId === 0) return;
       if (payload.byteLength < 4) { socket.send(closePacket(streamId, 0x01)); return; }
       const credit = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(0, true);
+      console.log("WISP_CONTINUE_RECEIVED", JSON.stringify({ streamId, credit }));
       const stream = this.streams.get(streamId);
       if (stream && credit > 0) {
         stream.sendCredit = Math.min(4 * 1024 * 1024, stream.sendCredit + credit);
@@ -244,6 +250,7 @@ export class WispRelay extends DurableObject {
     const stream = this.streams.get(streamId);
     if (!stream || expected && stream !== expected) return;
     this.streams.delete(streamId);
+    this.loggedGuestData.delete(streamId);
     for (const wake of stream.creditWaiters) wake();
     stream.creditWaiters.clear();
     try { await stream.writer.close(); } catch { /* already closed */ }
