@@ -6,6 +6,7 @@ import vm from "node:vm";
 const html = readFileSync(new URL("../public/vm.html", import.meta.url), "utf8");
 const bootstrap = readFileSync(new URL("../public/runner/tinycore/browser-bootstrap.sh", import.meta.url), "utf8");
 const snapshotWorker = readFileSync(new URL("../cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts", import.meta.url), "utf8");
+const relaySource = readFileSync(new URL("../cloudflare/src/wisp-relay.ts", import.meta.url), "utf8");
 
 test("headless Workerd network test applies and verifies the account-specific MAC and IP", () => {
   assert.ok(snapshotWorker.includes("virtual_mac?: unknown"), "allocator MAC must be read");
@@ -16,6 +17,13 @@ test("headless Workerd network test applies and verifies the account-specific MA
   assert.ok(snapshotWorker.includes('dhcpOutput.includes("DHCP_ACTUAL_GATEWAY=" + routerIp)'), "verify the matching gateway");
   assert.ok(snapshotWorker.includes("V86_SNAPSHOT_PROGRESS"), "emit stage progress to Workerd logs for live troubleshooting");
   assert.ok(snapshotWorker.includes("octal.match(/[\\s\\S]{1,24}/g)"), "keep guest terminal transfer lines short enough to avoid truncating shell scripts");
+});
+
+test("WISP relay honors client CONTINUE credit for outbound TCP response data", () => {
+  assert.ok(relaySource.includes("if (type === 0x03)"), "CONTINUE control packets must not be treated as unsupported");
+  assert.ok(relaySource.includes("stream.sendCredit = Math.min(4 * 1024 * 1024, stream.sendCredit + credit)"), "add granted response-byte credit to the stream");
+  assert.ok(relaySource.includes("stream.sendCredit <= 0"), "wait when the client has not granted response-byte credit");
+  assert.ok(relaySource.includes("value.subarray(offset, offset + count)"), "split TCP response data to fit granted credit");
 });
 
 test("inline browser scripts parse", () => {
