@@ -19,6 +19,7 @@ on:
       - "public/vm.html"
       - "tests/bootstrap-controller.test.mjs"
       - ".github/workflows/headless-v86-snapshot-roundtrip.yml"
+      - ".github/workflows/build-tinycore-network.yml"
 
 jobs:
   guest-snapshot-roundtrip:
