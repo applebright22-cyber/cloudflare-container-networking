@@ -20,9 +20,26 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p public/boot
-          curl -fL --retry 5 --retry-all-errors \
-            -o public/boot/TinyCore_Pure64-11.0.iso \
-            https://tinycorelinux.net/11.x/x86_64/release/TinyCorePure64-11.1.iso
+          # tinycorelinux.net was unreachable from the GitHub runner (curl 28).
+          # Try the official North American mirror first, then Princeton's mirror.
+          urls=(
+            "https://distro.ibiblio.org/tinycorelinux/11.x/x86_64/release/TinyCorePure64-11.1.iso"
+            "https://mirror.math.princeton.edu/pub/tinycorelinux/11.x/x86_64/archive/11.1/TinyCorePure64-11.1.iso"
+          )
+          downloaded=0
+          for url in "${urls[@]}"; do
+            echo "Trying ISO mirror: $url"
+            if curl -fL --connect-timeout 15 --max-time 180 --retry 2 --retry-all-errors \
+              -o public/boot/TinyCore_Pure64-11.0.iso "$url"; then
+              if test -s public/boot/TinyCore_Pure64-11.0.iso && \
+                 test "$(stat -c%s public/boot/TinyCore_Pure64-11.0.iso)" -gt 10000000; then
+                downloaded=1
+                break
+              fi
+            fi
+            rm -f public/boot/TinyCore_Pure64-11.0.iso
+          done
+          test "$downloaded" -eq 1
 
       - name: Verify bootable ISO
         run: |
