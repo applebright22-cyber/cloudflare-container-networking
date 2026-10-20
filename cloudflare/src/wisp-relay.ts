@@ -58,6 +58,8 @@ export class WispRelay extends DurableObject {
   private streams = new Map<number, TcpStream>();
   private clients = new Set<WebSocket>();
   private pendingStreams = new Set<number>();
+  private pendingData = new Map<number, Uint8Array[]>();
+  private pendingDataBytes = new Map<number, number>();
   private closedStreams = new Set<number>();
   private loggedGuestData = new Set<number>();
 
@@ -117,6 +119,24 @@ export class WispRelay extends DurableObject {
     if (type === 0x02) {
       const stream = this.streams.get(streamId);
       if (!stream) {
+        // WISP clients may send DATA immediately after CONNECT, before the outbound
+        // TCP socket finishes opening. Buffer bounded early payloads instead of
+        // rejecting the stream during that race.
+        if (this.pendingStreams.has(streamId)) {
+          const queuedBytes = this.pendingDataBytes.get(streamId) ?? 0;
+          if (queuedBytes + payload.byteLength > 1024 * 1024) {
+            this.pendingData.delete(streamId);
+            this.pendingDataBytes.delete(streamId);
+            this.closedStreams.add(streamId);
+            socket.send(closePacket(streamId, 0x41));
+            return;
+          }
+          const queue = this.pendingData.get(streamId) ?? [];
+          queue.push(payload.slice());
+          this.pendingData.set(streamId, queue);
+          this.pendingDataBytes.set(streamId, queuedBytes + payload.byteLength);
+          return;
+        }
         socket.send(closePacket(streamId, 0x41));
         return;
       }
@@ -141,7 +161,11 @@ export class WispRelay extends DurableObject {
       return;
     }
     if (type === 0x04) {
-      if (this.pendingStreams.has(streamId)) this.closedStreams.add(streamId);
+      if (this.pendingStreams.has(streamId)) {
+        this.closedStreams.add(streamId);
+        this.pendingData.delete(streamId);
+        this.pendingDataBytes.delete(streamId);
+      }
       await this.closeStream(streamId);
       return;
     }
@@ -173,6 +197,8 @@ export class WispRelay extends DurableObject {
       this.pendingStreams.delete(streamId);
       if (this.closedStreams.has(streamId) || socket.readyState !== WebSocket.OPEN) {
         this.closedStreams.delete(streamId);
+        this.pendingData.delete(streamId);
+        this.pendingDataBytes.delete(streamId);
         try { tcp.close(); } catch { /* already closed */ }
         return;
       }
@@ -182,6 +208,13 @@ export class WispRelay extends DurableObject {
         reader: tcp.readable.getReader(),
       };
       this.streams.set(streamId, stream);
+      const queuedData = this.pendingData.get(streamId) ?? [];
+      this.pendingData.delete(streamId);
+      this.pendingDataBytes.delete(streamId);
+      for (const queued of queuedData) {
+        await stream.writer.write(queued);
+        socket.send(continuePacket(streamId, INITIAL_BUFFER));
+      }
       // v86's WISP adapter waits for per-stream send credit before emitting DATA.
       // Defer the initial credit briefly so the adapter can finish registering the
       // stream after its CONNECT packet; sending it synchronously can race that setup.
@@ -196,6 +229,8 @@ export class WispRelay extends DurableObject {
     } catch (error) {
       console.error("WISP_CONNECT_FAILED", JSON.stringify({ streamId, host, port, error: String(error) }));
       this.pendingStreams.delete(streamId);
+      this.pendingData.delete(streamId);
+      this.pendingDataBytes.delete(streamId);
       this.closedStreams.delete(streamId);
       socket.send(closePacket(streamId, 0x42));
     }
@@ -232,6 +267,8 @@ export class WispRelay extends DurableObject {
     if (!stream || expected && stream !== expected) return;
     this.streams.delete(streamId);
     this.loggedGuestData.delete(streamId);
+    this.pendingData.delete(streamId);
+    this.pendingDataBytes.delete(streamId);
     try { await stream.writer.close(); } catch { /* already closed */ }
     try { await stream.reader.cancel(); } catch { /* already closed */ }
     try { stream.socket.close(); } catch { /* already closed */ }
