@@ -85,8 +85,6 @@ test("startup completion markers match the sequential command controller", () =>
     "__EGRESS_PREFLIGHT_DONE:",
     "__NETWORK_DOWNLOAD_DONE:",
     "__NETWORK_TEST_DONE:",
-    "__FINEPROXY_DOWNLOAD_DONE:",
-    "__FINEPROXY_TEST_DONE:"
   ]) {
     assert.ok(normalized.includes(marker), "expected startup marker: " + marker);
   }
@@ -131,7 +129,7 @@ test("VM snapshot save is attempted after the post-boot test sequence", () => {
 
 test("VM downloads active diagnostic scripts from same-origin Worker assets", () => {
   assert.ok(html.includes("${apiUrl}/health"), "HTTPS preflight should test the deployed Worker health endpoint");
-  for (const asset of ["network-test.sh", "fineproxy-test.sh"]) {
+  for (const asset of ["network-test.sh"]) {
     assert.ok(html.includes("${apiUrl}/runner/tinycore/" + asset), "VM should download " + asset + " from Worker assets");
   }
   assert.ok(!html.includes("browser-bootstrap.sh"), "paused Mysterium bootstrap must not be downloaded or launched by VM startup");
