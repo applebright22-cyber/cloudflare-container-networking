@@ -111,7 +111,7 @@ return {state:state.buffer,savedAt:Date.parse(manifest.savedAt||response.headers
 }
 stateText('No server snapshot found; starting a clean VM.');
 return null;
-}catch(e){snapshotLoadFailed=true;stateText('Server snapshot unavailable; starting a clean VM.');report('\\n*** SNAPSHOT LOAD NOTE: '+(e&&e.message?e.message:String(e))+'; autosave paused to protect any existing snapshot. ***\\n');return null}
+}catch(e){snapshotLoadFailed=true;stateText('Snapshot load failed; restore stopped to protect saved account data.');statusText('Could not load the saved account guest. No clean VM was started and the saved snapshot was preserved.');report('\\n===== SNAPSHOT RESTORE FAILED =====\\nidentity='+(requestedIdentity||'unknown')+'\\nreason='+(e&&e.message?e.message:String(e))+'\\nNo fresh guest was started; saved server data was preserved.\\n');return null}
 }
 document.getElementById('save-vm-state').onclick=()=>saveVmState(true);
 document.getElementById('clear-vm-state').onclick=async()=>{
@@ -382,10 +382,12 @@ return;
 }
 if(record&&record.state){
 try{
-stateText('Restoring saved VM stateâ¦');
+stateText('Restoring saved VM state into the browser emulator…');
+statusText('Snapshot downloaded. Restoring the saved guest into v86…');
 await window.emulator.restore_state(record.state);
 restoredSnapshot=true;
-stateText('Restored saved state from '+new Date(record.savedAt).toLocaleString());
+stateText('Guest state restored in v86 from '+new Date(record.savedAt).toLocaleString()+'. Verifying guest shell…');
+report('\\nSNAPSHOT_BYTES_RESTORED='+record.state.byteLength+'\\nSNAPSHOT_SAVED_AT='+new Date(record.savedAt).toISOString()+'\\n');
 await window.emulator.run();
 }catch(e){
 restoredSnapshot=false;
