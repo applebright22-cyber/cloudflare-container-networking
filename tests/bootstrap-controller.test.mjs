@@ -98,7 +98,7 @@ test("GUI startup handles optional Syslinux boot prompt and reports a bounded bo
   assert.ok(html.includes("proofDeadline=Date.now()+30000"), "snapshot login proof should fail visibly instead of looping forever");
 });
 
-test("startup completion markers match the sequential command controller", () => {
+test("startup completion markers cover DHCP and CA verification without an HTTPS preflight", () => {
   const normalized = html.replace(/"\s*"/g, "");
   for (const marker of [
     "DHCP_DONE",
@@ -106,12 +106,11 @@ test("startup completion markers match the sequential command controller", () =>
     "__TLS_DOWNLOAD_DONE:",
     "__OPENSSL_INSTALL_DONE:",
     "__CA_CERTIFICATES_INSTALL_DONE:",
-    "__EGRESS_PREFLIGHT_DONE:",
-    "__NETWORK_DOWNLOAD_DONE:",
-    "__NETWORK_TEST_DONE:",
   ]) {
     assert.ok(normalized.includes(marker), "expected startup marker: " + marker);
   }
+  assert.ok(!normalized.includes("__EGRESS_PREFLIGHT_DONE:"), "HTTPS preflight must not block the Admin snapshot");
+  assert.ok(!normalized.includes("HTTPS_PREFLIGHT_RETRYING"), "do not retry HTTPS during snapshot preparation");
 });
 
 test("TLS installs run in the foreground before HTTPS and certificate checks", () => {
