@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/build-tinycore-network.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-tinycore-network.yml"
   workflow_dispatch:
 
 permissions:
@@ -41,6 +45,12 @@ jobs:
           done
           test "$downloaded" -eq 1
 
+      - name: Install ISO inspection tool
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xorriso
+
       - name: Verify bootable ISO
         run: |
           set -euxo pipefail
@@ -55,6 +65,7 @@ jobs:
         run: rm -f public/boot/cloudflare-tinycore-dhcp.iso public/boot/cloudflare-tinycore-dhcp.iso.sha256
 
       - name: Commit verified boot image
+        if: github.event_name != 'pull_request'
         run: |
           set -euxo pipefail
           git config user.name "github-actions[bot]"
