@@ -252,7 +252,7 @@ export default {
       const baselinePrefix = "vm-snapshots/" + baselineId + "/";
       const baselineObject = await env.VM_SNAPSHOTS.get(baselinePrefix + "manifest.json");
       if (!baselineObject) return json({ error: "admin_baseline_snapshot_not_found", baseline_id: baselineId }, 409);
-      let baseline: { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown; savedAt?: unknown; adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; dns_passed?: unknown; https_passed?: unknown } };
+      let baseline: { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown; savedAt?: unknown; adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; ca_certificates_passed?: unknown } };
       try { baseline = await baselineObject.json() as typeof baseline; }
       catch { return json({ error: "admin_baseline_manifest_invalid" }, 500); }
       if (baseline.version !== 1 || typeof baseline.generation !== "string" ||
@@ -266,8 +266,7 @@ export default {
       }
       const checks = baseline.checks;
       if (baseline.adminReady !== true || !checks || checks.guest_booted !== true ||
-          checks.shell_command_passed !== true || checks.dhcp_passed !== true ||
-          checks.dns_passed !== true || checks.https_passed !== true) {
+          checks.shell_command_passed !== true || checks.dhcp_passed !== true || checks.ca_certificates_passed !== true) {
         return json({ error: "admin_baseline_not_ready", detail: "Save the Admin snapshot only after startup, DHCP, DNS, SSL and CA checks have completed." }, 409);
       }
 
@@ -458,7 +457,7 @@ export default {
       const baselinePrefix = "vm-snapshots/" + baselineId + "/";
       const baselineObject = await env.VM_SNAPSHOTS.get(baselinePrefix + "manifest.json");
       if (!baselineObject) return json({ error: "baseline_snapshot_not_found", baseline_id: baselineId }, 409);
-      let baseline: { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown; adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; dns_passed?: unknown; https_passed?: unknown } };
+      let baseline: { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown; adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; ca_certificates_passed?: unknown } };
       try { baseline = await baselineObject.json() as typeof baseline; }
       catch { return json({ error: "baseline_manifest_invalid" }, 500); }
       if (baseline.version !== 1 || typeof baseline.generation !== "string" ||
@@ -473,7 +472,7 @@ export default {
       const baselineChecks = baseline.checks;
       if (baselineId === "admin" && (baseline.adminReady !== true || !baselineChecks ||
           baselineChecks.guest_booted !== true || baselineChecks.shell_command_passed !== true ||
-          baselineChecks.dhcp_passed !== true || baselineChecks.dns_passed !== true || baselineChecks.https_passed !== true)) {
+          baselineChecks.dhcp_passed !== true || baselineChecks.ca_certificates_passed !== true)) {
         return json({ error: "admin_baseline_not_ready" }, 409);
       }
 
