@@ -131,6 +131,10 @@ export class WispRelay extends DurableObject {
             socket.send(closePacket(streamId, 0x41));
             return;
           }
+          if (!this.loggedGuestData.has(streamId)) {
+            console.log("WISP_EARLY_GUEST_DATA", JSON.stringify({ streamId, bytes: payload.byteLength }));
+            this.loggedGuestData.add(streamId);
+          }
           const queue = this.pendingData.get(streamId) ?? [];
           queue.push(payload.slice());
           this.pendingData.set(streamId, queue);
