@@ -27,12 +27,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: cloudflare/package-lock.json
 
       - name: Install dependencies
         working-directory: cloudflare
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Deploy Worker and static assets
         working-directory: cloudflare
