@@ -39,6 +39,9 @@ test("VM uses a built ISO asset, a single supported relay configuration, and ret
   assert.ok(html.includes("/sbin/modprobe ne2k-pci"), "try loading the NE2000 PCI driver when no interface is present");
   assert.ok(html.includes("NIC_MISSING"), "report driver diagnostics instead of retrying DHCP forever without a NIC");
   assert.ok(html.includes("DHCP_RETRYING_NO_LEASE"));
+  assert.ok(html.includes("DHCP_STATIC_FALLBACK"), "use the reserved account IP and gateway if synthetic DHCP cannot lease");
+  assert.ok(html.includes('/sbin/ifconfig "$iface" "$ip" netmask 255.255.255.0 up'), "static fallback must configure the account-specific guest IP");
+  assert.ok(html.includes('/sbin/route add default gw "$gw"'), "static fallback must install the matching virtual gateway");
   assert.ok(html.includes("echo DHCP_OK"), "successful DHCP path should emit its completion marker");
   assert.ok(html.includes("DHCP_EXPECTED_IP=$expected_ip"), "DHCP must report the account-assigned address it expects");
   assert.ok(html.includes("DHCP_ASSIGNED_IP=$ip"), "DHCP must report the address actually leased");
