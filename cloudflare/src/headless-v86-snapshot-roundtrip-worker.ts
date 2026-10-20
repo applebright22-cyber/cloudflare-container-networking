@@ -14,6 +14,41 @@ const SHELL_COMMAND_TIMEOUT_MS = 20000;
 
 type Stage = { attempted: boolean; passed: boolean; marker: string; error?: string; output?: string };
 
+type BaselineSnapshot = { generation: string; chunks: number; byteLength: number; state: Uint8Array };
+
+async function readAdminBaseline(bucket: R2Bucket): Promise<BaselineSnapshot | null> {
+  const object = await bucket.get("vm-snapshots/admin/manifest.json");
+  if (!object) return null;
+  const manifest = await object.json<{
+    version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown;
+    adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; dns_passed?: unknown; https_passed?: unknown };
+  }>();
+  if (manifest.version !== 1 || typeof manifest.generation !== "string" ||
+      !/^[a-z0-9-]{1,40}$/.test(manifest.generation) ||
+      !Number.isInteger(manifest.chunks) || (manifest.chunks as number) < 1 || (manifest.chunks as number) > 128 ||
+      !Number.isInteger(manifest.byteLength) || (manifest.byteLength as number) < 1 || (manifest.byteLength as number) > 536870912 ||
+      manifest.chunks !== Math.ceil((manifest.byteLength as number) / (8 * 1024 * 1024))) {
+    throw new Error("admin_baseline_manifest_invalid");
+  }
+  const checks = manifest.checks;
+  if (manifest.adminReady !== true || !checks || checks.guest_booted !== true ||
+      checks.shell_command_passed !== true || checks.dhcp_passed !== true ||
+      checks.dns_passed !== true || checks.https_passed !== true) {
+    throw new Error("admin_baseline_not_ready");
+  }
+  const state = new Uint8Array(manifest.byteLength as number);
+  const prefix = "vm-snapshots/admin/" + manifest.generation + "/";
+  let offset = 0;
+  for (let part = 0; part < (manifest.chunks as number); part++) {
+    const item = await bucket.get(prefix + part + ".bin");
+    const expected = Math.min(8 * 1024 * 1024, (manifest.byteLength as number) - offset);
+    if (!item || item.size !== expected) throw new Error("admin_baseline_chunk_invalid_" + part);
+    state.set(new Uint8Array(await item.arrayBuffer()), offset);
+    offset += expected;
+  }
+  return { generation: manifest.generation, chunks: manifest.chunks as number, byteLength: manifest.byteLength as number, state };
+}
+
 export default {
   async fetch(request: Request, env: { ASSETS: Fetcher; VM_SNAPSHOTS: R2Bucket; ACCOUNT_REGISTRY: DurableObjectNamespace<AccountRegistry>; WISP_RELAY: DurableObjectNamespace<WispRelay> }) {
     const requestUrl = new URL(request.url);
@@ -46,6 +81,17 @@ export default {
       await env.VM_SNAPSHOTS.put(jobKey, JSON.stringify({ identity: snapshotIdentity, status: jobStatus, step: jobStep, started_at: jobStartedAt, updated_at: new Date().toISOString(), ...jobDetails }), { httpMetadata: { contentType: "application/json" } });
     };
     await writeProgress("running", "starting_vm");
+    let baselineSnapshot: BaselineSnapshot | null = null;
+    if (path === "/snapshot-roundtrip") {
+      try {
+        baselineSnapshot = await readAdminBaseline(env.VM_SNAPSHOTS);
+      } catch (error) {
+        const message = (error instanceof Error ? error.message : String(error)).slice(0, 200);
+        await writeProgress("error", "baseline_snapshot_validation", { error: message });
+        return Response.json({ probe: "tinycore-snapshot-save-readback", runtime: "workerd", passed: false, baseline_snapshot_used: false, error: message }, { status: 409 });
+      }
+      if (baselineSnapshot) await writeProgress("running", "restoring_admin_baseline", { baseline_snapshot_used: true, baseline_generation: baselineSnapshot.generation, baseline_byte_length: baselineSnapshot.byteLength });
+    }
 
     const wasm = getCompiledV86WasmInfo();
     await writeProgress("running", "booting_linux", { wasm_module_loaded: wasm.module_loaded });
@@ -127,7 +173,7 @@ export default {
         bios: { url: new URL("/bios/seabios.bin", base).toString() },
         vga_bios: { url: new URL("/bios/vgabios.bin", base).toString() },
         cdrom: { url: new URL("/boot/TinyCorePure64-11.0-v86-ne2k-dhcp-experimental.iso", base).toString() },
-        autostart: true,
+        autostart: !baselineSnapshot,
         disable_keyboard: false,
         disable_mouse: true,
         net_device: netDevice,
@@ -135,27 +181,31 @@ export default {
       emulator.add_listener("emulator-loaded", async () => {
         loaded = true;
         try {
-          // Some experimental ISOs stop at the Syslinux "boot:" prompt; newer
-          // boot configurations may start the kernel automatically. Treat the
-          // prompt as optional rather than failing before Linux has had time to boot.
           let bootPrompt = false;
-          try {
-            bootPrompt = Boolean(await emulator.wait_until_vga_screen_contains(/boot:/i, {
-              timeout_msec: BOOTLOADER_PROMPT_TIMEOUT_MS,
-            }));
-          } catch {
-            // A missing boot prompt is expected for an auto-booting ISO.
-          }
-          if (bootPrompt) {
-            await emulator.keyboard_send_scancodes([0x1C, 0x9C]);
-            await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+          if (baselineSnapshot) {
+            await emulator.restore_state(baselineSnapshot.state.buffer as ArrayBuffer);
+            baselineSnapshot.state = new Uint8Array(0);
+            await emulator.run();
+          } else {
+            // Clean-boot path is retained for environments that have no admin baseline yet.
+            try {
+              bootPrompt = Boolean(await emulator.wait_until_vga_screen_contains(/boot:/i, {
+                timeout_msec: BOOTLOADER_PROMPT_TIMEOUT_MS,
+              }));
+            } catch {
+              // A missing boot prompt is expected for an auto-booting ISO.
+            }
+            if (bootPrompt) {
+              await emulator.keyboard_send_scancodes([0x1C, 0x9C]);
+              await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+            }
           }
           const shellReached = await emulator.wait_until_vga_screen_contains(/tc@box:~\\$|tc@box:~\$|tc@box|localhost login:|login:/i, { timeout_msec: BOOT_TIMEOUT_MS });
           finishBoot(shellReached
             ? { booted: true }
-            : { booted: false, reason: bootPrompt
-                ? "linux_shell_or_login_marker_not_seen_after_boot_prompt"
-                : "linux_shell_or_login_marker_not_seen_after_auto_boot" });
+            : { booted: false, reason: baselineSnapshot
+                ? "admin_baseline_restore_did_not_reach_linux_shell"
+                : bootPrompt ? "linux_shell_or_login_marker_not_seen_after_boot_prompt" : "linux_shell_or_login_marker_not_seen_after_auto_boot" });
         } catch (error) {
           finishBoot({ booted: false, reason: "boot_probe_error: " + (error instanceof Error ? error.message : String(error)).slice(0, 250) });
         }
