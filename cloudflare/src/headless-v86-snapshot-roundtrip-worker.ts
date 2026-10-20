@@ -77,8 +77,10 @@ export default {
     const jobStartedAt = new Date().toISOString();
     const jobDetails: Record<string, unknown> = {};
     const writeProgress = async (status = jobStatus, step = jobStep, details: Record<string, unknown> = {}) => {
+      const changed = status !== jobStatus || step !== jobStep;
       jobStatus = status; jobStep = step; Object.assign(jobDetails, details);
       await env.VM_SNAPSHOTS.put(jobKey, JSON.stringify({ identity: snapshotIdentity, status: jobStatus, step: jobStep, started_at: jobStartedAt, updated_at: new Date().toISOString(), ...jobDetails }), { httpMetadata: { contentType: "application/json" } });
+      if (changed) console.log("V86_SNAPSHOT_PROGRESS", JSON.stringify({ identity: snapshotIdentity, status: jobStatus, step: jobStep }));
     };
     await writeProgress("running", "starting_vm");
     let baselineSnapshot: BaselineSnapshot | null = null;
@@ -114,10 +116,11 @@ export default {
       await writeProgress("error", "network_identity", { error: "virtual_network_allocation_failed" });
       return Response.json({ probe: "tinycore-snapshot-save-readback", runtime: "workerd", passed: false, guest_booted: false, error: "virtual_network_allocation_failed" }, { status: 503 });
     }
-    const allocationResult = await allocationResponse.json() as { allocation?: { virtual_ip?: unknown } };
+    const allocationResult = await allocationResponse.json() as { allocation?: { virtual_ip?: unknown; virtual_mac?: unknown } };
     const virtualIp = typeof allocationResult.allocation?.virtual_ip === "string" ? allocationResult.allocation.virtual_ip : "";
+    const virtualMac = typeof allocationResult.allocation?.virtual_mac === "string" ? allocationResult.allocation.virtual_mac : "";
     const routerIp = virtualGatewayForIp(virtualIp);
-    if (!routerIp) {
+    if (!routerIp || !/^02(?::[0-9a-f]{2}){5}$/.test(virtualMac)) {
       await writeProgress("error", "network_identity", { error: "invalid_virtual_network_identity" });
       return Response.json({ probe: "tinycore-snapshot-save-readback", runtime: "workerd", passed: false, guest_booted: false, error: "invalid_virtual_network_identity" }, { status: 500 });
     }
@@ -328,13 +331,16 @@ fi
 echo DHCP_INTERFACE=$iface
 echo DHCP_EXPECTED_IP=${virtualIp}
 echo DHCP_EXPECTED_GATEWAY=${routerIp}
+echo DHCP_EXPECTED_MAC=${virtualMac}
 if [ -z "$iface" ]; then
   echo NIC_MISSING
   cat /proc/net/dev
   dmesg 2>/dev/null | tail -n 20
   exit 1
 fi
-/sbin/ifconfig "$iface" up
+/sbin/ifconfig "$iface" down 2>/dev/null
+/sbin/ifconfig "$iface" hw ether "${virtualMac}" || { echo MAC_ASSIGN_FAILED; exit 1; }
+/sbin/ifconfig "$iface" up || exit 1
 tries=0
 while [ "$tries" -lt 30 ]; do
   /sbin/udhcpc -f -n -q -i "$iface"
@@ -359,9 +365,12 @@ exit 1`;
         "RESOURCE_PREFLIGHT_DONE", SHELL_COMMAND_TIMEOUT_MS);
       const dhcpPassed = await runStage("dhcp", dhcpCommand, "DHCP_DONE", 360000, true);
       const dhcpOutput = stages.dhcp.output ?? "";
-      stages.dhcp.passed = dhcpPassed && /DHCP_OK/.test(dhcpOutput) && !/NIC_MISSING|DHCP_TIMEOUT/.test(dhcpOutput);
+      stages.dhcp.passed = dhcpPassed && /DHCP_OK/.test(dhcpOutput) &&
+        dhcpOutput.includes("DHCP_ACTUAL_IP=" + virtualIp) && dhcpOutput.includes("DHCP_ACTUAL_GATEWAY=" + routerIp) &&
+        !/NIC_MISSING|DHCP_TIMEOUT|MAC_ASSIGN_FAILED/.test(dhcpOutput);
       if (!stages.dhcp.passed) stages.dhcp.error = /NIC_MISSING/.test(dhcpOutput)
         ? "guest_nic_missing"
+        : /MAC_ASSIGN_FAILED/.test(dhcpOutput) ? "account_mac_assignment_failed"
         : /DHCP_TIMEOUT/.test(dhcpOutput) ? "no_expected_dhcp_ip_and_gateway_within_six_minutes" : (stages.dhcp.error ?? "dhcp_stage_failed");
 
       if (stages.dhcp.passed) {
