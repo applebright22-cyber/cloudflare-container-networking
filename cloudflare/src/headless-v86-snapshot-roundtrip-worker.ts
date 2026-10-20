@@ -440,15 +440,18 @@ openssl version 2>&1`;
             stages.openssl_install.passed = stages.openssl_install.passed && /OPENSSL_INSTALL_RC=0/.test(sslOut) && /OpenSSL 1\./.test(sslOut);
             if (!stages.openssl_install.passed) stages.openssl_install.error = "openssl_install_or_version_check_failed";
 
-            const caInstallCommand = `echo '--- CA certificate install ---'
-tce-load -i ca-certificates >/tmp/ca.log 2>&1
+            const caInstallCommand = `set +e
+echo '--- CA certificate install ---'
+echo CA_EXTENSION_FILES
+ls -l /tmp/tce/optional/ca-certificates* /usr/local/tce/optional/ca-certificates* 2>&1
+timeout 45 tce-load -i ca-certificates >/tmp/ca.log 2>&1
 rc=$?
 echo CA_INSTALL_RC=$rc
 tail -n 20 /tmp/ca.log 2>&1
 CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs /usr/local/share/ca-certificates /etc/ssl -type f -name ca-certificates.crt 2>/dev/null | head -n 1)
 echo CA_BUNDLE_PATH=$CA_BUNDLE
-if [ "$rc" -eq 0 ] && [ -n "$CA_BUNDLE" ] && [ -s "$CA_BUNDLE" ] && grep -q 'BEGIN CERTIFICATE' "$CA_BUNDLE"; then echo CA_BUNDLE_CHECK_RC=0; else echo CA_BUNDLE_CHECK_RC=1; fi`;
-            await runStage("ca_install", caInstallCommand, "CA_CERTIFICATES_INSTALL_DONE", 120000);
+if [ -n "$CA_BUNDLE" ] && [ -s "$CA_BUNDLE" ] && grep -q 'BEGIN CERTIFICATE' "$CA_BUNDLE"; then echo CA_BUNDLE_CHECK_RC=0; else echo CA_BUNDLE_CHECK_RC=1; fi`;
+            await runStage("ca_install", caInstallCommand, "CA_CERTIFICATES_INSTALL_DONE", 90000, true);
             const caOut = stages.ca_install.output ?? "";
             stages.ca_install.passed = stages.ca_install.passed && /CA_INSTALL_RC=0/.test(caOut) && /CA_BUNDLE_CHECK_RC=0/.test(caOut);
             if (!stages.ca_install.passed) stages.ca_install.error = "ca_install_or_bundle_check_failed";
