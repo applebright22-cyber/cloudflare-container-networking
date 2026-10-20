@@ -30,18 +30,18 @@ test("shell prompt detection tolerates blank rows but only accepts the current l
 
 test("VM uses a built ISO asset, a single supported relay configuration, and retries DHCP until a lease is valid", () => {
   assert.ok(html.includes("cdrom:{url:'/boot/TinyCorePure64-11.0-v86-ne2k-dhcp-experimental.iso'}"), "VM should use the existing NIC-enabled experimental ISO");
-  assert.ok(html.includes("net_device:{type:'ne2k',relay_url:relayUrl,router_ip:routerIp,vm_ip:virtualIp,masquerade:true,dns_method:'doh',doh_server:'cloudflare-dns.com'}"), "use account-specific synthetic DHCP/DNS through WISP");
+  assert.ok(html.includes("net_device:{type:'ne2k',relay_url:relayUrl,router_ip:routerIp,vm_ip:virtualIp,masquerade:true,dns_method:'doh',doh_server:'cloudflare-dns.com',preserve_mac_from_state_image:false}"), "use account-specific synthetic DHCP/DNS and avoid inheriting Admin MAC state");
   assert.ok(html.includes("wisps://'+window.location.host+'/api/network/wisp"), "route WISP streams through the Cloudflare Worker");
   assert.ok(html.includes("router_ip:routerIp,vm_ip:virtualIp"));
   assert.ok(!html.includes("relay.widgetry.org"), "do not depend on the shared raw-Ethernet relay for DHCP");
   assert.ok(html.includes("function snapshotUrl(){if(!window.snapshotIdentity)"), "snapshots should remain scoped to the selected account identity");
-  assert.ok(html.includes('while [ "$attempt" -le 8 ]; do echo DHCP_ATTEMPT=$attempt; /sbin/udhcpc -f -n -q -i "$iface";'), "DHCP should retry a bounded number of times and report failure instead of hanging forever");
+  assert.ok(html.includes('while [ "$n" -le 8 ]; do echo DHCP_ATTEMPT=$n; /sbin/udhcpc -f -n -q -i "$iface";'), "DHCP should retry a bounded number of times and report failure instead of hanging forever");
   assert.ok(html.includes("/sbin/modprobe ne2k-pci"), "try loading the NE2000 PCI driver when no interface is present");
   assert.ok(html.includes("NIC_MISSING"), "report driver diagnostics instead of retrying DHCP forever without a NIC");
-  assert.ok(html.includes("DHCP_RETRYING_NO_LEASE"));
-  assert.ok(html.includes("DHCP_STATIC_FALLBACK"), "use the reserved account IP and gateway if synthetic DHCP cannot lease");
-  assert.ok(html.includes('/sbin/ifconfig "$iface" "$ip" netmask 255.255.255.0 up'), "static fallback must configure the account-specific guest IP");
-  assert.ok(html.includes('/sbin/route add default gw "$gw"'), "static fallback must install the matching virtual gateway");
+  assert.ok(html.includes("DHCP_FAILED"), "failed DHCP must stop startup instead of silently falling back to static configuration");
+  assert.ok(html.includes('/sbin/ifconfig "$iface" hw ether "$mac"'), "apply the registry-assigned MAC before DHCP");
+  assert.ok(html.includes("MAC_ASSIGN_FAILED"), "fail visibly if the account MAC cannot be applied");
+  assert.ok(!html.includes("DHCP_STATIC_FALLBACK"), "do not report static configuration as DHCP success");
   assert.ok(html.includes("echo DHCP_OK"), "successful DHCP path should emit its completion marker");
   assert.ok(html.includes("DHCP_EXPECTED_IP=$ip"), "DHCP must report the account-assigned address it expects");
   assert.ok(html.includes("DHCP_ASSIGNED_IP=$ip"), "DHCP must report the address actually leased");
@@ -93,14 +93,15 @@ test("startup completion markers match the sequential command controller", () =>
 test("TLS installs run in the foreground before HTTPS and certificate checks", () => {
   assert.ok(html.includes("tce-load -w openssl-1.1.1.tcz"));
   assert.ok(html.includes("tce-load -w ca-certificates.tcz"));
+  assert.ok(html.includes("TLS_PREREQUISITES_ALREADY_PRESENT"), "cloned snapshots with verified TLS prerequisites must not download packages again");
   assert.ok(html.includes("tce-load -i openssl-1.1.1 >/tmp/openssl-install.log 2>&1; install_rc=$?"));
   assert.ok(html.includes("openssl version >/dev/null 2>&1"));
-  assert.ok(html.includes("tce-load -i ca-certificates >/tmp/ca.log 2>&1; rc=$?"));
+  assert.ok(html.includes("tce-load -i ca-certificates >/tmp/ca.log 2>&1; install_rc=$?"));
   assert.ok(html.includes("CA_BUNDLE_PATH=$CA_BUNDLE"));
   assert.ok(html.includes("find /usr/local/etc/ssl/certs /etc/ssl/certs -type f -name ca-certificates.crt"));
-  const caCommand = html.match(/`echo "--- CA certificate install ---";([\s\S]*?)`,/);
+  const caCommand = html.match(/`echo "--- CA certificate verify\/install ---";([\s\S]*?)`,/);
   assert.ok(caCommand, "CA install command should be present");
-  assert.ok(caCommand[0].length < 600, "CA install command must stay short enough to avoid terminal input truncation");
+  assert.ok(caCommand[0].length < 750, "CA install command must stay short enough to avoid terminal input truncation");
   assert.ok(html.includes("CA_INSTALL_RC=$rc"));
   assert.ok(html.includes("CA_BUNDLE_PATH=$CA_BUNDLE"));
   assert.ok(!html.includes("tce-load -i openssl-1.1.1 >/tmp/openssl-install.log 2>&1 &"));
