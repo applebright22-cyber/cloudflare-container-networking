@@ -79,6 +79,7 @@ if(!response.ok)throw new Error('snapshot manifest failed with HTTP '+response.s
 const result=await response.json();
 if(window.snapshotNeedsInitialSave===true&&String(window.snapshotIdentity||'').startsWith('acct-')){window.snapshotNeedsInitialSave=false;try{sessionStorage.removeItem('vm-initial-snapshot-pending')}catch(e){}}
 stateText('Server snapshot saved at '+new Date(result.savedAt||savedAt).toLocaleTimeString());
+report('\\nVM_SNAPSHOT_SAVE_OK bytes='+state.byteLength+' chunks='+chunks+' savedAt='+(result.savedAt||savedAt)+'\\n');
 return true;
 }catch(e){stateText('Snapshot save failed: '+(e&&e.message?e.message:'server storage unavailable'));report('\\n*** VM SNAPSHOT SAVE FAILED: '+(e&&e.message?e.message:String(e))+' ***\\n');return false}
 finally{snapshotBusy=false}
