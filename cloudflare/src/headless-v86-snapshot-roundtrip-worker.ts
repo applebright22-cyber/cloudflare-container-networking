@@ -326,7 +326,7 @@ export default {
 
     if (boot.booted) {
       // Reuse the known-good NETWORK INIT command from the user's real VM run.
-      // Bound DHCP retries to two minutes so this durable VM job stays within its execution budget.
+      // Bound DHCP retries so a missing lease fails quickly and the workflow can report diagnostics.
       const dhcpCommand = `set +e
 echo "--- NETWORK INIT ---"
 id
@@ -351,8 +351,8 @@ fi
 /sbin/ifconfig "$iface" hw ether "${virtualMac}" || { echo MAC_ASSIGN_FAILED; exit 1; }
 /sbin/ifconfig "$iface" up || exit 1
 tries=0
-while [ "$tries" -lt 30 ]; do
-  /sbin/udhcpc -f -n -q -t 3 -T 3 -i "$iface"
+while [ "$tries" -lt 12 ]; do
+  /sbin/udhcpc -f -n -q -t 2 -T 2 -i "$iface"
   actual_ip=$(/sbin/ifconfig "$iface" | awk '/inet addr:/{sub(/.*inet addr:/,"");sub(/ .*/,"");print;exit} /inet /{for(i=1;i<=NF;i++)if($i=="inet"){print $(i+1);exit}}')
   actual_gateway=$(/sbin/route -n | awk '$1=="0.0.0.0"{print $2;exit}')
   echo DHCP_ACTUAL_IP=$actual_ip
@@ -363,7 +363,7 @@ while [ "$tries" -lt 30 ]; do
   fi
   echo DHCP_RETRYING_NO_LEASE_OR_WRONG_ADDRESS
   tries=$((tries+1))
-  sleep 3
+  sleep 2
 done
 echo DHCP_TIMEOUT
 /sbin/ifconfig -a
@@ -372,7 +372,7 @@ exit 1`;
       await runStage("resource_preflight",
         "echo \"--- RESOURCE PREFLIGHT ---\"; df -h / /tmp /usr/local/tce 2>&1; free 2>&1; cat /proc/meminfo 2>/dev/null | head -n 8; echo \"TLS prerequisite installation will run before HTTPS preflight.\"",
         "RESOURCE_PREFLIGHT_DONE", SHELL_COMMAND_TIMEOUT_MS);
-      const dhcpPassed = await runStage("dhcp", dhcpCommand, "DHCP_DONE", 360000, true);
+      const dhcpPassed = await runStage("dhcp", dhcpCommand, "DHCP_DONE", 90000, true);
       const dhcpOutput = stages.dhcp.output ?? "";
       stages.dhcp.passed = dhcpPassed && /DHCP_OK/.test(dhcpOutput) &&
         dhcpOutput.includes("DHCP_ACTUAL_IP=" + virtualIp) && dhcpOutput.includes("DHCP_ACTUAL_GATEWAY=" + routerIp) &&
@@ -380,7 +380,7 @@ exit 1`;
       if (!stages.dhcp.passed) stages.dhcp.error = /NIC_MISSING/.test(dhcpOutput)
         ? "guest_nic_missing"
         : /MAC_ASSIGN_FAILED/.test(dhcpOutput) ? "account_mac_assignment_failed"
-        : /DHCP_TIMEOUT/.test(dhcpOutput) ? "no_expected_dhcp_ip_and_gateway_within_six_minutes" : (stages.dhcp.error ?? "dhcp_stage_failed");
+        : /DHCP_TIMEOUT/.test(dhcpOutput) ? "no_expected_dhcp_ip_and_gateway_within_ninety_seconds" : (stages.dhcp.error ?? "dhcp_stage_failed");
 
       if (stages.dhcp.passed) {
         if (baselineSnapshot) {
