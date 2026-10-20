@@ -316,7 +316,7 @@ exit 1`;
 
       if (stages.dhcp.passed) {
         await runStage("tls_download",
-          "echo '--- TLS package downloads (bounded CA retries) ---'; tce-load -w openssl-1.1.1.tcz; openssl_dl=$?; ca_dl=1; attempt=1; while [ \"$attempt\" -le 3 ]; do echo CA_DOWNLOAD_ATTEMPT=$attempt; timeout 35 tce-load -w ca-certificates.tcz; ca_dl=$?; if [ \"$ca_dl\" -eq 0 ]; then break; fi; echo CA_DOWNLOAD_RETRY_AFTER_RC=$ca_dl; attempt=$((attempt+1)); sleep 2; done; echo OPENSSL_DOWNLOAD_RC=$openssl_dl; echo CA_DOWNLOAD_RC=$ca_dl",
+          "set +e\necho '--- TLS package downloads with mirror fallback ---'\nmirrors='http://distro.ibiblio.org/tinycorelinux/ http://repo.tinycorelinux.net/'\nopenssl_dl=1\nfor mirror in $mirrors; do\n  echo TCE_MIRROR_ATTEMPT=$mirror\n  printf '%s\\n' \"$mirror\" > /opt/tcemirror\n  timeout 45 tce-load -w openssl-1.1.1.tcz\n  openssl_dl=$?\n  if [ \"$openssl_dl\" -eq 0 ]; then break; fi\n  echo OPENSSL_DOWNLOAD_RETRY_AFTER_RC=$openssl_dl\ndone\nca_dl=1\nfor mirror in $mirrors; do\n  echo CA_MIRROR_ATTEMPT=$mirror\n  printf '%s\\n' \"$mirror\" > /opt/tcemirror\n  timeout 45 tce-load -w ca-certificates.tcz\n  ca_dl=$?\n  if [ \"$ca_dl\" -eq 0 ]; then break; fi\n  echo CA_DOWNLOAD_RETRY_AFTER_RC=$ca_dl\ndone\necho OPENSSL_DOWNLOAD_RC=$openssl_dl\necho CA_DOWNLOAD_RC=$ca_dl",
           "TLS_DOWNLOAD_DONE", 240000);
         const dlOut = stages.tls_download.output ?? "";
         stages.tls_download.passed = stages.tls_download.passed && /OPENSSL_DOWNLOAD_RC=0/.test(dlOut) && /CA_DOWNLOAD_RC=0/.test(dlOut);

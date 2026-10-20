@@ -10,6 +10,7 @@ on:
       - "tests/bootstrap-controller.test.mjs"
       - "tests/account-session.test.mjs"
       - ".github/workflows/check-bootstrap-controller.yml"
+      - ".github/workflows/build-tinycore-network.yml"
   pull_request:
     paths:
       - "public/vm.html"

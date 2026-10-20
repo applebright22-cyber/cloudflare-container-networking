@@ -19,6 +19,7 @@ on:
       - "public/vm.html"
       - "tests/bootstrap-controller.test.mjs"
       - ".github/workflows/headless-v86-snapshot-roundtrip.yml"
+      - ".github/workflows/build-tinycore-network.yml"
 
 jobs:
   guest-snapshot-roundtrip:
@@ -71,9 +72,11 @@ jobs:
           curl_rc=$?
           set -e
           cat /tmp/v86-roundtrip-result.json 2>/dev/null || true
+          echo "----- Workerd relay/runtime diagnostics -----"
+          cat /tmp/v86-roundtrip-workerd.log
+          echo "----- End Workerd diagnostics -----"
           if [ "$curl_rc" -ne 0 ]; then
-            echo "Guest round-trip request failed (curl exit $curl_rc); Workerd log follows:"
-            cat /tmp/v86-roundtrip-workerd.log
+            echo "Guest round-trip request failed (curl exit $curl_rc); see Workerd diagnostics above."
             exit "$curl_rc"
           fi
           node --input-type=module -e 'import fs from "node:fs"; const r = JSON.parse(fs.readFileSync("/tmp/v86-roundtrip-result.json", "utf8")); const s = r.snapshot_roundtrip ?? {}; const ok = r.probe === "tinycore-snapshot-save-readback" && r.runtime === "workerd" && r.passed === true && r.guest_booted === true && r.guest_checks_passed === true && s.saved === true && s.readback === true && s.readback_digest_verified === true && s.restore_deferred_to_dashboard === true; if (!ok) { console.error("Guest snapshot save/read-back acceptance failed", r); process.exit(1); } console.log("Guest boot, network checks, snapshot save, and R2 digest-verified read-back passed; browser GUI restore remains a separate acceptance gate.");'
