@@ -23,6 +23,8 @@ test("WISP relay keeps response data flowing without incorrectly gating it on CO
   assert.ok(relaySource.includes("if (type === 0x03)"), "unexpected CONTINUE control packets must not close a stream");
   assert.ok(relaySource.includes("WISP_UNEXPECTED_CLIENT_CONTINUE"), "log unexpected client-side CONTINUE packets");
   assert.ok(relaySource.includes("WISP_FIRST_GUEST_DATA"), "log the first guest request payload for troubleshooting");
+  assert.ok(relaySource.includes("this.pendingStreams.has(streamId)"), "buffer guest DATA that arrives before the TCP socket opens");
+  assert.ok(relaySource.includes("queuedBytes + payload.byteLength > 1024 * 1024"), "bound the early-data buffer per stream");
   assert.ok(relaySource.includes("WISP_FIRST_TCP_DATA"), "log the first TCP response payload for troubleshooting");
   assert.ok(relaySource.includes("Do not gate"), "document one-way WISP flow control");
   assert.ok(!relaySource.includes("sendCredit"), "server response data must not wait on client CONTINUE credit");
