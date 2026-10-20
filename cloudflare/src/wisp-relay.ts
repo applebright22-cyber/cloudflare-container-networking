@@ -222,7 +222,7 @@ export class WispRelay extends DurableObject {
         let offset = 0;
         while (offset < value.byteLength && socket.readyState === WebSocket.OPEN) {
           if (stream.sendCredit <= 0) {
-            await new Promise<void>((resolve) => stream.creditWaiters.add(resolve));
+            await new Promise<void>((resolve) => stream.creditWaiters.add(() => resolve()));
             if (socket.readyState !== WebSocket.OPEN) break;
           }
           const count = Math.min(value.byteLength - offset, stream.sendCredit, 64 * 1024);
