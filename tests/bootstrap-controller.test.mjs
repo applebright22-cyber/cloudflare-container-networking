@@ -5,6 +5,17 @@ import vm from "node:vm";
 
 const html = readFileSync(new URL("../public/vm.html", import.meta.url), "utf8");
 const bootstrap = readFileSync(new URL("../public/runner/tinycore/browser-bootstrap.sh", import.meta.url), "utf8");
+const snapshotWorker = readFileSync(new URL("../cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts", import.meta.url), "utf8");
+
+test("headless Workerd network test applies and verifies the account-specific MAC and IP", () => {
+  assert.ok(snapshotWorker.includes("virtual_mac?: unknown"), "allocator MAC must be read");
+  assert.ok(snapshotWorker.includes("echo DHCP_EXPECTED_MAC=${virtualMac}"), "diagnostics should identify the account MAC");
+  assert.ok(snapshotWorker.includes('/sbin/ifconfig "$iface" hw ether "${virtualMac}"'), "apply account MAC before DHCP");
+  assert.ok(snapshotWorker.includes("account_mac_assignment_failed"), "MAC failures must fail acceptance");
+  assert.ok(snapshotWorker.includes('dhcpOutput.includes("DHCP_ACTUAL_IP=" + virtualIp)'), "verify the exact assigned IP");
+  assert.ok(snapshotWorker.includes('dhcpOutput.includes("DHCP_ACTUAL_GATEWAY=" + routerIp)'), "verify the matching gateway");
+  assert.ok(snapshotWorker.includes("V86_SNAPSHOT_PROGRESS"), "emit stage progress to Workerd logs for live troubleshooting");
+});
 
 test("inline browser scripts parse", () => {
   const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
