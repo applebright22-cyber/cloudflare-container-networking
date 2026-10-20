@@ -170,7 +170,9 @@ export class WispRelay extends DurableObject {
         reader: tcp.readable.getReader(),
       };
       this.streams.set(streamId, stream);
-      socket.send(continuePacket(streamId, INITIAL_BUFFER));
+      // WISP v1 has no stream-open confirmation extension. A per-stream CONTINUE
+      // here can arrive before v86 has initialized its stream flow-control state;
+      // the stream-0 handshake grants initial credit, and DATA writes replenish it.
       void this.pumpTcpToWebSocket(socket, streamId, stream);
     } catch (error) {
       console.error("WISP_CONNECT_FAILED", JSON.stringify({ streamId, host, port, error: String(error) }));
