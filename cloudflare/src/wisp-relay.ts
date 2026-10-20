@@ -170,9 +170,16 @@ export class WispRelay extends DurableObject {
         reader: tcp.readable.getReader(),
       };
       this.streams.set(streamId, stream);
-      // WISP v1 has no stream-open confirmation extension. A per-stream CONTINUE
-      // here can arrive before v86 has initialized its stream flow-control state;
-      // the stream-0 handshake grants initial credit, and DATA writes replenish it.
+      // v86's WISP adapter waits for per-stream send credit before emitting DATA.
+      // Defer the initial credit briefly so the adapter can finish registering the
+      // stream after its CONNECT packet; sending it synchronously can race that setup.
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      if (socket.readyState !== WebSocket.OPEN || !this.streams.has(streamId)) {
+        await this.closeStream(streamId, stream);
+        return;
+      }
+      socket.send(continuePacket(streamId, INITIAL_BUFFER));
+      console.log("WISP_STREAM_CREDIT_SENT", JSON.stringify({ streamId, buffer: INITIAL_BUFFER }));
       void this.pumpTcpToWebSocket(socket, streamId, stream);
     } catch (error) {
       console.error("WISP_CONNECT_FAILED", JSON.stringify({ streamId, host, port, error: String(error) }));
