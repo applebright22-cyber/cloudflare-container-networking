@@ -6,6 +6,8 @@ interface TcpStream {
   socket: Awaited<ReturnType<typeof connect>>;
   writer: WritableStreamDefaultWriter<Uint8Array>;
   reader: ReadableStreamDefaultReader<Uint8Array>;
+  sendCredit: number;
+  creditWaiters: Set<() => void>;
 }
 
 const INITIAL_BUFFER = 64;
@@ -128,6 +130,21 @@ export class WispRelay extends DurableObject {
       }
       return;
     }
+    if (type === 0x03) {
+      // CONTINUE grants the relay permission to send response bytes to the guest.
+      // Treating this control packet as unsupported closed HTTP(S) streams before
+      // the guest could receive package downloads or HTTPS responses.
+      if (streamId === 0) return;
+      if (payload.byteLength < 4) { socket.send(closePacket(streamId, 0x01)); return; }
+      const credit = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(0, true);
+      const stream = this.streams.get(streamId);
+      if (stream && credit > 0) {
+        stream.sendCredit = Math.min(4 * 1024 * 1024, stream.sendCredit + credit);
+        for (const wake of stream.creditWaiters) wake();
+        stream.creditWaiters.clear();
+      }
+      return;
+    }
     if (type === 0x04) {
       if (this.pendingStreams.has(streamId)) this.closedStreams.add(streamId);
       await this.closeStream(streamId);
@@ -168,6 +185,8 @@ export class WispRelay extends DurableObject {
         socket: tcp,
         writer: tcp.writable.getWriter(),
         reader: tcp.readable.getReader(),
+        sendCredit: 0,
+        creditWaiters: new Set(),
       };
       this.streams.set(streamId, stream);
       // v86's WISP adapter waits for per-stream send credit before emitting DATA.
@@ -195,12 +214,22 @@ export class WispRelay extends DurableObject {
       while (socket.readyState === WebSocket.OPEN) {
         const { value, done } = await stream.reader.read();
         if (done) break;
-        if (value?.byteLength) {
-          if (!loggedFirstRead) {
-            console.log("WISP_FIRST_TCP_DATA", JSON.stringify({ streamId, bytes: value.byteLength }));
-            loggedFirstRead = true;
+        if (!value?.byteLength) continue;
+        if (!loggedFirstRead) {
+          console.log("WISP_FIRST_TCP_DATA", JSON.stringify({ streamId, bytes: value.byteLength }));
+          loggedFirstRead = true;
+        }
+        let offset = 0;
+        while (offset < value.byteLength && socket.readyState === WebSocket.OPEN) {
+          if (stream.sendCredit <= 0) {
+            await new Promise<void>((resolve) => stream.creditWaiters.add(resolve));
+            if (socket.readyState !== WebSocket.OPEN) break;
           }
-          socket.send(packet(0x02, streamId, value));
+          const count = Math.min(value.byteLength - offset, stream.sendCredit, 64 * 1024);
+          if (count <= 0) continue;
+          stream.sendCredit -= count;
+          socket.send(packet(0x02, streamId, value.subarray(offset, offset + count)));
+          offset += count;
         }
       }
       if (socket.readyState === WebSocket.OPEN) socket.send(closePacket(streamId, 0x02));
@@ -215,6 +244,8 @@ export class WispRelay extends DurableObject {
     const stream = this.streams.get(streamId);
     if (!stream || expected && stream !== expected) return;
     this.streams.delete(streamId);
+    for (const wake of stream.creditWaiters) wake();
+    stream.creditWaiters.clear();
     try { await stream.writer.close(); } catch { /* already closed */ }
     try { await stream.reader.cancel(); } catch { /* already closed */ }
     try { stream.socket.close(); } catch { /* already closed */ }
