@@ -62,6 +62,13 @@ export default {
       return relay.fetch(request);
     }
     if (path === "/ready") return Response.json({ ready: true, probe: "tinycore-dhcp-openssl-ca" });
+    if (path === "/progress" && request.method === "GET") {
+      const identity = (requestUrl.searchParams.get("identity") ?? "").toLowerCase();
+      if (!/^(acct-[a-f0-9-]{36}|test-[a-z0-9-]{1,32})$/.test(identity)) return Response.json({ error: "invalid_snapshot_identity" }, { status: 400 });
+      const object = await env.VM_SNAPSHOTS.get("runtime-jobs/" + identity + ".json");
+      if (!object) return Response.json({ error: "progress_not_found", identity }, { status: 404 });
+      return new Response(object.body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+    }
     if ((path !== "/run" && path !== "/snapshot-roundtrip") || request.method !== "POST") return Response.json({ error: "method_not_allowed" }, { status: 405 });
     let requestedIdentity = path === "/snapshot-roundtrip" ? "test-v86-roundtrip" : "";
     try {
