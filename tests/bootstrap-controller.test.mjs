@@ -35,7 +35,7 @@ test("VM uses a built ISO asset, a single supported relay configuration, and ret
   assert.ok(html.includes("router_ip:routerIp,vm_ip:virtualIp"));
   assert.ok(!html.includes("relay.widgetry.org"), "do not depend on the shared raw-Ethernet relay for DHCP");
   assert.ok(html.includes("function snapshotUrl(){if(!window.snapshotIdentity)"), "snapshots should remain scoped to the selected account identity");
-  assert.ok(html.includes("while :; do /sbin/udhcpc -f -n -q -i \"$iface\";"), "DHCP should retry instead of abandoning the relay after three discovers");
+  assert.ok(html.includes('while [ "$attempt" -le 8 ]; do echo DHCP_ATTEMPT=$attempt; /sbin/udhcpc -f -n -q -i "$iface";'), "DHCP should retry a bounded number of times and report failure instead of hanging forever");
   assert.ok(html.includes("/sbin/modprobe ne2k-pci"), "try loading the NE2000 PCI driver when no interface is present");
   assert.ok(html.includes("NIC_MISSING"), "report driver diagnostics instead of retrying DHCP forever without a NIC");
   assert.ok(html.includes("DHCP_RETRYING_NO_LEASE"));
