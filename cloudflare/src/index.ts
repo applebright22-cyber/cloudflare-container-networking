@@ -710,7 +710,7 @@ export default {
         return new Response(object.body, { headers });
       }
       if (request.method === "PUT") {
-        let manifest: { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown; adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; dns_passed?: unknown; https_passed?: unknown } | null };
+        let manifest: { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown; adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; ca_certificates_passed?: unknown } | null };
         try { manifest = (await request.json()) as { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown }; }
         catch { return json({ error: "invalid_manifest" }, 400); }
         if (
@@ -722,8 +722,8 @@ export default {
         ) return json({ error: "invalid_manifest" }, 400);
         if (identity === "admin" && (manifest.adminReady !== true || !manifest.checks ||
             manifest.checks.guest_booted !== true || manifest.checks.shell_command_passed !== true ||
-            manifest.checks.dhcp_passed !== true || manifest.checks.dns_passed !== true || manifest.checks.https_passed !== true)) {
-          return json({ error: "admin_baseline_not_ready", detail: "Complete startup and network/certificate checks before saving the Admin baseline." }, 409);
+            manifest.checks.dhcp_passed !== true || manifest.checks.ca_certificates_passed !== true)) {
+          return json({ error: "admin_baseline_not_ready", detail: "Complete guest boot, DHCP, and CA certificate checks before saving the Admin baseline." }, 409);
         }
         const generation = manifest.generation;
         const count = manifest.chunks as number;
