@@ -151,29 +151,20 @@ test("VM snapshot save is attempted after the post-boot test sequence", () => {
   assert.ok(html.includes("Startup complete; server snapshot save did not complete."));
 });
 
-test("VM downloads active diagnostic scripts from same-origin Worker assets", () => {
-  assert.ok(html.includes("${apiUrl}/health"), "HTTPS preflight should test the deployed Worker health endpoint");
-  for (const asset of ["network-test.sh"]) {
-    assert.ok(html.includes("${apiUrl}/runner/tinycore/" + asset), "VM should download " + asset + " from Worker assets");
-  }
-  assert.ok(!html.includes("browser-bootstrap.sh"), "paused Mysterium bootstrap must not be downloaded or launched by VM startup");
-  assert.ok(!html.includes("raw.githubusercontent.com/brightlambre22-sketch/cloudflare-container-networking"));
-  assert.ok(bootstrap.includes("Mysterium bootstrap is temporarily disabled."));
-  assert.ok(!bootstrap.includes("wget "));
-  assert.ok(!bootstrap.includes("/opt/mysterium/myst"));
-});
-
-test("startup keeps DHCP retrying and bounds individual HTTPS probes", () => {
+test("VM startup verifies DHCP and CA certificates without any HTTPS preflight", () => {
   const startupStart = html.indexOf("async function startBootstrap()");
   const accountUiStart = html.indexOf("function beginAccountSession");
   assert.ok(startupStart >= 0 && accountUiStart > startupStart, "startup and account UI sections should be identifiable");
-  assert.ok(!html.slice(startupStart, accountUiStart).includes("setTimeout("), "VM startup must not use JavaScript timeouts");
-  const bootMonitorStart = html.indexOf("function startBootMonitor");
-  assert.ok(bootMonitorStart > startupStart && bootMonitorStart < accountUiStart, "boot monitor should remain separate from the network command controller");
-  assert.ok(!html.slice(startupStart, bootMonitorStart).includes("BOOT_TIMEOUT_MS"), "boot timeout should not be inside the sequential network command controller");
-  assert.ok(html.includes('wget -T 10 -t 1 -S -O /dev/null ${apiUrl}/health'));
-  assert.ok(!/udhcpc[^\n]*\s-t\s*[0-9]/.test(html), "DHCP should not have a retry-count timeout");
-  assert.ok(html.includes('while [ "$tries" -lt 6 ]; do if wget -T 10 -t 1 -S -O /dev/null ${apiUrl}/health'), "HTTPS preflight should retry a bounded number of timed probes");
-  assert.ok(html.includes('while [ "$tries" -lt 6 ]'));
-  assert.ok(html.includes("sleep 2"));
+  const startup = html.slice(startupStart, accountUiStart);
+  assert.ok(startup.includes("DHCP_OK"), "startup must require the account-specific DHCP lease");
+  assert.ok(startup.includes("CA_BUNDLE_PATH=$CA_BUNDLE"), "startup must verify the CA bundle");
+  assert.ok(startup.includes("ca_certificates_passed"), "saved baseline manifest must record CA certificate verification");
+  assert.ok(!startup.includes("HTTPS_PREFLIGHT"), "startup must not run an HTTPS preflight");
+  assert.ok(!startup.includes("${apiUrl}/health"), "startup must not probe the Worker over HTTPS from the guest");
+  assert.ok(!startup.includes("__NETWORK_DOWNLOAD_DONE"), "startup must not download a second network test script");
+  assert.ok(!/udhcpc[^\\n]*\\s-t\\s*[0-9]/.test(html), "DHCP should not use a fixed udhcpc attempt-count option");
+  assert.ok(!html.includes("browser-bootstrap.sh"), "paused Mysterium bootstrap must not be launched by VM startup");
+  assert.ok(bootstrap.includes("Mysterium bootstrap is temporarily disabled."));
+  assert.ok(!bootstrap.includes("wget "));
+  assert.ok(!bootstrap.includes("/opt/mysterium/myst"));
 });
