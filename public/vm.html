@@ -192,7 +192,7 @@ await sendVmCommand(command+'\n');
 let lastChunk=0; for(;;){
 const t=screenText(),at=t.lastIndexOf(marker);
 const chunkMatches=Array.from(t.matchAll(/__NETWORK_LOG_CHUNK__:(\d+)/g));
-if(chunkMatches.length){const chunkStart=Number(chunkMatches[chunkMatches.length-1][1]);if(chunkStart>lastChunk){report('----- captured diagnostic output, log lines starting at '+chunkStart+' -----\n'+t+'\n----- end captured chunk -----\n');lastChunk=chunkStart;}}
+if(chunkMatches.length){const chunkStart=Number(chunkMatches[chunkMatches.length-1][1]);if(chunkStart>lastChunk){report('----- captured diagnostic output, log lines starting at '+chunkStart+' -----\n'+t+'\n----- end captured chunk -----\n');lastChunk=chunkStart;await sendVmCommand('\n');}}
 if(t.split(marker).length-1>before&&shellPrompt(t.slice(at+marker.length))){
 report('----- final screen snapshot -----\n'+t+'\n----- end final screen snapshot -----\n');
 break;
