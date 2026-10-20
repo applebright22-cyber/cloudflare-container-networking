@@ -1,0 +1,43 @@
+name: Install v86 x64 release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "public/v86/**"
+
+permissions:
+  contents: write
+
+jobs:
+  install-v86-x64:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Backup current v86 binaries
+        run: |
+          mkdir -p public/v86/backup-pre-x64
+          if [ -f public/v86/libv86.js ]; then cp public/v86/libv86.js public/v86/backup-pre-x64/libv86.js; fi
+          if [ -f public/v86/v86.wasm ]; then cp public/v86/v86.wasm public/v86/backup-pre-x64/v86.wasm; fi
+
+      - name: Download TheEvalon v86_x64 release
+        run: |
+          curl -fL --retry 3 -o public/v86/libv86.js https://github.com/TheEvalon/v86_x64/releases/download/latest/libv86.js
+          curl -fL --retry 3 -o public/v86/v86.wasm https://github.com/TheEvalon/v86_x64/releases/download/latest/v86.wasm
+
+      - name: Verify downloaded artifacts
+        run: |
+          test -s public/v86/libv86.js
+          test -s public/v86/v86.wasm
+          sha256sum public/v86/libv86.js public/v86/v86.wasm
+
+      - name: Commit x64 v86 binaries
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/v86/libv86.js public/v86/v86.wasm public/v86/backup-pre-x64
+          git commit -m "Replace v86 runtime with TheEvalon x64 build" || exit 0
+          git push

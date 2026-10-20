@@ -1,0 +1,33 @@
+name = "headless-v86-snapshot-roundtrip"
+main = "src/headless-v86-snapshot-roundtrip-worker.ts"
+compatibility_date = "2026-10-07"
+workers_dev = false
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["src/generated/v86.wasm"]
+fallthrough = true
+
+[assets]
+directory = "../public"
+binding = "ASSETS"
+
+[[r2_buckets]]
+binding = "VM_SNAPSHOTS"
+bucket_name = "cloudflare-container-vm-snapshots"
+
+[[durable_objects.bindings]]
+name = "ACCOUNT_REGISTRY"
+class_name = "AccountRegistry"
+
+[exports.AccountRegistry]
+type = "durable-object"
+storage = "sqlite"
+
+[[durable_objects.bindings]]
+name = "WISP_RELAY"
+class_name = "WispRelay"
+
+[exports.WispRelay]
+type = "durable-object"
+storage = "sqlite"

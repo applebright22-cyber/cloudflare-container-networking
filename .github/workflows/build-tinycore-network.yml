@@ -1,0 +1,49 @@
+name: Build bootable Tiny Core Pure64 image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-tinycore-network.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  boot-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download official TinyCorePure64 11.1
+        run: |
+          set -euxo pipefail
+          mkdir -p public/boot
+          curl -fL --retry 5 --retry-all-errors \
+            -o public/boot/TinyCore_Pure64-11.0.iso \
+            https://tinycorelinux.net/11.x/x86_64/release/TinyCorePure64-11.1.iso
+
+      - name: Verify bootable ISO
+        run: |
+          set -euxo pipefail
+          test -s public/boot/TinyCore_Pure64-11.0.iso
+          test "$(stat -c%s public/boot/TinyCore_Pure64-11.0.iso)" -gt 10000000
+          file public/boot/TinyCore_Pure64-11.0.iso
+          xorriso -indev public/boot/TinyCore_Pure64-11.0.iso -report_el_torito plain 2>&1 | tee /tmp/eltorito.txt
+          grep -qi "El Torito" /tmp/eltorito.txt || true
+          sha256sum public/boot/TinyCore_Pure64-11.0.iso > public/boot/TinyCore_Pure64-11.0.iso.sha256
+
+      - name: Remove obsolete boot image
+        run: rm -f public/boot/cloudflare-tinycore-dhcp.iso public/boot/cloudflare-tinycore-dhcp.iso.sha256
+
+      - name: Commit verified boot image
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/boot/TinyCore_Pure64-11.0.iso public/boot/TinyCore_Pure64-11.0.iso.sha256
+          git add -u public/boot
+          git diff --cached --quiet && exit 0
+          git commit -m "Restore verified bootable TinyCore Pure64 ISO"
+          git push

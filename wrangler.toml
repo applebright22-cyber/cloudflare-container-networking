@@ -1,0 +1,39 @@
+# Root deployment shim for environments that run "npx wrangler deploy" from the repository root.
+# The canonical Worker project remains under cloudflare/.
+
+name = "cloudflare-container-networking"
+main = "cloudflare/src/index.ts"
+compatibility_date = "2026-10-07"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "VM_SNAPSHOTS"
+bucket_name = "cloudflare-container-vm-snapshots"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "TUNNEL_HUB"
+class_name = "TunnelHub"
+
+[[durable_objects.bindings]]
+name = "NODE_REGISTRY"
+class_name = "NodeRegistry"
+
+[[durable_objects.bindings]]
+name = "NODE_RUNTIME"
+class_name = "NodeRuntime"
+
+[exports.TunnelHub]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.NodeRegistry]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.NodeRuntime]
+type = "durable-object"
+storage = "sqlite"

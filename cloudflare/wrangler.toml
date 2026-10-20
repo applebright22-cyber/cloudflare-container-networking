@@ -1,0 +1,83 @@
+name = "cloudflare-container-networking"
+main = "src/index.ts"
+compatibility_date = "2026-10-07"
+workers_dev = true
+
+# Do not set an explicit CPU limit here: Cloudflare rejects configured CPU limits
+# on the Free plan (API error 100328). Keep the account's plan-supported default.
+# Generate the v86 bundle and compiled WASM before Wrangler resolves Worker imports.
+# Required when deploying directly with `wrangler deploy` from Cloudflare's build environment.
+[build]
+command = "npm install --no-audit --no-fund && npm run build:headless-v86"
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["src/generated/v86.wasm"]
+fallthrough = true
+
+[assets]
+directory = "../public"
+binding = "ASSETS"
+
+[[r2_buckets]]
+binding = "VM_SNAPSHOTS"
+bucket_name = "cloudflare-container-vm-snapshots"
+
+[[durable_objects.bindings]]
+name = "TUNNEL_HUB"
+class_name = "TunnelHub"
+
+[[durable_objects.bindings]]
+name = "NODE_REGISTRY"
+class_name = "NodeRegistry"
+
+[[durable_objects.bindings]]
+name = "NODE_RUNTIME"
+class_name = "NodeRuntime"
+
+[[durable_objects.bindings]]
+name = "VM_EXECUTION"
+class_name = "VmExecution"
+
+[[durable_objects.bindings]]
+name = "ACCOUNT_REGISTRY"
+class_name = "AccountRegistry"
+
+[exports.TunnelHub]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.NodeRegistry]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.NodeRuntime]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.VmExecution]
+type = "durable-object"
+storage = "sqlite"
+
+[vars]
+VM_BASELINE_ID = "admin"
+
+[exports.AccountRegistry]
+type = "durable-object"
+storage = "sqlite"
+
+[[durable_objects.bindings]]
+name = "ACCOUNT_PROVISIONER"
+class_name = "AccountProvisioner"
+
+[exports.AccountProvisioner]
+type = "durable-object"
+storage = "sqlite"
+
+[[durable_objects.bindings]]
+name = "WISP_RELAY"
+class_name = "WispRelay"
+
+[exports.WispRelay]
+type = "durable-object"
+storage = "sqlite"

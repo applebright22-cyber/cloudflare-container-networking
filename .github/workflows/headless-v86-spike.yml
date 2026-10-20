@@ -1,0 +1,77 @@
+name: Worker headless v86 spike
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/headless-v86-spike.yml"
+  push:
+    branches: [main, experiment/worker-headless-v86, experiment/worker-compiled-v86-wasm]
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/headless-v86-spike.yml"
+
+jobs:
+  loader-tests-and-worker-bundle:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Prepare static Worker WASM module
+        run: npm run prepare:worker-wasm
+      - name: Test Worker asset loader
+        run: npm run test:headless
+      - name: Build upstream v86 candidate bundle
+        run: npm run build:headless-v86
+      - name: Upload candidate bundle for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-v86-candidate-bundle
+          path: cloudflare/dist/headless-v86-bundle.js
+          if-no-files-found: error
+          retention-days: 7
+      - name: Bundle Worker without deploying (Free-compatible config)
+        run: npm run check
+      - name: Smoke-test v86 and static WASM module inside local Workerd
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bound the server lifetime so a Wrangler/Workerd startup hang cannot stall CI.
+          timeout --signal=TERM --kill-after=5s 45s npx wrangler dev --local --config wrangler.headless-v86-smoke.toml --ip 127.0.0.1 --port 8788 > /tmp/headless-v86-workerd.log 2>&1 &
+          worker_pid=$!
+          cleanup() {
+            kill "$worker_pid" 2>/dev/null || true
+            wait "$worker_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8788/ > /tmp/headless-v86-workerd.json 2>/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$worker_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Workerd smoke test did not become ready within 30 seconds. Wrangler/Workerd log follows:"
+            cat /tmp/headless-v86-workerd.log
+            exit 1
+          fi
+          cat /tmp/headless-v86-workerd.json
+          node --input-type=module -e 'import fs from "node:fs"; const r = JSON.parse(fs.readFileSync("/tmp/headless-v86-workerd.json", "utf8")); if (r.probe !== "headless-v86-emulator-initialization" || r.runtime !== "workerd" || r.wasm_module_loaded !== true || r.wasm_import_count < 1 || r.wasm_export_count < 1 || r.static_module_instantiated !== true || r.emulator_initialized !== true) { console.error("Unexpected or failed Workerd v86 emulator initialization probe", r); process.exit(1); }'
+          cleanup
+          trap - EXIT

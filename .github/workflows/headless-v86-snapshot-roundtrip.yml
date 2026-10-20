@@ -1,0 +1,81 @@
+name: Workerd guest snapshot round-trip
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts"
+      - "cloudflare/src/account-registry.ts"
+      - "cloudflare/src/virtual-network.ts"
+      - "cloudflare/src/wisp-relay.ts"
+      - "cloudflare/src/headless-snapshot-store.ts"
+      - "cloudflare/src/headless-v86-wasm.ts"
+      - "cloudflare/wrangler.headless-v86-roundtrip.toml"
+      - "cloudflare/package.json"
+      - "runner/tinycore/**"
+      - "public/runner/tinycore/**"
+      - "public/boot/**"
+      - "public/vm.html"
+      - "tests/bootstrap-controller.test.mjs"
+      - ".github/workflows/headless-v86-snapshot-roundtrip.yml"
+
+jobs:
+  guest-snapshot-roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Run storage, loader, and browser GUI regression tests
+        run: npm run test:headless && node --test ../tests/bootstrap-controller.test.mjs
+      - name: Build the Worker-compatible v86 bundle
+        run: npm run build:headless-v86
+      - name: Compile the snapshot round-trip Worker without deploying
+        run: npx wrangler deploy --dry-run --config wrangler.headless-v86-roundtrip.toml
+      - name: Start local Workerd snapshot round-trip Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          setsid timeout --signal=TERM --kill-after=15s 4200s npx wrangler dev --local --config wrangler.headless-v86-roundtrip.toml --ip 127.0.0.1 --port 8789 > /tmp/v86-roundtrip-workerd.log 2>&1 &
+          worker_pid=$!
+          cleanup() {
+            kill -- "-$worker_pid" 2>/dev/null || kill "$worker_pid" 2>/dev/null || true
+            wait "$worker_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          ready=0
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail --max-time 2 http://127.0.0.1:8789/ready > /tmp/v86-roundtrip-ready.json 2>/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$worker_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Local Workerd did not become ready; logs follow:"
+            cat /tmp/v86-roundtrip-workerd.log
+            exit 1
+          fi
+          cat /tmp/v86-roundtrip-ready.json
+          set +e
+          curl --silent --show-error --fail-with-body --max-time 4000 -X POST http://127.0.0.1:8789/snapshot-roundtrip -o /tmp/v86-roundtrip-result.json
+          curl_rc=$?
+          set -e
+          cat /tmp/v86-roundtrip-result.json 2>/dev/null || true
+          if [ "$curl_rc" -ne 0 ]; then
+            echo "Guest round-trip request failed (curl exit $curl_rc); Workerd log follows:"
+            cat /tmp/v86-roundtrip-workerd.log
+            exit "$curl_rc"
+          fi
+          node --input-type=module -e 'import fs from "node:fs"; const r = JSON.parse(fs.readFileSync("/tmp/v86-roundtrip-result.json", "utf8")); const s = r.snapshot_roundtrip ?? {}; const ok = r.probe === "tinycore-snapshot-save-readback" && r.runtime === "workerd" && r.passed === true && r.guest_booted === true && r.guest_checks_passed === true && s.saved === true && s.readback === true && s.readback_digest_verified === true && s.restore_deferred_to_dashboard === true; if (!ok) { console.error("Guest snapshot save/read-back acceptance failed", r); process.exit(1); } console.log("Guest boot, network checks, snapshot save, and R2 digest-verified read-back passed; browser GUI restore remains a separate acceptance gate.");'
+          cleanup
+          trap - EXIT

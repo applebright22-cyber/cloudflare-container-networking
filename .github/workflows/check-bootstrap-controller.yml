@@ -1,0 +1,35 @@
+name: Check v86 bootstrap controller
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "public/vm.html"
+      - "cloudflare/src/index.ts"
+      - "cloudflare/src/account-registry.ts"
+      - "tests/bootstrap-controller.test.mjs"
+      - "tests/account-session.test.mjs"
+      - ".github/workflows/check-bootstrap-controller.yml"
+  pull_request:
+    paths:
+      - "public/vm.html"
+      - "cloudflare/src/index.ts"
+      - "cloudflare/src/account-registry.ts"
+      - "tests/bootstrap-controller.test.mjs"
+      - "tests/account-session.test.mjs"
+      - ".github/workflows/check-bootstrap-controller.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-controller:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate bootstrap controller
+        run: node --test tests/*.test.mjs
