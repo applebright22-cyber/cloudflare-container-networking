@@ -170,11 +170,11 @@ const diagnosticCommand=[
   `sudo -n sh -c 'set +e; iface=eth0; mac="${window.snapshotVirtualMac||'02:ff:ff:ff:ff:ff'}"; /sbin/killall udhcpc 2>/dev/null; /sbin/ifconfig "$iface" down 2>/dev/null; /sbin/ifconfig "$iface" hw ether "$mac" || { echo MAC_ASSIGN_FAILED; exit 1; }; /sbin/ifconfig "$iface" up || exit 1; attempt=1; while [ "$attempt" -le 8 ]; do echo DHCP_ATTEMPT=$attempt; /sbin/udhcpc -f -n -q -i "$iface"; rc=$?; echo DHCP_CLIENT_RC=$rc; /sbin/ifconfig "$iface"; /sbin/route -n; if /sbin/ifconfig "$iface" | grep -Eq "inet (addr:)?[0-9]" && /sbin/route -n | grep -q "0.0.0.0"; then echo DHCP_RECOVERY_OK; exit 0; fi; echo DHCP_RETRYING_NO_LEASE; if [ "$attempt" -lt 8 ]; then /sbin/ifconfig "$iface" down 2>/dev/null; /sbin/ifconfig "$iface" hw ether "$mac" 2>/dev/null; /sbin/ifconfig "$iface" up; sleep 3; fi; attempt=$((attempt+1)); done; echo DHCP_RECOVERY_TIMEOUT'; echo DHCP_RECOVERY_RC=$?`,
   'echo "--- network interface counters ---"; /sbin/ifconfig -a 2>&1; echo "--- route table ---"; /sbin/route -n 2>&1; echo "--- DNS configuration ---"; cat /etc/resolv.conf 2>&1',
   'if ! /sbin/route -n | grep -q "0.0.0.0"; then echo NO_DEFAULT_GATEWAY; else echo DEFAULT_GATEWAY_PRESENT; fi',
-  'if /sbin/route -n | grep -q "0.0.0.0"; then echo "--- DNS lookup ---"; if command -v nslookup >/dev/null 2>&1; then nslookup raw.githubusercontent.com; echo DNS_TEST_RC=$?; else wget -T 10 -t 1 -q -O /dev/null https://raw.githubusercontent.com/; echo DNS_TEST_RC=$?; fi',
-  'echo "--- outbound HTTPS: Worker health ---"; wget -T 15 -t 1 -S -O /dev/null ${apiUrl}/health 2>&1; echo WORKER_HTTPS_RC=$?',
+  'if /sbin/route -n | grep -q "0.0.0.0"; then echo "--- DNS lookup ---"; if command -v nslookup >/dev/null 2>&1; then nslookup raw.githubusercontent.com; echo DNS_TEST_RC=$?; else wget -T 10 -t 1 -q -O /dev/null https://raw.githubusercontent.com/; echo DNS_TEST_RC=$?; fi; fi',
+  `echo "--- outbound HTTPS: Worker health ---"; wget -T 15 -t 1 -S -O /dev/null ${apiUrl}/health 2>&1; echo WORKER_HTTPS_RC=$?`,
   'echo "--- outbound HTTPS: bootstrap host ---"; wget -T 15 -t 1 -S -O /dev/null https://raw.githubusercontent.com/ 2>&1; echo GITHUB_HTTPS_RC=$?',
-  'if /sbin/route -n | grep -q "0.0.0.0" && wget -T 15 -t 1 -q -O /dev/null ${apiUrl}/health; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi',
-  'wget -T 15 -t 2 -q -O /tmp/network-test.sh ${apiUrl}/runner/tinycore/network-test.sh; echo NETWORK_TEST_DOWNLOAD_RC=$?',
+  `if /sbin/route -n | grep -q "0.0.0.0" && wget -T 15 -t 1 -q -O /dev/null ${apiUrl}/health; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi`,
+  `wget -T 15 -t 2 -q -O /tmp/network-test.sh ${apiUrl}/runner/tinycore/network-test.sh; echo NETWORK_TEST_DOWNLOAD_RC=$?`,
   'if [ -s /tmp/network-test.sh ]; then sh /tmp/network-test.sh; echo NETWORK_TEST_SCRIPT_RC=$?; else echo NETWORK_TEST_SCRIPT_RC=1; fi'
 ].join('\n');
 
