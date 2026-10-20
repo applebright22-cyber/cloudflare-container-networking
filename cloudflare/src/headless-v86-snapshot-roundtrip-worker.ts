@@ -454,6 +454,7 @@ echo HTTPS_PREFLIGHT_RC=$rc
           if (!stages.https_preflight.passed) stages.https_preflight.error = "guest_dns_or_https_preflight_failed";
         }
       }
+    }
 
     const tlsPrerequisitesPassed = baselineSnapshot
       ? stages.baseline_tls_verify?.passed === true
