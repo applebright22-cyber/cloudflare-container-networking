@@ -352,7 +352,7 @@ fi
 /sbin/ifconfig "$iface" up || exit 1
 tries=0
 while [ "$tries" -lt 30 ]; do
-  /sbin/udhcpc -f -n -q -i "$iface"
+  /sbin/udhcpc -f -n -q -t 3 -T 3 -i "$iface"
   actual_ip=$(/sbin/ifconfig "$iface" | awk '/inet addr:/{sub(/.*inet addr:/,"");sub(/ .*/,"");print;exit} /inet /{for(i=1;i<=NF;i++)if($i=="inet"){print $(i+1);exit}}')
   actual_gateway=$(/sbin/route -n | awk '$1=="0.0.0.0"{print $2;exit}')
   echo DHCP_ACTUAL_IP=$actual_ip
