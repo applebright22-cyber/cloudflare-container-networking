@@ -332,7 +332,7 @@ await sendVmCommand(cmd+'\n');
 if(marker){
 (function wait(){
 const t=terminal(),markerAt=t.lastIndexOf(marker);
-if(markerCount(t,marker)>markerCountBefore&&shellPrompt(t.slice(markerAt+marker.length))){
+if(markerCount(t,marker)>markerCountBefore){
 report('----- bootstrap screen snapshot -----\n'+terminal()+'\n----- end bootstrap screen snapshot -----\n');
 if(marker==='DHCP_DONE'&&!terminal().includes('DHCP_OK')){report('*** DHCP did not install a usable IPv4 address and default route. No guessed gateway will be added; stopping before package/bootstrap downloads. ***\\n');statusText('DHCP/default-route check failed; diagnostics captured.');return} if(marker==='__OPENSSL_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** OpenSSL install did not produce a working binary; stopping before HTTPS. See /tmp/openssl-install.log. ***\\n');statusText('OpenSSL install failed; diagnostics captured.');return} if(marker==='__CA_CERTIFICATES_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** CA certificate file is missing; stopping before HTTPS. See /tmp/ca-certificates-install.log. ***\\n');statusText('CA install failed; diagnostics captured.');return} next();return
 }
