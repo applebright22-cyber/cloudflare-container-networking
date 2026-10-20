@@ -21,7 +21,7 @@ async function readAdminBaseline(bucket: R2Bucket): Promise<BaselineSnapshot | n
   if (!object) return null;
   const manifest = await object.json<{
     version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown;
-    adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; dns_passed?: unknown; https_passed?: unknown };
+    adminReady?: unknown; checks?: { guest_booted?: unknown; shell_command_passed?: unknown; dhcp_passed?: unknown; ca_certificates_passed?: unknown };
   }>();
   if (manifest.version !== 1 || typeof manifest.generation !== "string" ||
       !/^[a-z0-9-]{1,40}$/.test(manifest.generation) ||
@@ -32,8 +32,7 @@ async function readAdminBaseline(bucket: R2Bucket): Promise<BaselineSnapshot | n
   }
   const checks = manifest.checks;
   if (manifest.adminReady !== true || !checks || checks.guest_booted !== true ||
-      checks.shell_command_passed !== true || checks.dhcp_passed !== true ||
-      checks.dns_passed !== true || checks.https_passed !== true) {
+      checks.shell_command_passed !== true || checks.dhcp_passed !== true || checks.ca_certificates_passed !== true) {
     throw new Error("admin_baseline_not_ready");
   }
   const state = new Uint8Array(manifest.byteLength as number);
