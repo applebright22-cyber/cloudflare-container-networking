@@ -74,7 +74,7 @@ const response=await fetch(snapshotUrl()+'/chunks/'+generation+'/'+part,{method:
 if(!response.ok)throw new Error('snapshot part '+(part+1)+' failed with HTTP '+response.status);
 }
 const savedAt=new Date().toISOString();
-const response=await fetch(snapshotUrl(),{method:'PUT',headers:snapshotHeaders('application/json'),body:JSON.stringify({version:1,generation,chunks,byteLength:state.byteLength,savedAt,adminReady:window.snapshotIdentity==='admin'&&bootComplete===true,checks:bootComplete===true?{guest_booted:true,shell_command_passed:true,dhcp_passed:screenText().includes('DHCP_OK'),ca_certificates_passed:screenText().includes('__CA_CERTIFICATES_INSTALL_DONE:0')&&screenText().includes('CA_BUNDLE_PATH=')}:null})});
+const response=await fetch(snapshotUrl(),{method:'PUT',headers:snapshotHeaders('application/json'),body:JSON.stringify({version:1,generation,chunks,byteLength:state.byteLength,savedAt,adminReady:window.snapshotIdentity==='admin'&&bootComplete===true,checks:bootComplete===true?{guest_booted:true,shell_command_passed:true,dhcp_passed:(results.value+'\\n'+screenText()).includes('DHCP_OK'),ca_certificates_passed:(results.value+'\\n'+screenText()).includes('__CA_CERTIFICATES_INSTALL_DONE:0')&&(results.value+'\\n'+screenText()).includes('CA_BUNDLE_PATH=')}:null})});
 if(!response.ok)throw new Error('snapshot manifest failed with HTTP '+response.status);
 const result=await response.json();
 if(window.snapshotNeedsInitialSave===true&&String(window.snapshotIdentity||'').startsWith('acct-')){window.snapshotNeedsInitialSave=false;try{sessionStorage.removeItem('vm-initial-snapshot-pending')}catch(e){}}
