@@ -171,10 +171,10 @@ const diagnosticCommand=[
   'echo "--- network interface counters ---"; /sbin/ifconfig -a 2>&1; echo "--- route table ---"; /sbin/route -n 2>&1; echo "--- DNS configuration ---"; cat /etc/resolv.conf 2>&1',
   'if ! /sbin/route -n | grep -q "0.0.0.0"; then echo NO_DEFAULT_GATEWAY; else echo DEFAULT_GATEWAY_PRESENT; fi',
   'if /sbin/route -n | grep -q "0.0.0.0"; then echo "--- DNS lookup ---"; if command -v nslookup >/dev/null 2>&1; then nslookup raw.githubusercontent.com; echo DNS_TEST_RC=$?; else wget -T 10 -t 1 -q -O /dev/null https://raw.githubusercontent.com/; echo DNS_TEST_RC=$?; fi; fi',
-  `echo "--- outbound HTTPS: Worker health ---"; wget -T 15 -t 1 -S -O /dev/null ${apiUrl}/health 2>&1; echo WORKER_HTTPS_RC=$?`,
+  'echo "--- outbound HTTPS: example.com ---"; wget -T 15 -t 1 -S -O /dev/null https://example.com/ 2>&1; echo EXAMPLE_HTTPS_RC=$?',
   'echo "--- outbound HTTPS: bootstrap host ---"; wget -T 15 -t 1 -S -O /dev/null https://raw.githubusercontent.com/ 2>&1; echo GITHUB_HTTPS_RC=$?',
-  `if /sbin/route -n | grep -q "0.0.0.0" && wget -T 15 -t 1 -q -O /dev/null ${apiUrl}/health; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi`,
-  `wget -T 15 -t 2 -q -O /tmp/network-test.sh ${apiUrl}/runner/tinycore/network-test.sh; echo NETWORK_TEST_DOWNLOAD_RC=$?`,
+  'if /sbin/route -n | grep -q "0.0.0.0" && wget -T 15 -t 1 -q -O /dev/null https://example.com/ && wget -T 15 -t 1 -q -O /dev/null https://raw.githubusercontent.com/applebright22-cyber/cloudflare-container-networking/main/README.md; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi',
+  'wget -T 15 -t 2 -q -O /tmp/network-test.sh https://raw.githubusercontent.com/applebright22-cyber/cloudflare-container-networking/main/public/runner/tinycore/network-test.sh; echo NETWORK_TEST_DOWNLOAD_RC=$?',
   'if [ -s /tmp/network-test.sh ]; then sh /tmp/network-test.sh; echo NETWORK_TEST_SCRIPT_RC=$?; else echo NETWORK_TEST_SCRIPT_RC=1; fi'
 ].join('\n');
 
@@ -184,21 +184,23 @@ if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the 
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function'){statusText('VM keyboard API unavailable.');return}
 manualCommandRunning=true;
 const marker='__MANUAL_DIAGNOSTIC_DONE__:',before=screenText().split(marker).length-1;
-const command=diagnosticCommand+'; rc=$?; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
-report('\n\n===== '+label+' =====\n'+command+'\n');
+const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; lines=$(wc -l < /tmp/network-diagnostic.log); start=1; while [ "$start" -le "$lines" ]; do end=$((start+4)); sed -n "$start,$end"p /tmp/network-diagnostic.log; echo "__NETWORK_LOG_CHUNK__:$start"; sleep 0.4; start=$((end+1)); done; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
+report('\n\n===== '+label+' =====\nFull output is saved to /tmp/network-diagnostic.log and emitted in numbered chunks.\n'+command+'\n');
 (async()=>{
 try{
 await sendVmCommand(command+'\n');
-for(;;){
+let lastChunk=0; for(;;){
 const t=screenText(),at=t.lastIndexOf(marker);
+const chunkMatches=Array.from(t.matchAll(/__NETWORK_LOG_CHUNK__:(\d+)/g));
+if(chunkMatches.length){const chunkStart=Number(chunkMatches[chunkMatches.length-1][1]);if(chunkStart>lastChunk){report('----- captured diagnostic output, log lines starting at '+chunkStart+' -----\n'+t+'\n----- end captured chunk -----\n');lastChunk=chunkStart;}}
 if(t.split(marker).length-1>before&&shellPrompt(t.slice(at+marker.length))){
-report('----- screen snapshot -----\n'+t+'\n----- end snapshot -----\n');
+report('----- final screen snapshot -----\n'+t+'\n----- end final screen snapshot -----\n');
 break;
 }
 await new Promise(resolve=>requestAnimationFrame(resolve));
 }
 }catch(e){report('\n*** DIAGNOSTIC FAILED: '+e.message+' ***\n')}
-finally{manualCommandRunning=false;if(saveAfter&&bootComplete){const tail=screenText().slice(-12000);const healthy=/DHCP_RECOVERY_RC=0/.test(tail)&&/DHCP_RECOVERY_OK/.test(tail)&&/DEFAULT_GATEWAY_PRESENT/.test(tail)&&/NETWORK_RECOVERY_PASS/.test(tail)&&/WORKER_HTTPS_RC=0/.test(tail)&&/NETWORK_TEST_DOWNLOAD_RC=0/.test(tail)&&/NETWORK_TEST_SCRIPT_RC=0/.test(tail);if(!healthy){stateText('Network recovery/test failed; existing server snapshot preserved and autosave remains paused.');statusText('Restored VM is online only if DNS/HTTPS checks pass. The failed network test was not saved over the last known snapshot.');report('\\n*** SNAPSHOT PROTECTION: network recovery did not pass; refusing to overwrite the saved snapshot. See DNS, DHCP and network-test markers above. ***\\n');return}const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('Network recovery and test passed; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}}
+finally{manualCommandRunning=false;if(saveAfter&&bootComplete){const tail=results.value.slice(-40000);const healthy=/DHCP_RECOVERY_RC=0/.test(tail)&&/DHCP_RECOVERY_OK/.test(tail)&&/DEFAULT_GATEWAY_PRESENT/.test(tail)&&/NETWORK_RECOVERY_PASS/.test(tail)&&/EXAMPLE_HTTPS_RC=0/.test(tail)&&/GITHUB_HTTPS_RC=0/.test(tail)&&/NETWORK_TEST_DOWNLOAD_RC=0/.test(tail)&&/NETWORK_TEST_SCRIPT_RC=0/.test(tail);if(!healthy){stateText('Network recovery/test failed; existing server snapshot preserved and autosave remains paused.');statusText('Restored VM is online only if DNS/HTTPS checks pass. The failed network test was not saved over the last known snapshot.');report('\\n*** SNAPSHOT PROTECTION: network recovery did not pass; refusing to overwrite the saved snapshot. See DNS, DHCP and network-test markers above. ***\\n');return}const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('Network recovery and test passed; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}}
 })();
 }
 document.getElementById('run-network-test').onclick=function(){if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the shell; refusing to overlap commands.');return}runDiagnostic('MANUAL NETWORK TEST');statusText('Network test running; waiting for the shell to finish.')};
