@@ -58,7 +58,10 @@ export class WispRelay extends DurableObject {
   private streams = new Map<number, TcpStream>();
   private clients = new Set<WebSocket>();
   private pendingStreams = new Set<number>();
+  private pendingData = new Map<number, Uint8Array[]>();
+  private pendingDataBytes = new Map<number, number>();
   private closedStreams = new Set<number>();
+  private loggedGuestData = new Set<number>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -116,10 +119,36 @@ export class WispRelay extends DurableObject {
     if (type === 0x02) {
       const stream = this.streams.get(streamId);
       if (!stream) {
+        // WISP clients may send DATA immediately after CONNECT, before the outbound
+        // TCP socket finishes opening. Buffer bounded early payloads instead of
+        // rejecting the stream during that race.
+        if (this.pendingStreams.has(streamId)) {
+          const queuedBytes = this.pendingDataBytes.get(streamId) ?? 0;
+          if (queuedBytes + payload.byteLength > 1024 * 1024) {
+            this.pendingData.delete(streamId);
+            this.pendingDataBytes.delete(streamId);
+            this.closedStreams.add(streamId);
+            socket.send(closePacket(streamId, 0x41));
+            return;
+          }
+          if (!this.loggedGuestData.has(streamId)) {
+            console.log("WISP_EARLY_GUEST_DATA", JSON.stringify({ streamId, bytes: payload.byteLength }));
+            this.loggedGuestData.add(streamId);
+          }
+          const queue = this.pendingData.get(streamId) ?? [];
+          queue.push(payload.slice());
+          this.pendingData.set(streamId, queue);
+          this.pendingDataBytes.set(streamId, queuedBytes + payload.byteLength);
+          return;
+        }
         socket.send(closePacket(streamId, 0x41));
         return;
       }
       try {
+        if (!this.loggedGuestData.has(streamId)) {
+          console.log("WISP_FIRST_GUEST_DATA", JSON.stringify({ streamId, bytes: payload.byteLength, prefix: new TextDecoder().decode(payload.subarray(0, 80)) }));
+          this.loggedGuestData.add(streamId);
+        }
         await stream.writer.write(payload);
         socket.send(continuePacket(streamId, INITIAL_BUFFER));
       } catch {
@@ -128,8 +157,19 @@ export class WispRelay extends DurableObject {
       }
       return;
     }
+    if (type === 0x03) {
+      // WISP v1 flow control is server-to-client only: the relay grants the guest
+      // permission to send DATA. TCP response delivery relies on WebSocket backpressure
+      // and must not wait for a client CONTINUE packet.
+      console.warn("WISP_UNEXPECTED_CLIENT_CONTINUE", JSON.stringify({ streamId, bytes: payload.byteLength }));
+      return;
+    }
     if (type === 0x04) {
-      if (this.pendingStreams.has(streamId)) this.closedStreams.add(streamId);
+      if (this.pendingStreams.has(streamId)) {
+        this.closedStreams.add(streamId);
+        this.pendingData.delete(streamId);
+        this.pendingDataBytes.delete(streamId);
+      }
       await this.closeStream(streamId);
       return;
     }
@@ -161,6 +201,8 @@ export class WispRelay extends DurableObject {
       this.pendingStreams.delete(streamId);
       if (this.closedStreams.has(streamId) || socket.readyState !== WebSocket.OPEN) {
         this.closedStreams.delete(streamId);
+        this.pendingData.delete(streamId);
+        this.pendingDataBytes.delete(streamId);
         try { tcp.close(); } catch { /* already closed */ }
         return;
       }
@@ -170,11 +212,29 @@ export class WispRelay extends DurableObject {
         reader: tcp.readable.getReader(),
       };
       this.streams.set(streamId, stream);
+      const queuedData = this.pendingData.get(streamId) ?? [];
+      this.pendingData.delete(streamId);
+      this.pendingDataBytes.delete(streamId);
+      for (const queued of queuedData) {
+        await stream.writer.write(queued);
+        socket.send(continuePacket(streamId, INITIAL_BUFFER));
+      }
+      // v86's WISP adapter waits for per-stream send credit before emitting DATA.
+      // Defer the initial credit briefly so the adapter can finish registering the
+      // stream after its CONNECT packet; sending it synchronously can race that setup.
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      if (socket.readyState !== WebSocket.OPEN || !this.streams.has(streamId)) {
+        await this.closeStream(streamId, stream);
+        return;
+      }
       socket.send(continuePacket(streamId, INITIAL_BUFFER));
+      console.log("WISP_STREAM_CREDIT_SENT", JSON.stringify({ streamId, buffer: INITIAL_BUFFER }));
       void this.pumpTcpToWebSocket(socket, streamId, stream);
     } catch (error) {
       console.error("WISP_CONNECT_FAILED", JSON.stringify({ streamId, host, port, error: String(error) }));
       this.pendingStreams.delete(streamId);
+      this.pendingData.delete(streamId);
+      this.pendingDataBytes.delete(streamId);
       this.closedStreams.delete(streamId);
       socket.send(closePacket(streamId, 0x42));
     }
@@ -191,7 +251,11 @@ export class WispRelay extends DurableObject {
             console.log("WISP_FIRST_TCP_DATA", JSON.stringify({ streamId, bytes: value.byteLength }));
             loggedFirstRead = true;
           }
-          socket.send(packet(0x02, streamId, value));
+          // WISP v1 applies CONTINUE credit to guest->relay DATA only. Do not gate
+          // relay->guest response bytes on client CONTINUE packets.
+          for (let offset = 0; offset < value.byteLength && socket.readyState === WebSocket.OPEN; offset += 64 * 1024) {
+            socket.send(packet(0x02, streamId, value.subarray(offset, Math.min(offset + 64 * 1024, value.byteLength))));
+          }
         }
       }
       if (socket.readyState === WebSocket.OPEN) socket.send(closePacket(streamId, 0x02));
@@ -206,6 +270,9 @@ export class WispRelay extends DurableObject {
     const stream = this.streams.get(streamId);
     if (!stream || expected && stream !== expected) return;
     this.streams.delete(streamId);
+    this.loggedGuestData.delete(streamId);
+    this.pendingData.delete(streamId);
+    this.pendingDataBytes.delete(streamId);
     try { await stream.writer.close(); } catch { /* already closed */ }
     try { await stream.reader.cancel(); } catch { /* already closed */ }
     try { stream.socket.close(); } catch { /* already closed */ }
