@@ -286,15 +286,17 @@ export default {
       try {
         // Do not inject multiline shell source into the interactive terminal. v86's
         // keyboard path can lose/reorder characters in long lines and here-docs.
-        // Base64 keeps the payload inert, and short append commands stay below the
-        // guest terminal's input-buffer limits.
+        // Octal escapes keep the payload inert. Keep each octal chunk at 24
+        // characters so the complete printf command stays below Tiny Core's
+        // terminal line-buffer limit; 64-character chunks were truncated and
+        // corrupted the DHCP script.
         const markerText = "__" + marker + "__";
         const payload = "(\n" + command + "\n)\nstage_rc=$?\necho STAGE_SCRIPT_RC=$stage_rc\nprintf '\\n" + markerText + "\\n'\n";
         // Tiny Core's BusyBox build has no base64 applet. Transfer the ASCII
         // script using shell printf octal escapes, which are supported by the
         // guest's shell and avoid depending on optional decoder utilities.
         const octal = Array.from(payload, (char) => "\\" + char.charCodeAt(0).toString(8).padStart(3, "0")).join("");
-        const chunks = octal.match(/[\s\S]{1,64}/g) ?? [];
+        const chunks = octal.match(/[\s\S]{1,24}/g) ?? [];
         const sendLine = async (line: string) => {
           await emulator.keyboard_send_text(line + "\n");
           // Let the emulated keyboard/TTY consume this short line before sending
