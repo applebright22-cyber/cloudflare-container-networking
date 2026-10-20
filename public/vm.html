@@ -74,7 +74,7 @@ const response=await fetch(snapshotUrl()+'/chunks/'+generation+'/'+part,{method:
 if(!response.ok)throw new Error('snapshot part '+(part+1)+' failed with HTTP '+response.status);
 }
 const savedAt=new Date().toISOString();
-const response=await fetch(snapshotUrl(),{method:'PUT',headers:snapshotHeaders('application/json'),body:JSON.stringify({version:1,generation,chunks,byteLength:state.byteLength,savedAt,adminReady:window.snapshotIdentity==='admin'&&bootComplete===true,checks:bootComplete===true?{guest_booted:true,shell_command_passed:true,dhcp_passed:true,dns_passed:true,https_passed:true}:null})});
+const response=await fetch(snapshotUrl(),{method:'PUT',headers:snapshotHeaders('application/json'),body:JSON.stringify({version:1,generation,chunks,byteLength:state.byteLength,savedAt,adminReady:window.snapshotIdentity==='admin'&&bootComplete===true,checks:bootComplete===true?{guest_booted:true,shell_command_passed:true,dhcp_passed:terminal().includes('DHCP_OK'),ca_certificates_passed:terminal().includes('__CA_CERTIFICATES_INSTALL_DONE:0')&&terminal().includes('CA_BUNDLE_PATH=')}:null})});
 if(!response.ok)throw new Error('snapshot manifest failed with HTTP '+response.status);
 const result=await response.json();
 if(window.snapshotNeedsInitialSave===true&&String(window.snapshotIdentity||'').startsWith('acct-')){window.snapshotNeedsInitialSave=false;try{sessionStorage.removeItem('vm-initial-snapshot-pending')}catch(e){}}
@@ -289,19 +289,17 @@ await window.emulator.keyboard_send_text(cmd,2);
 }
 
 async function startBootstrap(){
-if(bootstrapStarted)return;if(manualCommandRunning){requestAnimationFrame(startBootstrap);return}bootstrapStarted=true;statusText('Tiny Core ready; running sequential network/TLS preflight. Mysterium is disabled.');
+if(bootstrapStarted)return;if(manualCommandRunning){requestAnimationFrame(startBootstrap);return}bootstrapStarted=true;statusText('Tiny Core ready; checking DHCP and CA certificate persistence.');
 const commands=[
 `echo "--- NETWORK INIT ---"; sudo -n sh -c '/sbin/modprobe ne2k-pci 2>/dev/null; /sbin/modprobe 8390 2>/dev/null; iface=eth0; /sbin/ifconfig -a | grep -q "^eth0" || { echo NIC_MISSING; exit 1; }; mac="${window.snapshotVirtualMac||'02:ff:ff:ff:ff:ff'}"; ip="${window.snapshotVirtualIp||'10.240.0.2'}"; gw="${window.snapshotRouterIp||'10.240.0.1'}"; echo DHCP_EXPECTED_IP=$ip; /sbin/ifconfig "$iface" down 2>/dev/null; /sbin/ifconfig "$iface" hw ether "$mac" || { echo MAC_ASSIGN_FAILED; exit 1; }; /sbin/ifconfig "$iface" up || exit 1; n=1; while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i "$iface"; /sbin/ifconfig "$iface" | grep -q "$ip" && /sbin/route -n | grep -q "$gw" && { echo DHCP_OK; echo DHCP_ASSIGNED_IP=$ip; echo DHCP_ASSIGNED_GATEWAY=$gw; exit 0; }; n=$((n+1)); sleep 3; done; echo DHCP_FAILED; /sbin/ifconfig -a; /sbin/route -n; cat /etc/resolv.conf; exit 1'; echo DHCP_DONE`,
-'echo "--- RESOURCE PREFLIGHT ---"; df -h / /tmp /usr/local/tce 2>&1; free 2>&1; cat /proc/meminfo 2>/dev/null | head -n 8; echo "TLS prerequisite installation will run before HTTPS preflight."; printf "\n__RESOURCE_""PREFLIGHT_DONE\n"',
+'echo "--- RESOURCE PREFLIGHT ---"; df -h / /tmp /usr/local/tce 2>&1; free 2>&1; cat /proc/meminfo 2>/dev/null | head -n 8; echo "TLS prerequisites will be installed and included in the saved VM state."; printf "\n__RESOURCE_""PREFLIGHT_DONE\n"',
 'echo "--- TLS prerequisite check/download ---"; ca_bundle=$(find /usr/local/etc/ssl/certs /etc/ssl/certs /usr/local/share/ca-certificates -type f -name ca-certificates.crt 2>/dev/null | head -n 1); if command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1 && [ -s "$ca_bundle" ] && grep -q "BEGIN CERTIFICATE" "$ca_bundle"; then echo TLS_PREREQUISITES_ALREADY_PRESENT; openssl_dl=0; ca_dl=0; else tce-load -w openssl-1.1.1.tcz; openssl_dl=$?; tce-load -w ca-certificates.tcz; ca_dl=$?; fi; echo OPENSSL_DOWNLOAD_RC=$openssl_dl; echo CA_DOWNLOAD_RC=$ca_dl; printf "\n__TLS_DOWNLOAD_""DONE:%s:%s\n" "$openssl_dl" "$ca_dl"',
 'echo "--- OpenSSL verify/install ---"; if command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1; then install_rc=0; else tce-load -i openssl-1.1.1 >/tmp/openssl-install.log 2>&1; install_rc=$?; fi; if [ "$install_rc" -eq 0 ] && command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1; then rc=0; else rc=1; fi; echo OPENSSL_PATH=$(command -v openssl 2>/dev/null); openssl version 2>&1; echo OPENSSL_INSTALL_RC=$rc; printf "\n__OPENSSL_INSTALL_""DONE:%s\n" "$rc"',
 `echo "--- CA certificate verify/install ---"; CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs -type f -name ca-certificates.crt 2>/dev/null|head -n 1); if [ -s "$CA_BUNDLE" ]&&grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE"; then rc=0; else tce-load -i ca-certificates >/tmp/ca.log 2>&1; install_rc=$?; tail -n 5 /tmp/ca.log; CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs -type f -name ca-certificates.crt 2>/dev/null|head -n 1); [ "$install_rc" -eq 0 ]&&[ -s "$CA_BUNDLE" ]&&grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE"; rc=$?; fi; echo CA_BUNDLE_PATH=$CA_BUNDLE; echo CA_INSTALL_RC=$rc; printf "\\n__CA_CERTIFICATES_INSTALL_DONE:%s\\n" "$rc"`,
 
-`echo "--- DNS / HTTPS PREFLIGHT ---"; echo "DNS_CONFIG:"; cat /etc/resolv.conf 2>&1; tries=0; rc=1; while [ "$tries" -lt 6 ]; do if wget -T 10 -t 1 -S -O /dev/null ${apiUrl}/health 2>&1; then rc=0; break; fi; tries=$((tries+1)); echo HTTPS_PREFLIGHT_RETRYING=$tries; sleep 2; done; if [ "$rc" -eq 0 ]; then echo INTERNET_HTTPS_OK; else echo HTTPS_PREFLIGHT_FAILED; fi; printf "\\n__EGRESS_PREFLIGHT_DONE:%s\\n" "$rc"`,
-`wget -T 15 -t 2 -q -O /tmp/network-test.sh ${apiUrl}/runner/tinycore/network-test.sh; rc=$?; echo NETWORK_TEST_DOWNLOAD_RC=$rc; printf "\\n__NETWORK_DOWNLOAD_DONE:%s\\n" "$rc"`,
-'sh /tmp/network-test.sh; rc=$?; printf "\\n__NETWORK_TEST_DONE:%s\\n" "$rc"',
+
 ];
-const markers=['DHCP_DONE','__RESOURCE_PREFLIGHT_DONE','__TLS_DOWNLOAD_DONE:','__OPENSSL_INSTALL_DONE:','__CA_CERTIFICATES_INSTALL_DONE:','__EGRESS_PREFLIGHT_DONE:','__NETWORK_DOWNLOAD_DONE:','__NETWORK_TEST_DONE:'];
+const markers=['DHCP_DONE','__RESOURCE_PREFLIGHT_DONE','__TLS_DOWNLOAD_DONE:','__OPENSSL_INSTALL_DONE:','__CA_CERTIFICATES_INSTALL_DONE:'];
 // No per-step timeout; wait for completion markers.
 let i=0;
 function terminal(){return screenText()}
@@ -310,12 +308,12 @@ function markerResult(text,marker){const at=String(text||'').lastIndexOf(marker)
 async function next(){
 if(i>=commands.length){
 bootComplete=true;
-statusText('Startup preflight and network tests complete. Mysterium remains disabled.');
+statusText('DHCP and CA certificate checks complete. Saving the Admin baseline snapshot.');
 report('\n===== STARTUP COMPLETE — MYSTERIUM DISABLED =====\n');
 while(snapshotBusy)await new Promise(r=>requestAnimationFrame(r));
 const saved=await saveVmState(false);
 autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
-statusText(saved?'Startup and network tests complete; server snapshot saved.':'Startup complete; server snapshot save did not complete. Check saved-state status.');
+statusText(saved?'DHCP verified; CA certificates included in the saved VM snapshot.':'Snapshot save did not complete. Check saved-state status.');
 connectApiAgent();
 return;
 }
@@ -332,9 +330,7 @@ if(marker){
 const t=terminal(),markerAt=t.lastIndexOf(marker);
 if(markerCount(t,marker)>markerCountBefore&&shellPrompt(t.slice(markerAt+marker.length))){
 report('----- bootstrap screen snapshot -----\n'+terminal()+'\n----- end bootstrap screen snapshot -----\n');
-if(marker==='DHCP_DONE'&&!terminal().includes('DHCP_OK')){report('*** DHCP did not install a usable IPv4 address and default route. No guessed gateway will be added; stopping before package/bootstrap downloads. ***\\n');statusText('DHCP/default-route check failed; diagnostics captured.');return} if(marker==='__OPENSSL_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** OpenSSL install did not produce a working binary; stopping before HTTPS. See /tmp/openssl-install.log. ***\\n');statusText('OpenSSL install failed; diagnostics captured.');return} if(marker==='__CA_CERTIFICATES_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** CA certificate file is missing; stopping before HTTPS. See /tmp/ca-certificates-install.log. ***\\n');statusText('CA install failed; diagnostics captured.');return} if(marker==='__EGRESS_PREFLIGHT_DONE:'&&!terminal().includes('__EGRESS_PREFLIGHT_DONE:0')){report('*** HTTPS check against the deployed Worker failed after OpenSSL and CA certificates were installed and verified. Stopping before bootstrap download. ***\\n');statusText('Internet HTTPS check failed; diagnostics captured.');return}
-
-next();return
+if(marker==='DHCP_DONE'&&!terminal().includes('DHCP_OK')){report('*** DHCP did not install a usable IPv4 address and default route. No guessed gateway will be added; stopping before package/bootstrap downloads. ***\\n');statusText('DHCP/default-route check failed; diagnostics captured.');return} if(marker==='__OPENSSL_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** OpenSSL install did not produce a working binary; stopping before HTTPS. See /tmp/openssl-install.log. ***\\n');statusText('OpenSSL install failed; diagnostics captured.');return} if(marker==='__CA_CERTIFICATES_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** CA certificate file is missing; stopping before HTTPS. See /tmp/ca-certificates-install.log. ***\\n');statusText('CA install failed; diagnostics captured.');return} next();return
 }
 requestAnimationFrame(wait)
 })()
