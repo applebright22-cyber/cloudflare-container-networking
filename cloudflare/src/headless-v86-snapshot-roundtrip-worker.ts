@@ -520,6 +520,8 @@ echo HTTPS_PREFLIGHT_RC=$rc
       probe: "tinycore-snapshot-save-readback",
       identity: snapshotIdentity,
       runtime: "workerd",
+      baseline_snapshot_used: Boolean(baselineSnapshot),
+      baseline_generation: baselineSnapshot?.generation ?? null,
       wasm_module_loaded: wasm.module_loaded,
       emulator_initialized: loaded,
       emulator_started: started,
