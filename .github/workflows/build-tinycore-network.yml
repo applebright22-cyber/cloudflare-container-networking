@@ -11,9 +11,6 @@ on:
       - ".github/workflows/build-tinycore-network.yml"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   boot-image:
     runs-on: ubuntu-latest
@@ -23,9 +20,10 @@ jobs:
       - name: Download official TinyCorePure64 11.1
         run: |
           set -euxo pipefail
-          mkdir -p public/boot
-          # tinycorelinux.net was unreachable from the GitHub runner (curl 28).
-          # Try the official North American mirror first, then Princeton's mirror.
+          mkdir -p build-artifacts
+          # Keep this larger reference ISO outside public/, which Wrangler uploads
+          # as Worker static assets. The running v86 dashboard uses the separate
+          # 16 MiB experimental network ISO in public/boot/.
           urls=(
             "https://distro.ibiblio.org/tinycorelinux/11.x/x86_64/release/TinyCorePure64-11.1.iso"
             "https://mirror.math.princeton.edu/pub/tinycorelinux/11.x/x86_64/archive/11.1/TinyCorePure64-11.1.iso"
@@ -34,14 +32,14 @@ jobs:
           for url in "${urls[@]}"; do
             echo "Trying ISO mirror: $url"
             if curl -fL --connect-timeout 15 --max-time 180 --retry 2 --retry-all-errors \
-              -o public/boot/TinyCore_Pure64-11.0.iso "$url"; then
-              if test -s public/boot/TinyCore_Pure64-11.0.iso && \
-                 test "$(stat -c%s public/boot/TinyCore_Pure64-11.0.iso)" -gt 10000000; then
+              -o build-artifacts/TinyCore_Pure64-11.0.iso "$url"; then
+              if test -s build-artifacts/TinyCore_Pure64-11.0.iso && \
+                 test "$(stat -c%s build-artifacts/TinyCore_Pure64-11.0.iso)" -gt 10000000; then
                 downloaded=1
                 break
               fi
             fi
-            rm -f public/boot/TinyCore_Pure64-11.0.iso
+            rm -f build-artifacts/TinyCore_Pure64-11.0.iso
           done
           test "$downloaded" -eq 1
 
@@ -54,24 +52,19 @@ jobs:
       - name: Verify bootable ISO
         run: |
           set -euxo pipefail
-          test -s public/boot/TinyCore_Pure64-11.0.iso
-          test "$(stat -c%s public/boot/TinyCore_Pure64-11.0.iso)" -gt 10000000
-          file public/boot/TinyCore_Pure64-11.0.iso
-          xorriso -indev public/boot/TinyCore_Pure64-11.0.iso -report_el_torito plain 2>&1 | tee /tmp/eltorito.txt
+          test -s build-artifacts/TinyCore_Pure64-11.0.iso
+          test "$(stat -c%s build-artifacts/TinyCore_Pure64-11.0.iso)" -gt 10000000
+          file build-artifacts/TinyCore_Pure64-11.0.iso
+          xorriso -indev build-artifacts/TinyCore_Pure64-11.0.iso -report_el_torito plain 2>&1 | tee /tmp/eltorito.txt
           grep -qi "El Torito" /tmp/eltorito.txt || true
-          sha256sum public/boot/TinyCore_Pure64-11.0.iso > public/boot/TinyCore_Pure64-11.0.iso.sha256
+          sha256sum build-artifacts/TinyCore_Pure64-11.0.iso > build-artifacts/TinyCore_Pure64-11.0.iso.sha256
 
-      - name: Remove obsolete boot image
-        run: rm -f public/boot/cloudflare-tinycore-dhcp.iso public/boot/cloudflare-tinycore-dhcp.iso.sha256
-
-      - name: Commit verified boot image
-        if: github.event_name != 'pull_request'
-        run: |
-          set -euxo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/boot/TinyCore_Pure64-11.0.iso public/boot/TinyCore_Pure64-11.0.iso.sha256
-          git add -u public/boot
-          git diff --cached --quiet && exit 0
-          git commit -m "Restore verified bootable TinyCore Pure64 ISO"
-          git push
+      - name: Upload verified reference ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinycore-pure64-reference-iso
+          path: |
+            build-artifacts/TinyCore_Pure64-11.0.iso
+            build-artifacts/TinyCore_Pure64-11.0.iso.sha256
+          if-no-files-found: error
+          retention-days: 7
