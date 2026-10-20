@@ -444,7 +444,7 @@ openssl version 2>&1`;
 echo '--- CA certificate install ---'
 echo CA_EXTENSION_FILES
 ls -l /tmp/tce/optional/ca-certificates* /usr/local/tce/optional/ca-certificates* 2>&1
-timeout 45 tce-load -i ca-certificates >/tmp/ca.log 2>&1
+timeout 45 su - tc -c 'id; tce-load -i /tmp/tce/optional/ca-certificates.tcz' >/tmp/ca.log 2>&1
 rc=$?
 echo CA_INSTALL_RC=$rc
 tail -n 20 /tmp/ca.log 2>&1
