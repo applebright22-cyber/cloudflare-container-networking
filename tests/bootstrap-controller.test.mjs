@@ -15,6 +15,7 @@ test("headless Workerd network test applies and verifies the account-specific MA
   assert.ok(snapshotWorker.includes('dhcpOutput.includes("DHCP_ACTUAL_IP=" + virtualIp)'), "verify the exact assigned IP");
   assert.ok(snapshotWorker.includes('dhcpOutput.includes("DHCP_ACTUAL_GATEWAY=" + routerIp)'), "verify the matching gateway");
   assert.ok(snapshotWorker.includes("V86_SNAPSHOT_PROGRESS"), "emit stage progress to Workerd logs for live troubleshooting");
+  assert.ok(snapshotWorker.includes("octal.match(/[\\s\\S]{1,24}/g)"), "keep guest terminal transfer lines short enough to avoid truncating shell scripts");
 });
 
 test("inline browser scripts parse", () => {
