@@ -184,17 +184,15 @@ if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the 
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function'){statusText('VM keyboard API unavailable.');return}
 manualCommandRunning=true;
 const marker='__MANUAL_DIAGNOSTIC_DONE__:',before=screenText().split(marker).length-1;
-const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; lines=$(wc -l < /tmp/network-diagnostic.log); start=1; while [ "$start" -le "$lines" ]; do end=$((start+4)); sed -n "$start,$end"p /tmp/network-diagnostic.log; echo "__NETWORK_LOG_CHUNK__:$start"; read -r _; start=$((end+1)); done; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
-report('\n\n===== '+label+' =====\nFull output is saved to /tmp/network-diagnostic.log and emitted in numbered chunks.\n'+command+'\n');
+const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; cat /tmp/network-diagnostic.log; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
+report('\n\n===== '+label+' =====\nFull output is captured in /tmp/network-diagnostic.log and printed after the tests finish.\n'+command+'\n');
 (async()=>{
 try{
 await sendVmCommand(command+'\n');
-let lastChunk=0; for(;;){
+for(;;){
 const t=screenText(),at=t.lastIndexOf(marker);
-const chunkMatches=Array.from(t.matchAll(/__NETWORK_LOG_CHUNK__:(\d+)/g));
-if(chunkMatches.length){const chunkStart=Number(chunkMatches[chunkMatches.length-1][1]);if(chunkStart>lastChunk){report('----- captured diagnostic output, log lines starting at '+chunkStart+' -----\n'+t+'\n----- end captured chunk -----\n');lastChunk=chunkStart;await sendVmCommand('\n');}}
 if(t.split(marker).length-1>before&&shellPrompt(t.slice(at+marker.length))){
-report('----- final screen snapshot -----\n'+t+'\n----- end final screen snapshot -----\n');
+report('----- final terminal capture -----\n'+t+'\n----- end terminal capture -----\n');
 break;
 }
 await new Promise(resolve=>requestAnimationFrame(resolve));
