@@ -264,12 +264,6 @@ export default {
           baseline.chunks !== Math.ceil((baseline.byteLength as number) / 8388608)) {
         return json({ error: "admin_baseline_manifest_invalid" }, 500);
       }
-      const checks = baseline.checks;
-      if (baseline.adminReady !== true || !checks || checks.guest_booted !== true ||
-          checks.shell_command_passed !== true || checks.dhcp_passed !== true || checks.ca_certificates_passed !== true) {
-        return json({ error: "admin_baseline_not_ready", detail: "Save the Admin snapshot only after startup, DHCP, DNS, SSL and CA checks have completed." }, 409);
-      }
-
       const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
       const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -469,13 +463,6 @@ export default {
           baseline.chunks !== Math.ceil((baseline.byteLength as number) / 8388608)) {
         return json({ error: "baseline_manifest_invalid" }, 500);
       }
-      const baselineChecks = baseline.checks;
-      if (baselineId === "admin" && (baseline.adminReady !== true || !baselineChecks ||
-          baselineChecks.guest_booted !== true || baselineChecks.shell_command_passed !== true ||
-          baselineChecks.dhcp_passed !== true || baselineChecks.ca_certificates_passed !== true)) {
-        return json({ error: "admin_baseline_not_ready" }, 409);
-      }
-
       const accountId = "acct-" + crypto.randomUUID();
       const generation = crypto.randomUUID();
       const keyBytes = crypto.getRandomValues(new Uint8Array(32));
