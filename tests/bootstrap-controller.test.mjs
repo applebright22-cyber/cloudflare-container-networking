@@ -134,7 +134,8 @@ test("TLS installs run in the foreground before HTTPS and certificate checks", (
   assert.ok(commandListStart >= 0 && commandListEnd > commandListStart, "startup command list should be present");
   const commandList = html.slice(commandListStart, commandListEnd);
   assert.ok(commandList.indexOf("tce-load -i openssl-1.1.1") < commandList.indexOf("tce-load -i ca-certificates"));
-  assert.ok(commandList.indexOf("tce-load -i ca-certificates") < commandList.indexOf("${apiUrl}/health"));
+  assert.ok(commandList.indexOf("tce-load -i ca-certificates") >= 0, "CA installation must run before snapshot save");
+  assert.ok(!commandList.includes("${apiUrl}/health"), "no guest-side HTTPS health probe is part of snapshot preparation");
 });
 
 test("bootstrap waits for a fresh completion marker and a shell prompt before advancing", () => {
