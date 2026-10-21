@@ -311,16 +311,29 @@ statusText('Keyboard input failed: '+(e&&e.message?e.message:String(e)));
 
 let apiAgentSocket=null,apiAgentConnecting=false,apiExecBusy=false,apiAgentReconnectPending=false;
 async function connectApiAgent(){
-if(window.snapshotIdentity!=='admin'||!window.snapshotAdminCode||apiAgentConnecting)return;
+const identity=window.snapshotIdentity||'';
+if(apiAgentConnecting||(!/^acct-[a-f0-9-]{36}$/.test(identity)&&identity!=='admin'))return;
+if(identity==='admin'&&!window.snapshotAdminCode)return;
+if(identity!=='admin'&&!window.snapshotAuthToken)return;
 if(apiAgentSocket&&apiAgentSocket.readyState<=1)return;
 apiAgentConnecting=true;
 try{
-const ticketResponse=await fetch('/api/vm/agent-ticket',{method:'POST',headers:{'x-admin-code':window.snapshotAdminCode}});
+let headers={};
+if(identity==='admin')headers['x-admin-code']=window.snapshotAdminCode;
+else{
+const keyResponse=await fetch('/api/account/api-key?account_id='+encodeURIComponent(identity),{method:'GET',headers:{authorization:'Bearer '+window.snapshotAuthToken},cache:'no-store'});
+if(!keyResponse.ok)throw new Error('account API key HTTP '+keyResponse.status);
+const keyData=await keyResponse.json();
+if(typeof keyData.api_key!=='string'||!/^acct_[a-f0-9]{64}$/.test(keyData.api_key))throw new Error('account API key unavailable');
+headers={'x-account-id':identity,'authorization':'Bearer '+keyData.api_key};
+}
+const ticketResponse=await fetch('/api/vm/agent-ticket',{method:'POST',headers});
 if(!ticketResponse.ok)throw new Error('agent ticket HTTP '+ticketResponse.status);
 const ticket=await ticketResponse.json();
 const wsUrl=new URL('/api/vm/agent',window.location.href);
 wsUrl.protocol=window.location.protocol==='https:'?'wss:':'ws:';
 wsUrl.searchParams.set('ticket',ticket.ticket);
+wsUrl.searchParams.set('account_id',identity);
 const ws=new WebSocket(wsUrl);
 apiAgentSocket=ws;
 ws.onopen=()=>{apiAgentConnecting=false;ws.send(JSON.stringify({type:'heartbeat'}));stateText('VM ready; API execution agent connected.')};
@@ -365,7 +378,7 @@ ws.send(JSON.stringify({type:'result',id:message.id,stdout:'',stderr:error&&erro
 }finally{apiExecBusy=false}
 };
 ws.onerror=()=>{apiAgentConnecting=false};
-ws.onclose=()=>{apiAgentConnecting=false;if(apiAgentSocket===ws)apiAgentSocket=null;if(bootComplete&&window.snapshotIdentity==='admin'&&!apiAgentReconnectPending){apiAgentReconnectPending=true;let frames=180;const reconnect=()=>{if(!bootComplete||window.snapshotIdentity!=='admin'){apiAgentReconnectPending=false;return}if(--frames<=0){apiAgentReconnectPending=false;connectApiAgent();return}requestAnimationFrame(reconnect)};requestAnimationFrame(reconnect)}};
+ws.onclose=()=>{apiAgentConnecting=false;if(apiAgentSocket===ws)apiAgentSocket=null;if(bootComplete&&window.snapshotIdentity===identity&&!apiAgentReconnectPending){apiAgentReconnectPending=true;let frames=180;const reconnect=()=>{if(!bootComplete||window.snapshotIdentity!==identity){apiAgentReconnectPending=false;return}if(--frames<=0){apiAgentReconnectPending=false;connectApiAgent();return}requestAnimationFrame(reconnect)};requestAnimationFrame(reconnect)}};
 }catch(error){
 apiAgentConnecting=false;
 stateText('VM ready, API agent connection failed: '+(error&&error.message?error.message:String(error)));
