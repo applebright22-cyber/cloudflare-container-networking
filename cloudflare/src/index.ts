@@ -509,7 +509,7 @@ export default {
       const created = await accountRegistry.fetch("https://account-registry.internal/create", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ account_id: accountId, name: username, baseline_id: baselineId,
-          snapshot_identity: accountId, api_key_sha256: apiKeyHash,
+          snapshot_identity: accountId, api_key_sha256: apiKeyHash, api_key: accountApiKey,
           virtual_ip: allocation.virtual_ip, virtual_mac: allocation.virtual_mac }),
       });
       if (!created.ok) {
@@ -595,7 +595,27 @@ export default {
       return json({ ...progress, complete: progress.status === "complete", ready_to_login: progress.status === "complete" });
     }
 
-    // Rotate the signed-in user's POS API key. The raw key is returned once; only its SHA-256 is stored.
+    // Return the signed-in user's current API key when it was created after dashboard key display was enabled.
+    if (url.pathname === "/api/account/api-key" && request.method === "GET") {
+      const accountId = url.searchParams.get("account_id") ?? "";
+      const sessionToken = request.headers.get("authorization")?.startsWith("Bearer ")
+        ? request.headers.get("authorization")!.slice(7) : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, token: sessionToken }),
+      });
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      const current = await accountRegistry.fetch("https://account-registry.internal/account/" + accountId + "/api-key", { method: "GET" });
+      if (!current.ok) return json(await current.json().catch(() => ({ error: "api_key_not_retrievable" })), current.status);
+      return json(await current.json());
+    }
+
+    // Rotate the signed-in user's POS API key. The raw key and its SHA-256 are stored for dashboard retrieval.
     if (url.pathname === "/api/account/api-key/rotate" && request.method === "POST") {
       let body: { account_id?: unknown; session_token?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
@@ -618,7 +638,7 @@ export default {
       const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
       const updated = await accountRegistry.fetch("https://account-registry.internal/account/" + accountId + "/api-key", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ api_key_sha256: apiKeyHash }),
+        body: JSON.stringify({ api_key_sha256: apiKeyHash, api_key: apiKey }),
       }).catch(() => new Response("account_key_rotation_failed", { status: 500 }));
       if (!updated.ok) return json({ error: "api_key_rotation_failed", status: updated.status }, 502);
       return json({ ok: true, account_id: accountId, api_key: apiKey, notice: "Copy this key now. It will not be shown again." });
