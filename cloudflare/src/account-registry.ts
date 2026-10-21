@@ -39,12 +39,10 @@ export class AccountRegistry extends DurableObject {
       const body = await request.json().catch(() => null) as {
         executor_url?: unknown; executor_token?: unknown;
       } | null;
-      if (typeof body?.executor_url !== "string" || typeof body.executor_token !== "string" ||
-          !/^https?:\/\//.test(body.executor_url) || !/^[a-f0-9]{64}$/.test(body.executor_token)) {
+      if (typeof body?.executor_token !== "string" || !/^[a-f0-9]{64}$/.test(body.executor_token)) {
         return json({ error: "invalid_bridge_config" }, 400);
       }
       await this.ctx.storage.put("oracle-bridge-config", {
-        executor_url: body.executor_url,
         executor_token: body.executor_token,
         updated_at: new Date().toISOString(),
       });
@@ -52,7 +50,7 @@ export class AccountRegistry extends DurableObject {
     }
     if (url.pathname === "/oracle/bridge-config" && request.method === "GET") {
       const config = await this.ctx.storage.get<{
-        executor_url: string; executor_token: string; updated_at: string;
+        executor_token: string; updated_at: string;
       }>("oracle-bridge-config");
       if (!config) return json({ error: "bridge_not_registered" }, 404);
       return json(config);
