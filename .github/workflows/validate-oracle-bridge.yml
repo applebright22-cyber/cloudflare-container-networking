@@ -1,0 +1,30 @@
+name: Validate Oracle Worker bridge
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare/src/index.ts'
+      - 'cloudflare/wrangler.toml'
+      - 'cloudflare/package.json'
+      - '.github/workflows/validate-oracle-bridge.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cloudflare/src/index.ts'
+      - 'cloudflare/wrangler.toml'
+      - 'cloudflare/package.json'
+      - '.github/workflows/validate-oracle-bridge.yml'
+  workflow_dispatch:
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-audit --no-fund
+      - run: npx wrangler deploy --dry-run --config wrangler.toml
