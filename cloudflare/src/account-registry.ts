@@ -384,6 +384,23 @@ export class AccountRegistry extends DurableObject {
       return json({ account: this.publicRecord(record) }, 201);
     }
 
+    // Internal Worker-only route: replace the active API-key hash for one account.
+    const rotateKeyMatch = url.pathname.match(/^\/account\/([^/]+)\/api-key$/);
+    if (rotateKeyMatch && request.method === "POST") {
+      const accountId = decodeURIComponent(rotateKeyMatch[1]);
+      if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
+      const body = await request.json().catch(() => null) as { api_key_sha256?: unknown } | null;
+      if (typeof body?.api_key_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(body.api_key_sha256)) {
+        return json({ error: "invalid_api_key_hash" }, 400);
+      }
+      const key = "account:" + accountId;
+      const record = await this.ctx.storage.get<StoredAccount>(key);
+      if (!record) return json({ error: "account_not_found" }, 404);
+      const updated: StoredAccount = { ...record, api_key_sha256: body.api_key_sha256, updated_at: new Date().toISOString() };
+      await this.ctx.storage.put(key, updated);
+      return json({ ok: true, account_id: accountId, updated_at: updated.updated_at });
+    }
+
     const match = url.pathname.match(/^\/account\/([^/]+)$/);
     if (match) {
       const accountId = decodeURIComponent(match[1]);
