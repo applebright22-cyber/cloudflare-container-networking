@@ -1,6 +1,7 @@
 name = "cloudflare-container-networking"
 main = "src/index.ts"
 compatibility_date = "2026-10-07"
+compatibility_flags = ["allow_custom_ports"]
 workers_dev = true
 
 # Do not set an explicit CPU limit here: Cloudflare rejects configured CPU limits
