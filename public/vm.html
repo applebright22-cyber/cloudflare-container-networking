@@ -182,20 +182,41 @@ if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the 
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function'){statusText('VM keyboard API unavailable.');return}
 manualCommandRunning=true;
 const marker='__MANUAL_DIAGNOSTIC_DONE__:',before=screenText().split(marker).length-1;
-const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; cat /tmp/network-diagnostic.log; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
-report('\n\n===== '+label+' =====\nFull output is captured in /tmp/network-diagnostic.log and printed after the tests finish.\n'+command+'\n');
+const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
+report('\n\n===== '+label+' =====\nRunning tests, then copying the complete /tmp/network-diagnostic.log into this Results text area in numbered chunks.\n'+command+'\n');
 (async()=>{
 try{
 await sendVmCommand(command+'\n');
 for(;;){
 const t=screenText(),at=t.lastIndexOf(marker);
-if(t.split(marker).length-1>before&&shellPrompt(t.slice(at+marker.length))){
-report('----- final terminal capture -----\n'+t+'\n----- end terminal capture -----\n');
-break;
-}
+if(t.split(marker).length-1>before&&shellPrompt(t.slice(at+marker.length)))break;
 await new Promise(resolve=>requestAnimationFrame(resolve));
 }
-}catch(e){report('\n*** DIAGNOSTIC FAILED: '+e.message+' ***\n')}
+const countMarker='__DIAGNOSTIC_LOG_COUNT__';
+await sendVmCommand('printf "\\n'+countMarker+'%s\\n" "$(wc -l < /tmp/network-diagnostic.log)"\n');
+let count=-1;
+for(let tries=0;tries<300;tries++){
+const t=screenText(),m=t.match(new RegExp(countMarker+'(\\d+)'));
+if(m&&shellPrompt(t.slice(t.lastIndexOf(countMarker)))){count=Number(m[1]);break}
+await new Promise(resolve=>requestAnimationFrame(resolve));
+}
+if(!Number.isSafeInteger(count)||count<0||count>2000)throw new Error('log line count unavailable or exceeds safe capture limit: '+count);
+report('LOG_CAPTURE_EXPECTED_LINES='+count+'\n');
+let captured=0;
+for(let start=1;start<=count;start+=10){
+const end=Math.min(count,start+9),begin='__DIAG_CHUNK_BEGIN_'+start+'__',finish='__DIAG_CHUNK_END_'+start+'__';
+await sendVmCommand('printf "\\n'+begin+'\\n"; sed -n "'+start+','+end+'p" /tmp/network-diagnostic.log; printf "\\n'+finish+'\\n"\n');
+let chunk=null;
+for(let tries=0;tries<300;tries++){
+const t=screenText(),aa=t.lastIndexOf(begin),bb=t.lastIndexOf(finish);
+if(aa>=0&&bb>aa&&shellPrompt(t.slice(bb+finish.length))){chunk=t.slice(aa+begin.length,bb).replace(/^\r?\n/,'').replace(/\r?\n$/,'');break}
+await new Promise(resolve=>requestAnimationFrame(resolve));
+}
+if(chunk===null)throw new Error('failed capturing log lines '+start+'-'+end);
+report(chunk+'\n');captured+=end-start+1;
+}
+report('LOG_CAPTURE_CAPTURED_LINES='+captured+'\nLOG_CAPTURE_COMPLETE='+(captured===count?'true':'false')+'\n');
+}catch(e){report('\n*** DIAGNOSTIC LOG CAPTURE FAILED: '+e.message+' ***\n')}
 finally{manualCommandRunning=false;if(saveAfter&&bootComplete){const tail=results.value;const healthy=/DHCP_RECOVERY_RC=0/.test(tail)&&/DHCP_RECOVERY_OK/.test(tail)&&/DEFAULT_GATEWAY_PRESENT/.test(tail)&&/NETWORK_RECOVERY_PASS/.test(tail)&&/GITHUB_HTTPS_RC=0/.test(tail);if(!healthy){stateText('Network recovery/test failed; existing server snapshot preserved and autosave remains paused.');statusText('Restored VM is online only if DNS/HTTPS checks pass. The failed network test was not saved over the last known snapshot.');report('\\n*** SNAPSHOT PROTECTION: network recovery did not pass; refusing to overwrite the saved snapshot. See DNS, DHCP and network-test markers above. ***\\n');return}const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('Network recovery and test passed; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}}
 })();
 }
