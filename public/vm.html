@@ -661,10 +661,10 @@ async function loadOracleHistory(){
       const when=typeof record.completed_at==='string'?record.completed_at:'unknown time';
       const lines=['['+when+'] $ '+(record.command||'')];
       if(record.stdout)lines.push(record.stdout);
-      if(record.stderr)lines.push('[stderr]\\n'+record.stderr);
+      if(record.stderr)lines.push('[stderr]\n'+record.stderr);
       lines.push('[exit code: '+record.exit_code+']');
-      return lines.join('\\n');
-    }).join('\\n\\n')+'\\n';
+      return lines.join('\n');
+    }).join('\n\n')+'\n';
     oracleMessage.textContent='Loaded '+records.length+' saved result(s) for this account.';
   }catch(error){oracleMessage.textContent='Could not load saved results: '+(error&&error.message?error.message:String(error));}
   finally{historyButton.disabled=false;}
