@@ -21,8 +21,6 @@ export interface Env {
   ADMIN_ACCESS_CODE?: string;
   VM_SNAPSHOTS: R2Bucket;
   ASSETS: Fetcher;
-  TUNNEL_TOKEN: string;
-  CLIENT_TOKEN: string;
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -36,17 +34,21 @@ function authorized(header: string | null, expected: string | undefined): boolea
   return difference === 0;
 }
 
-const VM_API_TOKEN_R2_KEY = "config/vm-api-token.txt";
+async function accountApiKeyMatches(env: Env, accountId: string, suppliedKey: string): Promise<boolean> {
+  if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^acct_[a-f0-9]{64}$/.test(suppliedKey)) return false;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(suppliedKey));
+  const apiKeyHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  const registry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+  const response = await registry.fetch("https://account-registry.internal/account/" + accountId, {
+    method: "GET", headers: { "x-account-key-sha256": apiKeyHash },
+  });
+  return response.ok;
+}
 
-async function getVmApiToken(env: Env): Promise<string | undefined> {
-  try {
-    const object = await env.VM_SNAPSHOTS.get(VM_API_TOKEN_R2_KEY);
-    if (!object) return undefined;
-    const token = (await object.text()).trim();
-    return token || undefined;
-  } catch {
-    return undefined;
-  }
+async function requestHasAccountKey(env: Env, request: Request, accountId = request.headers.get("x-account-id") ?? ""): Promise<boolean> {
+  const authorization = request.headers.get("authorization") ?? "";
+  if (!authorization.startsWith("Bearer ")) return false;
+  return accountApiKeyMatches(env, accountId, authorization.slice(7));
 }
 
 function json(data: unknown, status = 200): Response {
@@ -312,13 +314,11 @@ export default {
     // This validates R2 bytes only; it does not claim that v86 restored the guest.
     if (url.pathname === "/v1/runtime/snapshot-readback") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      const vmApiToken = await getVmApiToken(env);
-      if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);
-      if (!authorized(request.headers.get("authorization"), vmApiToken)) return json({ error: "unauthorized" }, 401);
       let body: { identity?: unknown };
       try { body = await request.json() as typeof body; }
       catch { return json({ error: "invalid_json" }, 400); }
       const identity = typeof body.identity === "string" ? body.identity.toLowerCase() : "";
+      if (!await requestHasAccountKey(env, request, identity)) return json({ error: "unauthorized" }, 401);
       if (!/^(acct-[a-f0-9-]{36}|test-[a-z0-9-]{1,32})$/.test(identity)) return json({ error: "invalid_snapshot_identity" }, 400);
       try {
         const result = await readCommittedGuestSnapshot(env.VM_SNAPSHOTS, identity);
@@ -340,13 +340,11 @@ export default {
     // module in the Worker runtime. It intentionally does not instantiate a VM or claim shell execution.
     if (url.pathname === "/v1/runtime/preflight") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      const vmApiToken = await getVmApiToken(env);
-      if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);
-      if (!authorized(request.headers.get("authorization"), vmApiToken)) return json({ error: "unauthorized" }, 401);
-
-      let body: { compile_wasm?: unknown };
+      let body: { compile_wasm?: unknown; identity?: unknown };
       try { body = await request.json() as typeof body; }
       catch { return json({ error: "invalid_json" }, 400); }
+      const identity = typeof body.identity === "string" ? body.identity.toLowerCase() : "";
+      if (!await requestHasAccountKey(env, request, identity)) return json({ error: "unauthorized" }, 401);
       if (body.compile_wasm !== undefined && typeof body.compile_wasm !== "boolean") {
         return json({ error: "compile_wasm_must_be_boolean" }, 400);
       }
@@ -690,9 +688,7 @@ export default {
     }
 
     if (url.pathname === "/v1/accounts" && request.method === "POST") {
-      const vmApiToken = await getVmApiToken(env);
-      if (!vmApiToken) return json({ error: "account_api_not_configured" }, 503);
-      if (!authorized(request.headers.get("authorization"), vmApiToken)) return json({ error: "unauthorized" }, 401);
+      if (!await requestHasAccountKey(env, request)) return json({ error: "unauthorized" }, 401);
       let body: { name?: unknown };
       try { body = await request.json() as { name?: unknown }; }
       catch { return json({ error: "invalid_json" }, 400); }
@@ -874,15 +870,12 @@ export default {
     }
 
     if (url.pathname === "/v1/vm/status" || url.pathname === "/v1/vm/exec") {
-      const vmApiToken = await getVmApiToken(env);
-      if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);
-      if (!authorized(request.headers.get("authorization"), vmApiToken)) return json({ error: "unauthorized" }, 401);
-      const vmId = request.headers.get("x-vm-id") ?? "admin";
-      if (vmId !== "admin") return json({ error: "unknown_vm_id", supported_vm_ids: ["admin"] }, 404);
+      const vmId = request.headers.get("x-account-id") ?? "";
+      if (!await requestHasAccountKey(env, request, vmId)) return json({ error: "unauthorized" }, 401);
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(vmId));
       if (url.pathname.endsWith("/status")) {
         if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
-        return coordinator.fetch("https://vm-execution.internal/status?identity=admin");
+        return coordinator.fetch("https://vm-execution.internal/status?identity=" + encodeURIComponent(vmId));
       }
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
       const raw = await request.text();
@@ -930,9 +923,7 @@ export default {
 
       // Non-Admin baselines are managed with the provisioning token; the Admin baseline uses ADMIN_ACCESS_CODE.
       if (identity === (env.VM_BASELINE_ID ?? "admin") && identity !== "admin") {
-        const vmApiToken = await getVmApiToken(env);
-        if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);
-        if (!authorized(request.headers.get("authorization"), vmApiToken)) return json({ error: "unauthorized" }, 401);
+        if (!env.ADMIN_ACCESS_CODE || request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
       }
 
       if (snapshotChunkMatch) {
@@ -1074,16 +1065,8 @@ export default {
 
       const role = request.headers.get("x-tunnel-role");
       const nodeId = request.headers.get("x-node-id") ?? "";
-      const expected =
-        role === "gateway"
-          ? env.TUNNEL_TOKEN
-          : role === "client"
-            ? env.CLIENT_TOKEN
-            : undefined;
-
-      if (!authorized(request.headers.get("authorization"), expected)) {
-        return json({ error: "unauthorized" }, 401);
-      }
+      if (role !== "gateway" && role !== "client") return json({ error: "invalid_tunnel_role" }, 400);
+      if (!await requestHasAccountKey(env, request)) return json({ error: "unauthorized" }, 401);
       if (!validNodeId(nodeId)) return json({ error: "invalid_node_id" }, 400);
 
       const hub = env.TUNNEL_HUB.get(env.TUNNEL_HUB.idFromName("global"));
