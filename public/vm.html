@@ -585,9 +585,8 @@ startBootMonitor();
 return;
 }
 bootComplete=true;
-statusText('Saved VM resumed; preparing the guest shell for the Oracle terminal bridge.');
-await sendVmCommand('local\n');
-await new Promise(resolve=>setTimeout(resolve,700));
+statusText('Saved VM resumed; connecting the Tiny Core terminal to Oracle.');
+await installOracleShellBridge();
 statusText('Saved VM resumed; writing login proof to the guest terminal.');
 // Do not autosave a restored guest until its DHCP/DNS/HTTPS check passes.
 connectApiAgent();
