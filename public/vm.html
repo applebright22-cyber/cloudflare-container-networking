@@ -21,6 +21,11 @@ body:not(.logged-in) #api-key-panel{display:none}
 #api-key-value{display:block;width:100%;max-width:900px;box-sizing:border-box;background:#080808;color:#b8f7c4;border:1px solid #444;padding:9px;font:12px monospace;overflow-wrap:anywhere;white-space:pre-wrap}
 #api-key-message{color:#ffc66d;font-size:12px}
 #api-key-warning{color:#ffcf70}
+#account-id-panel{padding:12px;background:#181818;border-bottom:1px solid #333;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+body:not(.logged-in) #account-id-panel{display:none}
+#account-id-panel strong{font-size:13px}
+#account-id-value{color:#b8f7c4;overflow-wrap:anywhere;user-select:text}
+#account-id-message{color:#ffc66d;font-size:12px}
 </style>
 </head>
 <body>
@@ -37,6 +42,12 @@ body:not(.logged-in) #api-key-panel{display:none}
   </form>
 </section>
 <div id="status">Starting Linux VM...</div>
+<section id="account-id-panel" aria-label="Account ID">
+  <strong>Account ID:</strong>
+  <code id="account-id-value">Not signed in</code>
+  <button id="account-id-copy" type="button">Copy account ID</button>
+  <span id="account-id-message" role="status" aria-live="polite"></span>
+</section>
 <section id="api-key-panel" aria-labelledby="api-key-title">
 <h2 id="api-key-title">Account API key</h2>
 <p id="api-key-warning">Your current API key appears here after you sign in. Keys created before dashboard key display was enabled cannot be recovered from their stored hashes; this page will not change those keys automatically. Replacing a key invalidates the previous one.</p>
@@ -588,6 +599,11 @@ const keyCopy=document.getElementById('api-key-copy');
 const keyHide=document.getElementById('api-key-hide');
 const keyValue=document.getElementById('api-key-value');
 const keyMessage=document.getElementById('api-key-message');
+const accountIdValue=document.getElementById('account-id-value');
+const accountIdCopy=document.getElementById('account-id-copy');
+const accountIdMessage=document.getElementById('account-id-message');
+function showAccountId(id){accountIdValue.textContent=String(id||'Not signed in');accountIdMessage.textContent='';}
+accountIdCopy.addEventListener('click',async()=>{const id=accountIdValue.textContent;if(!id||id==='Not signed in')return;try{await navigator.clipboard.writeText(id);accountIdMessage.textContent='Account ID copied.';}catch(e){accountIdMessage.textContent='Clipboard blocked; select and copy the ID above.';}});
 function clearDisplayedApiKey(){keyValue.textContent='';keyValue.hidden=true;keyCopy.hidden=true;keyHide.hidden=true;}
 async function loadCurrentApiKey(){
   if(!window.snapshotIdentity||!String(window.snapshotIdentity).startsWith('acct-')||!window.snapshotAuthToken)return;
@@ -644,6 +660,7 @@ function beginAccountSession(data,launchVm=true){
     throw new Error('The server returned an invalid account session.');
   }
   window.snapshotIdentity=data.account_id;
+  showAccountId(data.account_id);
   window.snapshotAuthToken=data.session_token;
   if(typeof data.virtual_ip==='string'&&/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(data.virtual_ip))window.snapshotVirtualIp=data.virtual_ip;
   if(typeof data.virtual_mac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(data.virtual_mac))window.snapshotVirtualMac=data.virtual_mac;
@@ -704,6 +721,7 @@ form.addEventListener('submit',async function(event){
       window.snapshotAdminCode=adminCode;
     }catch(error){message.textContent=error.message||'Admin access check failed.';return}
     window.snapshotIdentity='admin';
+    showAccountId('admin');
     try{sessionStorage.setItem('vm-username','admin');sessionStorage.setItem('vm-login-time',new Date().toISOString())}catch(e){}
     panel.hidden=true;document.body.classList.add('logged-in');window.startVm();return;
   }
