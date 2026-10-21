@@ -28,7 +28,9 @@ The browser receives a one-use agent ticket after admin-code validation. The tic
 
 ## API
 
-All `/v1/vm/*` calls require `Authorization: Bearer $VM_API_TOKEN`. The default VM ID is `admin`; optionally send `X-VM-ID: admin`.
+For account-scoped `/v1/vm/status` and `/v1/vm/exec`, send the account ID in `X-Account-ID` and a bearer credential in `Authorization`. The credential may be that account's legacy `acct_...` API key or the 64-character login session token returned by `/api/auth/login` or `/api/auth/session`. The session token is bound to its account ID; a token for one account cannot authorize another. End users do not need a separate API key if the client uses the existing login session token.
+
+The Oracle bridge is registered once during Oracle installation at `POST /api/oracle/register`, authorized with the existing `x-admin-code` header. The installer then calls `GET /api/oracle/health` to verify Worker-to-Oracle connectivity. The bridge token is stored server-side in a dedicated Durable Object and is never sent to users. Deploy the updated Worker once before using the revised Oracle installer.
 
 ### Check runtime availability
 
