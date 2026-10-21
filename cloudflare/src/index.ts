@@ -1057,7 +1057,29 @@ export default {
         if (raw.length > 8192) return json({ error: "body_too_large" }, 413);
         let payload: unknown;
         try { payload = JSON.parse(raw); } catch { return json({ error: "invalid_json" }, 400); }
-        return queueOracleRequest(env, "exec", vmId, payload, 24000);
+        const command = typeof payload === "object" && payload !== null && "command" in payload &&
+          typeof (payload as { command?: unknown }).command === "string"
+          ? (payload as { command: string }).command : "";
+        const response = await queueOracleRequest(env, "exec", vmId, payload, 24000);
+        if (response.ok && command) {
+          const result = await response.clone().json().catch(() => null) as {
+            stdout?: unknown; stderr?: unknown; exit_code?: unknown; runtime?: unknown;
+          } | null;
+          if (result && typeof result.stdout === "string" && typeof result.stderr === "string" &&
+              (result.exit_code === null || typeof result.exit_code === "number")) {
+            const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(vmId));
+            await accountRegistry.fetch("https://account-registry.internal/account/oracle-results", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                id: crypto.randomUUID(), command: command.slice(0, 1000),
+                stdout: result.stdout.slice(0, 4000), stderr: result.stderr.slice(0, 2000),
+                exit_code: result.exit_code, completed_at: new Date().toISOString(),
+                runtime: typeof result.runtime === "string" ? result.runtime : "oracle-host",
+              }),
+            });
+          }
+        }
+        return response;
       }
 
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(vmId));
@@ -1073,6 +1095,14 @@ export default {
         headers: { "content-type": "application/json", "x-vm-id": vmId },
         body: raw,
       }));
+    }
+
+    if (url.pathname === "/api/account/oracle-results") {
+      if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+      const accountId = request.headers.get("x-account-id") ?? "";
+      if (!await requestHasAccountKey(env, request, accountId)) return json({ error: "unauthorized" }, 401);
+      const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      return accountRegistry.fetch("https://account-registry.internal/account/oracle-results");
     }
 
     const snapshotChunkMatch = url.pathname.match(/^\/api\/vm-snapshots\/([a-z0-9._-]{1,64})\/chunks\/([a-z0-9-]{1,40})\/([0-9]{1,3})$/i);
