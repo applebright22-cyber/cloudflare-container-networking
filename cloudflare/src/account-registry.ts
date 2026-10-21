@@ -66,7 +66,7 @@ export class AccountRegistry extends DurableObject {
         id?: unknown; action?: unknown; identity?: unknown; payload?: unknown;
       } | null;
       if (!body || typeof body.id !== "string" || !/^[a-f0-9-]{36}$/.test(body.id) ||
-          (body.action !== "status" && body.action !== "exec") ||
+          (body.action !== "status" && body.action !== "exec" && body.action !== "echo") ||
           typeof body.identity !== "string" ||
           !(body.identity === "admin" || validAccountId(body.identity))) {
         return json({ error: "invalid_oracle_job" }, 400);
