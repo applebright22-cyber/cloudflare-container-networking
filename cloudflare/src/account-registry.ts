@@ -30,6 +30,7 @@ function validAccountId(value: string): boolean {
 
 export class AccountRegistry extends DurableObject {
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
     // Internal-only Worker binding route: remove all user accounts, sessions, and IP allocations.
     if (url.pathname === "/admin/clear-accounts" && request.method === "POST") {
       const accounts: Array<{ username: string; account_id: string }> = [];
