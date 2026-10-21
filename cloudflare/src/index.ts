@@ -871,6 +871,45 @@ export default {
       return coordinator.fetch(request);
     }
 
+    // The browserless Oracle executor uses the existing bridge token to request a fresh
+    // short-lived WISP ticket. This avoids storing the five-digit Admin code on Oracle.
+    if (url.pathname === "/api/oracle/network-ticket") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      const supplied = request.headers.get("x-executor-token") ?? "";
+      if (!env.ORACLE_EXECUTOR_TOKEN || supplied.length !== env.ORACLE_EXECUTOR_TOKEN.length ||
+          !crypto.subtle.timingSafeEqual) {
+        // The Workers Web Crypto API has no timingSafeEqual; compare equal-length tokens below.
+        if (!env.ORACLE_EXECUTOR_TOKEN || supplied.length !== env.ORACLE_EXECUTOR_TOKEN.length) {
+          return json({ error: "unauthorized" }, 401);
+        }
+      }
+      let difference = 0;
+      for (let i = 0; i < supplied.length; i += 1) {
+        difference |= supplied.charCodeAt(i) ^ (env.ORACLE_EXECUTOR_TOKEN as string).charCodeAt(i);
+      }
+      if (difference !== 0) return json({ error: "unauthorized" }, 401);
+      let body: { identity?: unknown };
+      try { body = await request.json() as typeof body; }
+      catch { return json({ error: "invalid_json" }, 400); }
+      // This initial Oracle process runs the Admin baseline only. Per-account guest
+      // selection must be wired before returning account-specific network identities.
+      if (body.identity !== "admin") return json({ error: "oracle_baseline_identity_only" }, 400);
+      const relay = env.WISP_RELAY.get(env.WISP_RELAY.idFromName("admin"));
+      const ticketResponse = await relay.fetch("https://wisp-relay.internal/ticket", { method: "POST" });
+      if (!ticketResponse.ok) return json({ error: "network_ticket_unavailable" }, 503);
+      const ticketData = await ticketResponse.json() as { ticket?: unknown };
+      if (typeof ticketData.ticket !== "string" || !/^[a-f0-9]{64}$/.test(ticketData.ticket)) {
+        return json({ error: "invalid_network_ticket" }, 502);
+      }
+      return json({
+        identity: "admin",
+        ticket: ticketData.ticket,
+        relay_url: "wss://" + url.host + "/api/network/wisp/?account_id=admin&ticket=" + encodeURIComponent(ticketData.ticket),
+        vm_ip: "10.240.0.2",
+        router_ip: "10.240.0.1",
+      });
+    }
+
     if (url.pathname === "/v1/vm/status" || url.pathname === "/v1/vm/exec") {
       const vmId = request.headers.get("x-account-id") ?? "";
       if (!await requestHasAccountKey(env, request, vmId)) return json({ error: "unauthorized" }, 401);
