@@ -316,50 +316,49 @@ export default {
         stage.output = screen.slice(-24000);
         stage.passed = Boolean(observed) && screen.includes(markerText);
         if (stage.passed && key === "post_save_dhcp_verify") {
-          // VGA exposes only the current screen, not scrollback. Fetch the guest log
-          // as byte-bounded chunks bracketed by unique markers, and fail the stage if
-          // any chunk cannot be read. This avoids silently returning only screen tail.
+          // VGA exposes only the current screen, not scrollback. Read the log one
+          // source line at a time between markers; this preserves every log line and
+          // avoids treating terminal line-wraps as missing bytes.
           const collected: string[] = [];
           const sizeMarker = "__POST_SAVE_DHCP_LOG_SIZE__";
-          await sendLine("printf '\\nPOST_SAVE_DHCP_LOG_BYTES='; wc -c < /tmp/post-save-dhcp.log; echo " + sizeMarker);
+          await sendLine("printf '\\nPOST_SAVE_DHCP_LOG_LINES='; wc -l < /tmp/post-save-dhcp.log; echo " + sizeMarker);
           const sizeSeen = await emulator.wait_until_vga_screen_contains(new RegExp(sizeMarker), { timeout_msec: 10000 });
           let sizeScreen = "";
-          try { sizeScreen = emulator.screen_adapter?.get_text_screen?.().join("\\n") ?? ""; } catch {}
-          const sizeMatch = sizeSeen ? sizeScreen.match(/POST_SAVE_DHCP_LOG_BYTES=(\\d+)/) : null;
-          const byteLength = sizeMatch ? Number(sizeMatch[1]) : -1;
-          if (!Number.isSafeInteger(byteLength) || byteLength < 0 || byteLength > 24000) {
+          try { sizeScreen = emulator.screen_adapter?.get_text_screen?.().join("\n") ?? ""; } catch {}
+          const sizeMatch = sizeSeen ? sizeScreen.match(/POST_SAVE_DHCP_LOG_LINES=(\d+)/) : null;
+          const lineCount = sizeMatch ? Number(sizeMatch[1]) : -1;
+          if (!Number.isSafeInteger(lineCount) || lineCount < 0 || lineCount > 160) {
             stage.passed = false;
-            stage.error = "post_save_dhcp_log_size_unavailable_or_exceeds_limit";
-            stage.output += "\\nLOG_CAPTURE_ERROR byte_length=" + byteLength + "\\n" + sizeScreen.slice(-1200);
+            stage.error = "post_save_dhcp_log_line_count_unavailable_or_exceeds_limit";
+            stage.output = "LOG_CAPTURE_ERROR line_count=" + lineCount + "\n" + sizeScreen.slice(-1200);
           } else {
-            for (let offset = 0, chunk = 1; offset < byteLength; offset += 180, chunk++) {
-              const startMarker = "__DHCP_LOG_CHUNK_START_" + chunk + "__";
-              const endMarker = "__DHCP_LOG_CHUNK_END_" + chunk + "__";
-              const command = "printf '\\n" + startMarker + "\\n'; dd if=/tmp/post-save-dhcp.log bs=1 skip=" + offset + " count=180 2>/dev/null; printf '\\n" + endMarker + "\\n'";
-              await sendLine(command);
-              const chunkSeen = await emulator.wait_until_vga_screen_contains(new RegExp(endMarker), { timeout_msec: 10000 });
-              let chunkScreen = "";
-              try { chunkScreen = emulator.screen_adapter?.get_text_screen?.().join("\\n") ?? ""; } catch {}
-              const startIndex = chunkScreen.lastIndexOf(startMarker);
-              const endIndex = chunkScreen.lastIndexOf(endMarker);
-              if (!chunkSeen || startIndex < 0 || endIndex <= startIndex) {
+            for (let line = 1; line <= lineCount; line++) {
+              const startMarker = "__DHCP_LOG_LINE_START_" + line + "__";
+              const endMarker = "__DHCP_LOG_LINE_END_" + line + "__";
+              await sendLine("printf '\\n" + startMarker + "\\n'; sed -n '" + line + "p' /tmp/post-save-dhcp.log; printf '\\n" + endMarker + "\\n'");
+              const lineSeen = await emulator.wait_until_vga_screen_contains(new RegExp(endMarker), { timeout_msec: 10000 });
+              let lineScreen = "";
+              try { lineScreen = emulator.screen_adapter?.get_text_screen?.().join("\n") ?? ""; } catch {}
+              const startIndex = lineScreen.lastIndexOf(startMarker);
+              const endIndex = lineScreen.lastIndexOf(endMarker);
+              if (!lineSeen || startIndex < 0 || endIndex <= startIndex) {
                 stage.passed = false;
-                stage.error = "post_save_dhcp_log_chunk_capture_failed_" + chunk;
-                collected.push("LOG_CAPTURE_ERROR chunk=" + chunk + " offset=" + offset);
+                stage.error = "post_save_dhcp_log_line_capture_failed_" + line;
+                collected.push("LOG_CAPTURE_ERROR line=" + line);
                 break;
               }
-              collected.push(chunkScreen.slice(startIndex + startMarker.length, endIndex).replace(/^\\n/, "").replace(/\\n$/, ""));
+              const content = lineScreen.slice(startIndex + startMarker.length, endIndex).replace(/^\n/, "").replace(/\n$/, "").replace(/\n/g, "");
+              collected.push(content);
             }
-            const captured = collected.join("");
-            stage.output = captured.slice(0, 24000);
-            if (stage.passed && captured.length < byteLength) {
+            stage.output = collected.join("\n");
+            stage.output += "\nPOST_SAVE_DHCP_LOG_EXPECTED_LINES=" + lineCount + "\nPOST_SAVE_DHCP_LOG_CAPTURED_LINES=" + collected.length;
+            if (stage.passed && collected.length !== lineCount) {
               stage.passed = false;
-              stage.error = "post_save_dhcp_log_capture_incomplete_expected_" + byteLength + "_captured_" + captured.length;
+              stage.error = "post_save_dhcp_log_capture_incomplete";
             }
-            stage.output += "\\nPOST_SAVE_DHCP_LOG_EXPECTED_BYTES=" + byteLength + "\\nPOST_SAVE_DHCP_LOG_CAPTURED_BYTES=" + captured.length;
           }
         }
-        if (!stage.passed) stage.error = "stage_marker_not_seen_within_timeout";
+        if (!stage.passed && !stage.error) stage.error = "stage_marker_not_seen_within_timeout";
       } catch (error) {
         stage.error = (error instanceof Error ? error.message : String(error)).slice(0, 300);
       }
