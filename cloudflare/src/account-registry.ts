@@ -33,25 +33,30 @@ export class AccountRegistry extends DurableObject {
     // Internal-only Worker binding route: remove all user accounts, sessions, and IP allocations.
     if (url.pathname === "/admin/clear-accounts" && request.method === "POST") {
       const accounts: Array<{ username: string; account_id: string }> = [];
-      let cursor: string | undefined;
+      let startAfter: string | undefined;
       do {
-        const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix: "auth-user:", limit: 1000, cursor });
-        for (const [key, value] of page) {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix: "auth-user:", limit: 1000, startAfter });
+        const entries = Array.from(page.entries());
+        for (const [key, value] of entries) {
           const username = key.slice("auth-user:".length);
           if (typeof value.account_id === "string") accounts.push({ username, account_id: value.account_id });
         }
-        cursor = page.list_complete ? undefined : page.cursor;
-      } while (cursor);
+        startAfter = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
+      } while (startAfter);
 
       const prefixes = ["auth-session:", "network-allocation:", "auth-user:"];
       for (const prefix of prefixes) {
-        let deleteCursor: string | undefined;
+        const keys: string[] = [];
+        let after: string | undefined;
         do {
-          const page = await this.ctx.storage.list({ prefix, limit: 1000, cursor: deleteCursor });
-          const keys = Array.from(page.keys());
-          if (keys.length) await this.ctx.storage.delete(keys);
-          deleteCursor = page.list_complete ? undefined : page.cursor;
-        } while (deleteCursor);
+          const page = await this.ctx.storage.list({ prefix, limit: 1000, startAfter: after });
+          const pageKeys = Array.from(page.keys());
+          keys.push(...pageKeys);
+          after = page.list_complete || pageKeys.length === 0 ? undefined : pageKeys[pageKeys.length - 1];
+        } while (after);
+        for (let offset = 0; offset < keys.length; offset += 128) {
+          await this.ctx.storage.delete(keys.slice(offset, offset + 128));
+        }
       }
       return json({ ok: true, accounts, accounts_removed: accounts.length });
     }
