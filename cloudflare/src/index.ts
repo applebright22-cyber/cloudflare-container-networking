@@ -101,7 +101,7 @@ async function queueOracleRequest(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id, action, identity, payload }),
   });
-  if (!queued.ok) return json({ error: "oracle_queue_unavailable", status: queued.status }, 503);
+  if (!queued.ok) return json({ error: "oracle_queue_unavailable", status: queued.status, detail: (await queued.text()).slice(0, 500) }, 503);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const response = await registry.fetch("https://account-registry.internal/oracle/queue/result?id=" + encodeURIComponent(id));
