@@ -453,6 +453,17 @@ while(Date.now()<deadline){
     oracleShellBridgeActive=true;
     stateText('Tiny Core terminal is connected to the Oracle backend. Type local to return to the guest shell.');
     statusText('One terminal active: commands in the visible Tiny Core terminal execute on Oracle.');
+    // Persist the guest after curl is installed and the bridge is confirmed. Keep autosave enabled.
+    if(bootComplete && vmLoaded && !snapshotLoadFailed){
+      const saved=await saveVmState(false);
+      if(saved){
+        if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
+        stateText('Oracle bridge connected; VM snapshot saved. Autosave enabled.');
+      }else{
+        stateText('Oracle bridge connected, but snapshot save failed. The five-minute autosave will retry.');
+        if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
+      }
+    }
     return true;
   }
   await new Promise(resolve=>requestAnimationFrame(resolve));
