@@ -128,6 +128,42 @@ export class AccountRegistry extends DurableObject {
       return json({ ready: true, status: job.http_status, result: job.result });
     }
 
+    // Per-account durable history for Oracle command results. Public access is mediated
+    // by the Worker after verifying the account's login session.
+    if (url.pathname === "/account/oracle-results" && request.method === "GET") {
+      const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix: "oracle-result:", limit: 1000 });
+      const records = Array.from(page.entries())
+        .sort(([left], [right]) => right.localeCompare(left))
+        .slice(0, 25)
+        .map(([, value]) => value);
+      return json({ ok: true, results: records });
+    }
+    if (url.pathname === "/account/oracle-results" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as {
+        id?: unknown; command?: unknown; stdout?: unknown; stderr?: unknown;
+        exit_code?: unknown; completed_at?: unknown; runtime?: unknown;
+      } | null;
+      if (!body || typeof body.id !== "string" || !/^[a-f0-9-]{36}$/.test(body.id) ||
+          typeof body.command !== "string" || body.command.length > 1000 ||
+          typeof body.stdout !== "string" || body.stdout.length > 4000 ||
+          typeof body.stderr !== "string" || body.stderr.length > 2000 ||
+          !(body.exit_code === null || (typeof body.exit_code === "number" && Number.isInteger(body.exit_code))) ||
+          typeof body.completed_at !== "string") {
+        return json({ error: "invalid_oracle_result_record" }, 400);
+      }
+      const record = {
+        id: body.id, command: body.command, stdout: body.stdout, stderr: body.stderr,
+        exit_code: body.exit_code, completed_at: body.completed_at,
+        runtime: typeof body.runtime === "string" ? body.runtime.slice(0, 80) : "oracle-host",
+      };
+      const key = "oracle-result:" + Date.now().toString().padStart(13, "0") + ":" + body.id;
+      await this.ctx.storage.put(key, record);
+      const page = await this.ctx.storage.list({ prefix: "oracle-result:", limit: 1000 });
+      const keys = Array.from(page.keys()).sort();
+      for (const oldKey of keys.slice(0, Math.max(0, keys.length - 50))) await this.ctx.storage.delete(oldKey);
+      return json({ ok: true, id: body.id }, 201);
+    }
+
     // Internal-only Worker binding route: list account IDs without changing Durable Object storage.
     if (url.pathname === "/admin/list-accounts" && request.method === "GET") {
       const accounts: Array<{ username: string; account_id: string }> = [];
