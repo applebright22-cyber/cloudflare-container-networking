@@ -1,2 +1,2 @@
-# No TUNNEL_TOKEN, CLIENT_TOKEN, or VM API token is required.
-# Gateway/client requests authenticate with an account ID and its account API key.
+# Account ID and account API key are supplied by each client request.
+# No shared Worker API or tunnel tokens are required.
