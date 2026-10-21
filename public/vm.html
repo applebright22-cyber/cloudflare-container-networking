@@ -444,7 +444,7 @@ const script = [
 '  esac',
 'done',
 ].join('\n');
-const installCmd="stty -echo 2>/dev/null; command -v curl >/dev/null 2>&1 || tce-load -i curl >/tmp/oracle-curl-install.log 2>&1; cat > /tmp/oracle-shell.sh <<'ORACLE_SHELL_EOF'\n"+script+"\nORACLE_SHELL_EOF\nchmod 700 /tmp/oracle-shell.sh\nstty echo 2>/dev/null; export ORACLE_WORKER_URL='"+apiUrl+"' ORACLE_ACCOUNT_ID='"+accountLiteral+"' ORACLE_SESSION_TOKEN='"+tokenLiteral+"' ORACLE_ADMIN_CODE='"+adminLiteral+"'; /bin/sh /tmp/oracle-shell.sh\n";
+const installCmd="stty -echo 2>/dev/null; command -v curl >/dev/null 2>&1 || tce-load -i curl >/tmp/oracle-curl-install.log 2>&1; if command -v curl >/dev/null 2>&1; then cat > /tmp/oracle-shell.sh <<'ORACLE_SHELL_EOF'\n"+script+"\nORACLE_SHELL_EOF\nchmod 700 /tmp/oracle-shell.sh\nstty echo 2>/dev/null; export ORACLE_WORKER_URL='"+apiUrl+"' ORACLE_ACCOUNT_ID='"+accountLiteral+"' ORACLE_SESSION_TOKEN='"+tokenLiteral+"' ORACLE_ADMIN_CODE='"+adminLiteral+"'; /bin/sh /tmp/oracle-shell.sh; else stty echo 2>/dev/null; echo ORACLE_CURL_MISSING; fi\n";
 stateText('Connecting the Tiny Core terminal to the Oracle backend…');
 await sendVmCommand(installCmd);
 const deadline=Date.now()+30000;
