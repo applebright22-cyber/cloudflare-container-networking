@@ -164,7 +164,7 @@ export default {
             } else {
               runtimeJobObjectCount += 1;
               runtimeJobBytes += object.size;
-              const match = object.key.match(/^runtime-jobs\\/(acct-[a-f0-9-]{36})\\.json$/);
+              const match = object.key.match(/^runtime-jobs\/(acct-[a-f0-9-]{36})\.json$/);
               if (match) runtimeJobIds.add(match[1]);
               if (runtimeJobObjects.length < 1000) runtimeJobObjects.push(item);
               else runtimeJobOutputTruncated = true;
