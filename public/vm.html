@@ -247,7 +247,9 @@ await sendVmCommand('printf "\\n'+begin+'\\n"; sed -n "'+start+','+end+'p" /tmp/
 let chunk=null;
 for(let tries=0;tries<300;tries++){
 const t=screenText(),aa=t.lastIndexOf(begin),bb=t.lastIndexOf(finish);
-if(aa>=0&&bb>aa&&shellPrompt(t.slice(bb+finish.length))){chunk=t.slice(aa+begin.length,bb).replace(/^\r?\n/,'').replace(/\r?\n$/,'');break}
+// A unique end marker means the command finished; don't require a clean prompt line,
+// because wrapped output and terminal scrollback can obscure the prompt.
+if(aa>=0&&bb>aa){chunk=t.slice(aa+begin.length,bb).replace(/^\r?\n/,'').replace(/\r?\n$/,'');break}
 await new Promise(resolve=>requestAnimationFrame(resolve));
 }
 if(chunk===null)throw new Error('failed capturing log lines '+start+'-'+end);
