@@ -970,14 +970,33 @@ export default {
       const bridge = await getOracleBridgeConfig(env);
       if (!bridge) return json({ ok: false, worker_configured: false, oracle_reachable: false }, 503);
       try {
-        const response = await fetch(new URL("/health", bridge.executor_url), {
+        const endpoint = new URL("/health", bridge.executor_url);
+        const response = await fetch(endpoint, {
           headers: { "x-executor-token": bridge.executor_token },
           signal: AbortSignal.timeout(5000),
         });
-        const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-        return json({ ok: response.ok, worker_configured: true, oracle_reachable: response.ok, oracle: payload }, response.ok ? 200 : 503);
-      } catch {
-        return json({ ok: false, worker_configured: true, oracle_reachable: false, error: "oracle_executor_unreachable" }, 503);
+        const body = await response.text();
+        let oracle: unknown = body;
+        try {
+          oracle = JSON.parse(body);
+        } catch {
+          // Preserve non-JSON upstream bodies for diagnosis.
+        }
+        return json({
+          ok: response.ok,
+          worker_configured: true,
+          oracle_reachable: true,
+          upstream_status: response.status,
+          upstream_content_type: response.headers.get("content-type"),
+          oracle,
+        }, response.ok ? 200 : 503);
+      } catch (error) {
+        return json({
+          ok: false,
+          worker_configured: true,
+          oracle_reachable: false,
+          error: error instanceof Error ? error.message : String(error),
+        }, 503);
       }
     }
 
