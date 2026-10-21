@@ -166,20 +166,25 @@ if(!chunk.trim())return;
 terminalHistory+=(terminalHistory?'\n':'')+chunk;
 report('\n===== LIVE SHELL HISTORY =====\n'+chunk+'\n');
 }
+function normalizeScreenLines(raw){
+const lines=String(raw||'').replace(/\r/g,'').split('\n').map(line=>line.replace(/[ \t]+$/,''));
+while(lines.length&& !lines[0].trim())lines.shift();
+while(lines.length&& !lines[lines.length-1].trim())lines.pop();
+return lines;
+}
 function mirror(){
 const raw=screenText().replace(/\r/g,'');
-const lines=raw.split('\n');
+const lines=normalizeScreenLines(raw);
 if(!raw.trim())return;
 mystLog.textContent=raw;
 mystLog.scrollTop=mystLog.scrollHeight;
 if(!lastMirrorLines.length){
-const first=lines.findIndex(line=>line.trim());
-if(first>=0)appendTerminalHistory(lines.slice(first));
+if(lines.length)appendTerminalHistory(lines);
 lastMirrorLines=lines;
 return;
 }
-// Keep an append-only transcript by finding the largest overlap between the
-// prior terminal view and the current view. Screen redraws do not erase history.
+// Compare normalized, nonblank screen rows so padding and empty rows do not
+// break the overlap and cause the same terminal output to be logged repeatedly.
 let overlap=0;
 const max=Math.min(lastMirrorLines.length,lines.length);
 for(let n=max;n>0;n--){
