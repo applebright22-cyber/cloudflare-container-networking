@@ -506,9 +506,51 @@ echo HTTPS_PREFLIGHT_RC=$rc
           const manifest = await commitGuestSnapshot(env.VM_SNAPSHOTS, snapshotIdentity, generation, state, checks);
           state = undefined; // Release the original ~100 MiB state before verifying stored bytes.
           snapshotRoundtrip.saved = true;
-          await writeProgress("running", "snapshot_saved", { snapshot_roundtrip: { ...snapshotRoundtrip } });
           snapshotRoundtrip.generation = manifest.generation;
           snapshotRoundtrip.sha256 = manifest.sha256;
+          await writeProgress("running", "snapshot_saved", { snapshot_roundtrip: { ...snapshotRoundtrip } });
+
+          // Re-run the user's requested interface/route/DNS DHCP diagnostics only
+          // after the snapshot has been durably saved. This checks live networking
+          // at the post-save verification point without allocating a second emulator.
+          const postSaveDhcpCommand = `set +e
+IFACE=eth0
+echo "===== DHCP TEST ====="
+echo "--- Interfaces ---"
+/sbin/ifconfig -a
+echo "--- Existing routes ---"
+/sbin/route -n
+echo "--- Request DHCP lease ---"
+sudo -n /sbin/ifconfig "$IFACE" up
+sudo -n /sbin/udhcpc -f -n -q -i "$IFACE"
+echo "DHCP_CLIENT_RC=$?"
+echo "--- Interface after DHCP ---"
+/sbin/ifconfig "$IFACE"
+echo "--- Routes after DHCP ---"
+/sbin/route -n
+echo "--- DNS ---"
+cat /etc/resolv.conf
+echo "===== DHCP TEST COMPLETE ====="
+echo POST_SAVE_DHCP_DIAGNOSTICS_DONE`;
+          await runStage("post_save_dhcp_verify", postSaveDhcpCommand, "POST_SAVE_DHCP_DIAGNOSTICS_DONE", 90000, true);
+          const postSaveDhcpOutput = stages.post_save_dhcp_verify.output ?? "";
+          const postSaveDhcpClientRc = postSaveDhcpOutput.match(/DHCP_CLIENT_RC=(\\d+)/)?.[1];
+          const postSaveHasIpv4 = /inet addr:\\d+\\.\\d+\\.\\d+\\.\\d+|inet \\d+\\.\\d+\\.\\d+\\.\\d+/.test(postSaveDhcpOutput);
+          const postSaveHasDefaultRoute = /0\\.0\\.0\\.0\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/.test(postSaveDhcpOutput);
+          stages.post_save_dhcp_verify.passed = stages.post_save_dhcp_verify.passed &&
+            postSaveDhcpClientRc === "0" && postSaveHasIpv4 && postSaveHasDefaultRoute &&
+            /DHCP TEST COMPLETE/.test(postSaveDhcpOutput);
+          if (!stages.post_save_dhcp_verify.passed) {
+            stages.post_save_dhcp_verify.error = "post_save_dhcp_lease_interface_or_default_route_verification_failed";
+            snapshotRoundtrip.post_save_dhcp_verified = false;
+          } else {
+            snapshotRoundtrip.post_save_dhcp_verified = true;
+          }
+          await writeProgress("running", "post_save_dhcp_verified", {
+            snapshot_roundtrip: { ...snapshotRoundtrip },
+            stage_results: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, error: item.error ?? null }]))
+          });
+
           try { emulator?.stop(); } catch {}
           emulator = undefined;
           const readback = await readCommittedGuestSnapshot(env.VM_SNAPSHOTS, snapshotIdentity);
@@ -520,12 +562,12 @@ echo HTTPS_PREFLIGHT_RC=$rc
           snapshotRoundtrip.restore_deferred_to_dashboard = true;
           await writeProgress("running", "snapshot_readback_verified", {
             snapshot_roundtrip: { ...snapshotRoundtrip },
-            note: "Snapshot save and R2 read-back digest passed. The authenticated dashboard GUI will load this saved state; this signup test does not start a second emulator."
+            note: "Snapshot save, post-save DHCP diagnostics, and R2 read-back digest are verified. The authenticated dashboard GUI will load this saved state; this signup test does not start a second emulator."
           });
           // Do not allocate a second ~100 MiB emulator here. The browser dashboard
           // will recover this exact snapshot after registration completes.
-          roundtripPassed = snapshotRoundtrip.saved === true && snapshotRoundtrip.readback === true &&
-            snapshotRoundtrip.readback_digest_verified === true;
+          roundtripPassed = snapshotRoundtrip.saved === true && snapshotRoundtrip.post_save_dhcp_verified === true &&
+            snapshotRoundtrip.readback === true && snapshotRoundtrip.readback_digest_verified === true;
         } catch (error) {
           snapshotRoundtrip.error = (error instanceof Error ? error.message : String(error)).slice(0, 300);
           try { emulator?.stop(); } catch {}
