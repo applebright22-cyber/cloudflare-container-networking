@@ -188,6 +188,116 @@ export default {
       }, failures.length ? 207 : 200);
     }
 
+    // Targeted, authenticated purge for explicitly supplied account IDs only.
+    // This is separate from DELETE /api/admin/accounts, which clears all registered accounts.
+    if (url.pathname === "/api/admin/purge-accounts" && request.method === "POST") {
+      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_code_not_configured" }, 503);
+      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_CODE)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const body = await request.json().catch(() => null) as {
+        account_ids?: unknown; dry_run?: unknown; confirm?: unknown;
+      } | null;
+      if (!body || !Array.isArray(body.account_ids) || body.account_ids.length < 1 ||
+          body.account_ids.length > 50 ||
+          !body.account_ids.every((id) => typeof id === "string" && /^acct-[a-f0-9-]{36}$/.test(id)) ||
+          new Set(body.account_ids).size !== body.account_ids.length) {
+        return json({ error: "invalid_account_ids", note: "Supply 1-50 unique acct- IDs." }, 400);
+      }
+      const dryRun = body.dry_run !== false;
+      if (!dryRun && body.confirm !== "PURGE_SPECIFIED_ACCOUNTS") {
+        return json({ error: "confirmation_required", required: "PURGE_SPECIFIED_ACCOUNTS" }, 400);
+      }
+
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const results: Array<Record<string, unknown>> = [];
+      for (const accountId of body.account_ids as string[]) {
+        const result: Record<string, unknown> = {
+          account_id: accountId, dry_run: dryRun, steps: {}, errors: [],
+        };
+        const steps = result.steps as Record<string, unknown>;
+        const errors = result.errors as Array<{ step: string; error: string }>;
+
+        // Inventory R2 snapshot keys first; never include the Admin baseline prefix.
+        const snapshotKeys: string[] = [];
+        let cursor: string | undefined;
+        let listFailed = false;
+        do {
+          const page = await env.VM_SNAPSHOTS.list({
+            prefix: "vm-snapshots/" + accountId + "/", limit: 1000, cursor,
+          }).catch(() => null);
+          if (!page) { listFailed = true; break; }
+          snapshotKeys.push(...page.objects.map((object) => object.key));
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+        steps.snapshot_objects_found = snapshotKeys.length;
+        steps.runtime_job_exists = Boolean(await env.VM_SNAPSHOTS.head("runtime-jobs/" + accountId + ".json").catch(() => null));
+        if (listFailed) errors.push({ step: "snapshot_list", error: "r2_list_failed" });
+
+        if (!dryRun && !listFailed) {
+          const authPurge = await authRegistry.fetch("https://account-registry.internal/admin/purge-account", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ account_id: accountId }),
+          }).catch(() => new Response("request_failed", { status: 500 }));
+          if (authPurge.ok) steps.shared_auth_and_network_records = await authPurge.json().catch(() => ({ ok: true }));
+          else errors.push({ step: "shared_auth_and_network_records", error: "http_" + authPurge.status });
+
+          const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+          const accountPurge = await accountRegistry.fetch("https://account-registry.internal/admin/purge-account-data", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ account_id: accountId }),
+          }).catch(() => new Response("request_failed", { status: 500 }));
+          if (accountPurge.ok) steps.account_durable_object_storage = await accountPurge.json().catch(() => ({ ok: true }));
+          else errors.push({ step: "account_durable_object_storage", error: "http_" + accountPurge.status });
+
+          const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(accountId));
+          const provisionerPurge = await provisioner.fetch("https://account-provisioner.internal/purge", { method: "POST" })
+            .catch(() => new Response("request_failed", { status: 500 }));
+          if (provisionerPurge.ok) steps.provisioner_durable_object_storage = await provisionerPurge.json().catch(() => ({ ok: true }));
+          else errors.push({ step: "provisioner_durable_object_storage", error: "http_" + provisionerPurge.status });
+
+          for (let offset = 0; offset < snapshotKeys.length; offset += 1000) {
+            try {
+              await env.VM_SNAPSHOTS.delete(snapshotKeys.slice(offset, offset + 1000));
+            } catch {
+              errors.push({ step: "snapshot_objects", error: "r2_delete_failed" });
+              break;
+            }
+          }
+          steps.snapshot_objects_deleted = errors.some((entry) => entry.step === "snapshot_objects") ? null : snapshotKeys.length;
+          try {
+            await env.VM_SNAPSHOTS.delete("runtime-jobs/" + accountId + ".json");
+            steps.runtime_job_deleted = true;
+          } catch {
+            errors.push({ step: "runtime_job", error: "r2_delete_failed" });
+          }
+        } else if (dryRun) {
+          steps.would_delete = [
+            "matching auth-user and auth-session records",
+            "network allocation for this account (IP counter is preserved)",
+            "all storage keys and alarm in the account-specific AccountRegistry object",
+            "all storage keys and alarm in the account-specific AccountProvisioner object",
+            "R2 objects under vm-snapshots/" + accountId + "/",
+            "R2 object runtime-jobs/" + accountId + ".json",
+          ];
+        }
+
+        result.ok = dryRun ? !listFailed : errors.length === 0;
+        results.push(result);
+      }
+      return json({
+        ok: results.every((entry) => entry.ok === true),
+        dry_run: dryRun,
+        account_count: results.length,
+        results,
+        limitations: [
+          "This purges account-scoped storage and R2 objects, not the Durable Object namespace itself.",
+          "Cloudflare dashboard request metrics or historical metadata may remain visible.",
+          "Any account data stored outside these known Durable Object keys and R2 prefixes is not covered.",
+        ],
+      }, results.some((entry) => entry.ok !== true) ? 207 : 200);
+    }
+
     // Authenticated API read-back verification for a snapshot written by Workerd.
     // This validates R2 bytes only; it does not claim that v86 restored the guest.
     if (url.pathname === "/v1/runtime/snapshot-readback") {
