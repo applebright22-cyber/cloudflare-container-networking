@@ -49,7 +49,11 @@ const install = [
   'TCE_DIR="/tmp/oracle-tce"',
   'mkdir -p "$TCE_DIR/optional"',
   'export TCEDIR="$TCE_DIR"',
-  ...names.map((name) => `wget -q -O "$TCE_DIR/optional/${name}" "$BASE_URL/${name}" || { echo "BUNDLED_EXTENSION_DOWNLOAD_FAILED=${name}"; exit 1; }`),
+  ...names.flatMap((name) => [
+    `wget -q -O "$TCE_DIR/optional/${name}" "$BASE_URL/${name}" || { echo "BUNDLED_EXTENSION_DOWNLOAD_FAILED=${name}"; exit 1; }`,
+    `wget -q -O "$TCE_DIR/optional/${name}.dep" "$BASE_URL/${name}.dep" 2>/dev/null || rm -f "$TCE_DIR/optional/${name}.dep"`,
+    `wget -q -O "$TCE_DIR/optional/${name}.md5.txt" "$BASE_URL/${name}.md5.txt" 2>/dev/null || rm -f "$TCE_DIR/optional/${name}.md5.txt"`
+  ]),
   'cd "$TCE_DIR/optional"',
   'for f in *.tcz; do [ -f "$f" ] || continue; md5file="$f.md5.txt"; if [ -f "$md5file" ]; then expected="$(awk \'NR==1 {print $1}\' "$md5file")"; actual="$(md5sum "$f" | awk \'{print $1}\')"; [ "$expected" = "$actual" ] || { echo "BUNDLED_EXTENSION_CHECKSUM_FAILED=$f"; exit 1; }; fi; done',
   'tce-load -i curl.tcz',
