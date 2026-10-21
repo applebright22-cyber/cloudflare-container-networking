@@ -618,7 +618,7 @@ echo POST_SAVE_DHCP_DIAGNOSTICS_DONE`;
           }
           await writeProgress("running", "post_save_dhcp_verified", {
             snapshot_roundtrip: { ...snapshotRoundtrip },
-            stage_results: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, error: item.error ?? null }]))
+            stage_results: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, marker: item.marker, error: item.error ?? null, output: item.output ?? null }]))
           });
 
           try { emulator?.stop(); } catch {}
@@ -648,7 +648,7 @@ echo POST_SAVE_DHCP_DIAGNOSTICS_DONE`;
     try { screenExcerpt = emulator?.screen_adapter?.get_text_screen?.().join("\\n").slice(-5000) ?? ""; } catch {}
     try { emulator?.stop(); } catch {}
     const passed = guestChecksPassed && roundtripPassed;
-    await writeProgress(passed ? "running" : "error", passed ? "snapshot_readback_verified" : "failed", { guest_checks_passed: guestChecksPassed, passed, snapshot_ready_for_dashboard: passed, guest_booted: boot.booted, boot_error: boot.reason ?? null, stages: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, error: item.error ?? null }])), snapshot_roundtrip: snapshotRoundtrip });
+    await writeProgress(passed ? "running" : "error", passed ? "snapshot_readback_verified" : "failed", { guest_checks_passed: guestChecksPassed, passed, snapshot_ready_for_dashboard: passed, guest_booted: boot.booted, boot_error: boot.reason ?? null, stages: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, marker: item.marker, error: item.error ?? null, output: item.output ?? null }])), snapshot_roundtrip: snapshotRoundtrip });
     return Response.json({
       probe: "tinycore-snapshot-save-readback",
       identity: snapshotIdentity,
