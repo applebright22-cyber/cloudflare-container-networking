@@ -62,7 +62,6 @@ storage = "sqlite"
 
 [vars]
 VM_BASELINE_ID = "admin"
-ORACLE_EXECUTOR_URL = "http://141.148.53.68:8787"
 
 [exports.AccountRegistry]
 type = "durable-object"
