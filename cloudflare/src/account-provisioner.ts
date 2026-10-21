@@ -62,6 +62,11 @@ export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
       await this.ctx.storage.delete("job");
       return json({ ok: true, cancelled: Boolean(existed) });
     }
+    if (url.pathname === "/purge" && request.method === "POST") {
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      return json({ ok: true, storage_cleared: true, alarm_deleted: true });
+    }
     if (url.pathname !== "/start" || request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     const body = await request.json().catch(() => null) as { identity?: unknown; username?: unknown; baseline_id?: unknown } | null;
     const identity = typeof body?.identity === "string" ? body.identity.toLowerCase() : "";
