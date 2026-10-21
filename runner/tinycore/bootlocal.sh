@@ -6,7 +6,7 @@ set -u
 
 LOG_FILE="/var/log/tinycore-final-boot.log"
 IFACE="${NODE_INTERFACE:-eth0}"
-HTTPS_TEST_URL="${BOOT_HTTPS_TEST_URL:-https://example.com/}"
+HTTPS_TEST_URL="${BOOT_HTTPS_TEST_URL:-https://raw.githubusercontent.com/brightlambre22-sketch/cloudflare-container-networking/main/README.md}"
 ROUTE_WAIT_SECONDS=60
 TLS_ATTEMPTS=10
 TLS_TIMEOUT_SECONDS=8
