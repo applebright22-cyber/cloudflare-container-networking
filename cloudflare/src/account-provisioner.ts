@@ -56,6 +56,12 @@ function baselineIsReady(value: BaselineManifest): boolean {
 export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/cancel" && request.method === "DELETE") {
+      await this.ctx.storage.deleteAlarm();
+      const existed = await this.ctx.storage.get<ProvisioningJob>("job");
+      await this.ctx.storage.delete("job");
+      return json({ ok: true, cancelled: Boolean(existed) });
+    }
     if (url.pathname !== "/start" || request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     const body = await request.json().catch(() => null) as { identity?: unknown; username?: unknown; baseline_id?: unknown } | null;
     const identity = typeof body?.identity === "string" ? body.identity.toLowerCase() : "";
