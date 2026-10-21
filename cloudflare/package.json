@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "prepare:worker-wasm": "node scripts/prepare-worker-wasm.mjs",
-    "check": "npm run build:headless-v86 && wrangler deploy --dry-run",
+    "prepare:tinycore-curl": "node scripts/prepare-tinycore-curl.mjs",
+    "check": "npm run build:headless-v86 && npm run prepare:tinycore-curl && wrangler deploy --dry-run",
     "test:workerd-v86": "npm run prepare:worker-wasm && wrangler dev --local --config wrangler.headless-v86-smoke.toml --ip 127.0.0.1 --port 8788",
-    "deploy": "npm run build:headless-v86 && wrangler deploy",
+    "deploy": "npm run build:headless-v86 && npm run prepare:tinycore-curl && wrangler deploy",
     "test:headless": "node --experimental-strip-types --test test/*.test.ts",
     "build:headless-v86": "npm run prepare:worker-wasm && esbuild src/headless-v86-entry.ts --bundle --platform=browser --format=esm --target=es2022 --define:require=undefined --define:process=undefined --external:crypto --external:fs --external:perf_hooks --external:node:* --outfile=dist/headless-v86-bundle.js"
   },
