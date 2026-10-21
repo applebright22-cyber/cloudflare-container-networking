@@ -25,12 +25,10 @@ On a development machine with Node.js, clone this repository, then run:
    cd cloudflare
    npm install
    npx wrangler login
-   npx wrangler secret put TUNNEL_TOKEN
-   npx wrangler secret put CLIENT_TOKEN
    npm run deploy
    ~~~
 
-Use two independently generated random values. Never commit them. Wrangler prints the deployed Workers URL. The gateway role uses TUNNEL_TOKEN and the smoke-test client uses CLIENT_TOKEN. The node registry is temporarily unauthenticated while we finish the node lifecycle implementation.
+Wrangler prints the deployed Workers URL. Gateway and client connections use the same account credential format: account ID plus that account API key. The node registry is temporarily unauthenticated while we finish the node lifecycle implementation.
 
 ## Run the TCP proof on the Oracle gateway
 
@@ -43,12 +41,12 @@ On the Oracle host, install the Python dependency:
    pip install -r requirements.txt
    ~~~
 
-Set these environment values in the gateway shell (use the actual Workers URL; keep tokens out of files and chat):
+Set these environment values in the gateway shell (use the actual Workers URL and the account ID/API key issued by the application):
 
    ~~~sh
    export TUNNEL_URL=wss://YOUR-WORKER.workers.dev/tunnel
-   export TUNNEL_TOKEN='gateway-token-set-in-Cloudflare'
-   export CLIENT_TOKEN='test-client-token-set-in-Cloudflare'
+   export ACCOUNT_ID='acct-your-account-id'
+   export ACCOUNT_API_KEY='acct_your_account_api_key'
    export NODE_ID=oracle-gateway
    ~~~
 
