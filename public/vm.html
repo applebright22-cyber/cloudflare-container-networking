@@ -180,7 +180,7 @@ const lines=normalizeScreenLines(raw);
 if(!raw.trim())return;
 if(raw!==lastMirrorRaw){mystLog.textContent=raw;mystLog.scrollTop=mystLog.scrollHeight;lastMirrorRaw=raw;}
 if(!lastMirrorLines.length){
-if(lines.length)appendTerminalHistory(lines);
+if(lines.length&&!manualCommandRunning)appendTerminalHistory(lines);
 lastMirrorLines=lines;
 return;
 }
@@ -195,7 +195,7 @@ if(lastMirrorLines[lastMirrorLines.length-n+j]!==lines[j]){same=false;break}
 }
 if(same){overlap=n;break}
 }
-if(overlap<lines.length)appendTerminalHistory(lines.slice(overlap));
+if(overlap<lines.length&&!manualCommandRunning)appendTerminalHistory(lines.slice(overlap));
 lastMirrorLines=lines;
 }
 function mirrorLoop(){mirror();setTimeout(mirrorLoop,500)}
