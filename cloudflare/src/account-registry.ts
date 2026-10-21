@@ -18,6 +18,7 @@ export interface AccountRecord {
 
 interface StoredAccount extends AccountRecord {
   api_key_sha256: string;
+  api_key?: string;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -353,13 +354,14 @@ export class AccountRegistry extends DurableObject {
     if (url.pathname === "/create" && request.method === "POST") {
       const body = await request.json().catch(() => null) as {
         account_id?: unknown; name?: unknown; baseline_id?: unknown;
-        snapshot_identity?: unknown; api_key_sha256?: unknown; virtual_ip?: unknown; virtual_mac?: unknown;
+        snapshot_identity?: unknown; api_key_sha256?: unknown; api_key?: unknown; virtual_ip?: unknown; virtual_mac?: unknown;
       } | null;
       if (!body || typeof body.account_id !== "string" || !validAccountId(body.account_id) ||
           typeof body.name !== "string" || body.name.length < 1 || body.name.length > 80 ||
           typeof body.baseline_id !== "string" || !/^[a-zA-Z0-9._-]{1,64}$/.test(body.baseline_id) ||
           typeof body.snapshot_identity !== "string" || !/^acct-[a-f0-9-]{36}$/.test(body.snapshot_identity) ||
           typeof body.api_key_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(body.api_key_sha256) ||
+          typeof body.api_key !== "string" || !/^acct_[a-f0-9]{64}$/.test(body.api_key) ||
           typeof body.virtual_ip !== "string" || !/^10\.240\.(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.(?:[2-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])$/.test(body.virtual_ip) ||
           typeof body.virtual_mac !== "string" || !/^02(?::[0-9a-f]{2}){5}$/.test(body.virtual_mac)) {
         return json({ error: "invalid_account_record" }, 400);
@@ -379,6 +381,7 @@ export class AccountRegistry extends DurableObject {
         updated_at: now,
         error: null,
         api_key_sha256: body.api_key_sha256,
+        api_key: body.api_key,
       };
       await this.ctx.storage.put(key, record);
       return json({ account: this.publicRecord(record) }, 201);
@@ -389,16 +392,28 @@ export class AccountRegistry extends DurableObject {
     if (rotateKeyMatch && request.method === "POST") {
       const accountId = decodeURIComponent(rotateKeyMatch[1]);
       if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
-      const body = await request.json().catch(() => null) as { api_key_sha256?: unknown } | null;
-      if (typeof body?.api_key_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(body.api_key_sha256)) {
-        return json({ error: "invalid_api_key_hash" }, 400);
+      const body = await request.json().catch(() => null) as { api_key_sha256?: unknown; api_key?: unknown } | null;
+      if (typeof body?.api_key_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(body.api_key_sha256) ||
+          typeof body.api_key !== "string" || !/^acct_[a-f0-9]{64}$/.test(body.api_key)) {
+        return json({ error: "invalid_api_key" }, 400);
       }
       const key = "account:" + accountId;
       const record = await this.ctx.storage.get<StoredAccount>(key);
       if (!record) return json({ error: "account_not_found" }, 404);
-      const updated: StoredAccount = { ...record, api_key_sha256: body.api_key_sha256, updated_at: new Date().toISOString() };
+      const updated: StoredAccount = { ...record, api_key_sha256: body.api_key_sha256, api_key: body.api_key, updated_at: new Date().toISOString() };
       await this.ctx.storage.put(key, updated);
       return json({ ok: true, account_id: accountId, updated_at: updated.updated_at });
+    }
+
+    if (rotateKeyMatch && request.method === "GET") {
+      const accountId = decodeURIComponent(rotateKeyMatch[1]);
+      if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
+      const record = await this.ctx.storage.get<StoredAccount>("account:" + accountId);
+      if (!record) return json({ error: "account_not_found" }, 404);
+      if (typeof record.api_key !== "string" || !/^acct_[a-f0-9]{64}$/.test(record.api_key)) {
+        return json({ error: "api_key_not_retrievable" }, 404);
+      }
+      return json({ account_id: accountId, api_key: record.api_key });
     }
 
     const match = url.pathname.match(/^\/account\/([^/]+)$/);
@@ -455,7 +470,7 @@ export class AccountRegistry extends DurableObject {
   }
 
   private publicRecord(record: StoredAccount): AccountRecord {
-    const { api_key_sha256: _secret, ...publicRecord } = record;
+    const { api_key_sha256: _secret, api_key: _rawKey, ...publicRecord } = record;
     return publicRecord;
   }
 
