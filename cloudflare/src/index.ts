@@ -902,17 +902,16 @@ export default {
       return coordinator.fetch(request);
     }
 
-    // The browserless Oracle executor uses the existing bridge token to request a fresh
-    // short-lived WISP ticket. This avoids storing the five-digit Admin code on Oracle.
+    // The Oracle executor uses its registered machine token to request a fresh
+    // short-lived WISP ticket. The Admin code is never stored on Oracle.
     if (url.pathname === "/api/oracle/network-ticket") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
       const supplied = request.headers.get("x-executor-token") ?? "";
-      if (!env.ORACLE_EXECUTOR_TOKEN || supplied.length !== env.ORACLE_EXECUTOR_TOKEN.length) {
-        return json({ error: "unauthorized" }, 401);
-      }
+      const bridge = await getOracleBridgeConfig(env);
+      if (!bridge || supplied.length !== bridge.executor_token.length) return json({ error: "unauthorized" }, 401);
       let difference = 0;
       for (let i = 0; i < supplied.length; i += 1) {
-        difference |= supplied.charCodeAt(i) ^ (env.ORACLE_EXECUTOR_TOKEN as string).charCodeAt(i);
+        difference |= supplied.charCodeAt(i) ^ bridge.executor_token.charCodeAt(i);
       }
       if (difference !== 0) return json({ error: "unauthorized" }, 401);
       let body: { identity?: unknown };
