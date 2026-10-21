@@ -313,13 +313,13 @@ export default {
         const observed = await emulator.wait_until_vga_screen_contains(new RegExp(markerText), { timeout_msec: timeout });
         let screen = "";
         try { screen = emulator.screen_adapter?.get_text_screen?.().join("\n") ?? ""; } catch {}
-        stage.output = screen.slice(-5000);
+        stage.output = screen.slice(-20000);
         stage.passed = Boolean(observed) && screen.includes(markerText);
         if (!stage.passed) stage.error = "stage_marker_not_seen_within_timeout";
       } catch (error) {
         stage.error = (error instanceof Error ? error.message : String(error)).slice(0, 300);
       }
-      await writeProgress("running", key, { stage: key, stage_status: stage.passed ? "passed" : "failed", stage_error: stage.error ?? null, stage_results: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, error: item.error ?? null }])) });
+      await writeProgress("running", key, { stage: key, stage_status: stage.passed ? "passed" : "failed", stage_error: stage.error ?? null, stage_results: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, marker: item.marker, error: item.error ?? null, output: item.output ?? null }])) });
       return stage.passed;
     };
 
@@ -514,23 +514,50 @@ echo HTTPS_PREFLIGHT_RC=$rc
           // after the snapshot has been durably saved. This checks live networking
           // at the post-save verification point without allocating a second emulator.
           const postSaveDhcpCommand = `set +e
-IFACE=eth0
-echo "===== DHCP TEST ====="
-echo "--- Interfaces ---"
-/sbin/ifconfig -a
-echo "--- Existing routes ---"
-/sbin/route -n
-echo "--- Request DHCP lease ---"
-sudo -n /sbin/ifconfig "$IFACE" up
-sudo -n /sbin/udhcpc -f -n -q -i "$IFACE"
-echo "DHCP_CLIENT_RC=$?"
-echo "--- Interface after DHCP ---"
-/sbin/ifconfig "$IFACE"
-echo "--- Routes after DHCP ---"
-/sbin/route -n
-echo "--- DNS ---"
-cat /etc/resolv.conf
-echo "===== DHCP TEST COMPLETE ====="
+LOG=/tmp/post-save-dhcp.log
+{
+  echo "===== DHCP TEST START $(date -u 2>/dev/null) ====="
+  echo "LOG_PATH=$LOG"
+  echo "--- Identity / time ---"
+  id
+  date -u 2>&1
+  IFACE=eth0
+  echo "IFACE=$IFACE"
+  echo "--- Interfaces before DHCP ---"
+  /sbin/ifconfig -a 2>&1
+  echo "--- Existing routes ---"
+  /sbin/route -n 2>&1
+  echo "--- Existing DNS ---"
+  cat /etc/resolv.conf 2>&1
+  echo "--- DHCP lease files (if present) ---"
+  for f in /var/lib/udhcpc/* /var/db/dhclient* /tmp/udhcpc*; do
+    if [ -f "$f" ]; then echo "LEASE_FILE=$f"; cat "$f" 2>&1; fi
+  done
+  echo "--- Bring interface up ---"
+  sudo -n /sbin/ifconfig "$IFACE" up 2>&1
+  echo "IFCONFIG_UP_RC=$?"
+  echo "--- Request DHCP lease ---"
+  sudo -n /sbin/udhcpc -f -n -q -i "$IFACE" 2>&1
+  DHCP_CLIENT_RC=$?
+  echo "DHCP_CLIENT_RC=$DHCP_CLIENT_RC"
+  echo "--- Interface after DHCP ---"
+  /sbin/ifconfig "$IFACE" 2>&1
+  echo "IFCONFIG_AFTER_RC=$?"
+  echo "--- Routes after DHCP ---"
+  /sbin/route -n 2>&1
+  echo "ROUTE_AFTER_RC=$?"
+  echo "--- DNS after DHCP ---"
+  cat /etc/resolv.conf 2>&1
+  echo "===== DHCP TEST COMPLETE ====="
+  echo "POST_SAVE_DHCP_LOG_RC=$DHCP_CLIENT_RC"
+} > "$LOG" 2>&1
+LOG_WRITE_RC=$?
+echo "POST_SAVE_DHCP_LOG_WRITE_RC=$LOG_WRITE_RC"
+echo "--- BEGIN COMPLETE POST-SAVE DHCP LOG ---"
+cat "$LOG" 2>&1
+CAT_RC=$?
+echo "POST_SAVE_DHCP_LOG_CAT_RC=$CAT_RC"
+echo "--- END COMPLETE POST-SAVE DHCP LOG ---"
 echo POST_SAVE_DHCP_DIAGNOSTICS_DONE`;
           await runStage("post_save_dhcp_verify", postSaveDhcpCommand, "POST_SAVE_DHCP_DIAGNOSTICS_DONE", 90000, true);
           const postSaveDhcpOutput = stages.post_save_dhcp_verify.output ?? "";
