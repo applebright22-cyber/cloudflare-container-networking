@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$BaseUrl = "https://cloudflare-container-networking.brightlambre22-6dd.workers.dev",
+    # Supply the exact base URL printed by the Cloudflare Worker deployment.
+    # Example shape only: https://<worker-name>.<account-subdomain>.workers.dev
+    [string]$BaseUrl = "",
     [string[]]$AccountIds = @(
         "acct-ecc9fff5-6be1-4687-ad5e-a06112e0cf5c",
         "acct-952b303b-4b12-491d-9dd7-4947ebc03055",
@@ -15,8 +17,29 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$BaseUrl = $BaseUrl.TrimEnd("/")
+
+if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
+    $BaseUrl = Read-Host "Enter the exact deployed Cloudflare Worker base URL (from its deployment details)"
+}
+$BaseUrl = $BaseUrl.Trim().TrimEnd("/")
+$parsedBaseUrl = $null
+if (-not [Uri]::TryCreate($BaseUrl, [UriKind]::Absolute, [ref]$parsedBaseUrl) -or
+    $parsedBaseUrl.Scheme -ne "https" -or
+    $parsedBaseUrl.AbsolutePath -ne "/" -or
+    $parsedBaseUrl.Query -or $parsedBaseUrl.Fragment) {
+    throw "BaseUrl must be the exact HTTPS Worker origin, for example https://<worker-name>.<account-subdomain>.workers.dev"
+}
+$BaseUrl = $parsedBaseUrl.GetLeftPart([UriPartial]::Authority)
 $Endpoint = "$BaseUrl/api/admin/purge-accounts"
+
+function Get-HttpStatusCode($ErrorRecord) {
+    try {
+        if ($ErrorRecord.Exception.Response -and $ErrorRecord.Exception.Response.StatusCode) {
+            return [int]$ErrorRecord.Exception.Response.StatusCode
+        }
+    } catch {}
+    return 0
+}
 
 foreach ($id in $AccountIds) {
     if ($id -notmatch '^acct-[a-f0-9-]{36}$') {
@@ -27,9 +50,37 @@ if (($AccountIds | Select-Object -Unique).Count -ne $AccountIds.Count) {
     throw "Duplicate account IDs supplied. Stopping."
 }
 
+# Validate the supplied origin before prompting for the admin code or sending account IDs.
+try {
+    $health = Invoke-RestMethod -Method Get -Uri "$BaseUrl/health" -TimeoutSec 30
+} catch {
+    $status = Get-HttpStatusCode $_
+    throw "Could not verify $BaseUrl/health (HTTP $status). Use the exact URL printed by the Cloudflare Worker deployment. No purge request was sent."
+}
+if ($health.status -ne "ok" -or $health.service -ne "cloudflare-container-networking") {
+    throw "The supplied URL did not return the expected Cloudflare Worker health response. Check the deployment URL. No purge request was sent."
+}
+
+# Probe the route without credentials or account IDs. This cannot trigger a purge:
+# the endpoint must reject the request as unauthorized or report missing admin configuration.
+$probeStatus = 0
+try {
+    $probe = Invoke-WebRequest -Method Post -Uri $Endpoint -ContentType "application/json" -Body "{}" -TimeoutSec 30 -ErrorAction Stop
+    $probeStatus = [int]$probe.StatusCode
+} catch {
+    $probeStatus = Get-HttpStatusCode $_
+}
+if ($probeStatus -notin @(401, 503)) {
+    if ($probeStatus -eq 404) {
+        throw "The Worker URL responds to /health, but /api/admin/purge-accounts returns 404. The deployed Worker does not expose this route yet. No account IDs or admin code were sent; deploy the merged main branch and retry."
+    }
+    throw "Could not verify the targeted purge route (HTTP $probeStatus). Expected 401 or 503 from the unauthenticated safety probe. No account IDs or admin code were sent."
+}
+
 Write-Host ""
 Write-Host "Targeted Cloudflare account-data purge" -ForegroundColor Cyan
-Write-Host "Endpoint: $Endpoint"
+Write-Host "Worker:    $BaseUrl"
+Write-Host "Endpoint:  $Endpoint"
 Write-Host "Accounts:  $($AccountIds.Count)"
 $AccountIds | ForEach-Object { Write-Host "  $_" }
 Write-Host ""
@@ -84,7 +135,6 @@ try {
     }
 } catch {
     Write-Error "Request failed: $($_.Exception.Message)"
-    Write-Host "If the endpoint returns 404, the targeted purge Worker changes have not been deployed yet." -ForegroundColor Yellow
     throw
 } finally {
     $adminCode = $null
