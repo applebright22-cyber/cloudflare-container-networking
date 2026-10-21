@@ -26,14 +26,6 @@ body:not(.logged-in) #account-id-panel{display:none}
 #account-id-panel strong{font-size:13px}
 #account-id-value{color:#b8f7c4;overflow-wrap:anywhere;user-select:text}
 #account-id-message{color:#ffc66d;font-size:12px}
-#oracle-terminal-panel{padding:12px;background:#101710;border-bottom:1px solid #34513a}
-body:not(.logged-in) #oracle-terminal-panel{display:none}
-#oracle-terminal-panel h2{font-size:15px;margin:0 0 8px}
-#oracle-terminal-panel p{font-size:12px;line-height:1.5;max-width:1000px}
-#oracle-terminal-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-#oracle-terminal-command{box-sizing:border-box;width:100%;min-height:64px;background:#050805;color:#b8f7c4;border:1px solid #426348;padding:9px;font:14px monospace;resize:vertical}
-#oracle-terminal-output{box-sizing:border-box;width:100%;min-height:120px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#050805;color:#b8f7c4;border:1px solid #426348;padding:9px;font:13px monospace}
-#oracle-terminal-status{color:#ffc66d;font-size:12px}
 </style>
 </head>
 <body>
@@ -67,18 +59,7 @@ body:not(.logged-in) #oracle-terminal-panel{display:none}
 </div>
 <pre id="api-key-value" hidden></pre>
 </section>
-<section id="oracle-terminal-panel" aria-labelledby="oracle-terminal-title">
-  <h2 id="oracle-terminal-title">Oracle persistent terminal</h2>
-  <p>The Tiny Core/v86 desktop remains visible as the browser VM. Commands entered in this Oracle terminal go through the authenticated Cloudflare API to your persistent Oracle session. The guest's built-in Tiny Core shell remains a separate environment.</p>
-  <textarea id="oracle-terminal-command" spellcheck="false" autocomplete="off" placeholder="Enter an Oracle command, e.g. pwd or whoami. Ctrl+Enter runs it."></textarea>
-  <div id="oracle-terminal-actions">
-    <button id="oracle-terminal-run" type="button">Run on Oracle</button>
-    <button id="oracle-terminal-status" type="button">Refresh Oracle status</button>
-    <button id="oracle-terminal-history" type="button">Load saved results</button>
-    <span id="oracle-terminal-message" role="status" aria-live="polite">Sign in with a regular account to connect.</span>
-  </div>
-  <pre id="oracle-terminal-output">Oracle command output will appear here.</pre>
-</section>
+
 <div id="toolbar">
 <button id="save-vm-state" type="button">Save VM state</button>
 <button id="clear-vm-state" type="button">Delete saved state</button>
@@ -197,7 +178,7 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e
 function shellPrompt(text){
 const normalized=String(text||'').replace(/\r/g,'').replace(/\u00a0/g,' ');
 const lines=normalized.split('\n').map(line=>line.trim()).filter(Boolean);
-const promptPattern=/^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+(?::[^\n]{0,100})?\s*[$#]\s*$/;
+const promptPattern=/^(?:[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+(?::[^\n]{0,100})?\s*[$#]|oracle>)\s*$/;
 const lastLine=lines.length?lines[lines.length-1]:'';
 return promptPattern.test(lastLine)?lastLine:'';
 }
@@ -307,7 +288,7 @@ report(chunk+'\n');capturedLog+=chunk+'\n';captured+=end-start+1;
 }
 report('LOG_CAPTURE_CAPTURED_LINES='+captured+'\nLOG_CAPTURE_COMPLETE='+(captured===count?'true':'false')+'\n');
 }catch(e){/* Suppress the obsolete diagnostic warning. */}
-finally{if(saveAfter&&bootComplete){const healthy=capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_OK')&&capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_RC=0');if(!healthy){stateText('Network recovery/test failed or could not be verified; existing server snapshot preserved and autosave remains paused.');statusText('The guest log did not confirm DHCP, DNS and HTTPS success. The existing snapshot was not overwritten.');/* Suppress the obsolete diagnostic warning. */;manualCommandRunning=false;return}report('\\nGUEST_LOG_NETWORK_VERIFICATION=PASS\\nDHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0 confirmed directly in the guest log. DNS and HTTPS checks also passed.\\n');const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('DHCP recovery, DNS and HTTPS verified from the guest log; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}manualCommandRunning=false}
+finally{if(saveAfter&&bootComplete){const healthy=capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_OK')&&capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_RC=0');if(!healthy){stateText('Network recovery/test failed or could not be verified; existing server snapshot preserved and autosave remains paused.');statusText('The guest log did not confirm DHCP, DNS and HTTPS success. The existing snapshot was not overwritten.');/* Suppress the obsolete diagnostic warning. */;manualCommandRunning=false;return}report('\\nGUEST_LOG_NETWORK_VERIFICATION=PASS\\nDHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0 confirmed directly in the guest log. DNS and HTTPS checks also passed.\\n');const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('DHCP recovery, DNS and HTTPS verified from the guest log; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}await installOracleShellBridge()}manualCommandRunning=false}
 })();
 }
 document.getElementById('run-network-test').onclick=function(){if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the shell; refusing to overlap commands.');return}runDiagnostic('MANUAL NETWORK TEST');statusText('Network test running; waiting for the shell to finish.')};
@@ -410,6 +391,73 @@ if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyb
 await window.emulator.keyboard_send_text(cmd,2);
 
 }
+let oracleShellBridgeActive=false;
+async function installOracleShellBridge(){
+if(oracleShellBridgeActive)return true;
+const identity=window.snapshotIdentity||'';
+const isAdmin=identity==='admin';
+const token=window.snapshotAuthToken||'';
+const adminCode=window.snapshotAdminCode||'';
+if(!isAdmin&&(!/^acct-[a-f0-9-]{36}$/.test(identity)||!token)){
+  stateText('Sign in to connect the Tiny Core terminal to Oracle.');
+  return false;
+}
+if(isAdmin&&!/^[0-9]{5}$/.test(adminCode)){
+  stateText('Admin terminal bridge needs the current admin code.');
+  return false;
+}
+const accountLiteral=identity.replace(/[^a-zA-Z0-9-]/g,'');
+const tokenLiteral=token.replace(/[^a-f0-9]/g,'');
+const adminLiteral=adminCode.replace(/[^0-9]/g,'');
+const script = [
+'#!/bin/sh',
+'printf "\\nORACLE_BACKEND_CONNECTED account=%s\\n" "$ORACLE_ACCOUNT_ID"',
+'while :; do',
+"  printf 'oracle> '",
+'  IFS= read -r line || exit 0',
+'  case "$line" in',
+'    local|exit-local) printf "\\nReturning to the local Tiny Core shell.\\n"; break ;;',
+"    '') continue ;;",
+'  esac',
+'  if [ "$ORACLE_ACCOUNT_ID" = "admin" ]; then',
+'    response=$(curl -fsS --max-time 28 -H "x-account-id: admin" -H "x-admin-code: $ORACLE_ADMIN_CODE" --data-urlencode "command=$line" "$ORACLE_WORKER_URL/api/vm/terminal" 2>/tmp/oracle-curl-error)',
+'  else',
+'    response=$(curl -fsS --max-time 28 -H "x-account-id: $ORACLE_ACCOUNT_ID" -H "Authorization: Bearer $ORACLE_SESSION_TOKEN" --data-urlencode "command=$line" "$ORACLE_WORKER_URL/api/vm/terminal" 2>/tmp/oracle-curl-error)',
+'  fi',
+'  request_rc=$?',
+'  if [ "$request_rc" -ne 0 ]; then',
+"    printf 'Oracle connection failed: '",
+'    cat /tmp/oracle-curl-error 2>/dev/null',
+'    printf "\\n"',
+'    continue',
+'  fi',
+"  marker=$(printf '%s\\n' \"$response\" | tail -n 1)",
+'  case "$marker" in',
+'    __ORACLE_EXIT_CODE=*)',
+"      remote_rc=$(printf '%s' \"$marker\" | cut -d= -f2)",
+"      printf '%s\\n' \"$response\" | sed '$d'",
+"      printf '[Oracle exit code: %s]\\n' \"$remote_rc\"",
+'      ;;',
+"    *) printf '%s\\n' \"$response\" ;;",
+'  esac',
+'done',
+].join('\n');
+const installCmd="stty -echo 2>/dev/null; command -v curl >/dev/null 2>&1 || tce-load -i curl >/tmp/oracle-curl-install.log 2>&1; cat > /tmp/oracle-shell.sh <<'ORACLE_SHELL_EOF'\n"+script+"\nORACLE_SHELL_EOF\nchmod 700 /tmp/oracle-shell.sh\nstty echo 2>/dev/null; export ORACLE_WORKER_URL='"+apiUrl+"' ORACLE_ACCOUNT_ID='"+accountLiteral+"' ORACLE_SESSION_TOKEN='"+tokenLiteral+"' ORACLE_ADMIN_CODE='"+adminLiteral+"'; /bin/sh /tmp/oracle-shell.sh\n";
+stateText('Connecting the Tiny Core terminal to the Oracle backend…');
+await sendVmCommand(installCmd);
+const deadline=Date.now()+30000;
+while(Date.now()<deadline){
+  if(screenText().includes('ORACLE_BACKEND_CONNECTED account='+identity)){
+    oracleShellBridgeActive=true;
+    stateText('Tiny Core terminal is connected to the Oracle backend. Type local to return to the guest shell.');
+    statusText('One terminal active: commands in the visible Tiny Core terminal execute on Oracle.');
+    return true;
+  }
+  await new Promise(resolve=>requestAnimationFrame(resolve));
+}
+stateText('Oracle terminal bridge did not confirm startup. The Tiny Core shell remains available.');
+return false;
+}
 
 async function startBootstrap(){
 if(bootstrapStarted)return;if(manualCommandRunning){requestAnimationFrame(startBootstrap);return}bootstrapStarted=true;statusText('Tiny Core ready; checking DHCP and CA certificate persistence.');
@@ -441,6 +489,7 @@ for(let attempt=1;attempt<=3&&!saved;attempt++){
 }
 if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
 statusText(saved?'DHCP verified; CA certificates included in the saved VM snapshot.': 'Automatic snapshot save failed after 3 attempts. The VM will retry on the autosave schedule.');
+await installOracleShellBridge();
 connectApiAgent();
 return;
 }
@@ -534,6 +583,9 @@ startBootMonitor();
 return;
 }
 bootComplete=true;
+statusText('Saved VM resumed; preparing the guest shell for the Oracle terminal bridge.');
+await sendVmCommand('local\n');
+await new Promise(resolve=>setTimeout(resolve,700));
 statusText('Saved VM resumed; writing login proof to the guest terminal.');
 // Do not autosave a restored guest until its DHCP/DNS/HTTPS check passes.
 connectApiAgent();
@@ -626,75 +678,6 @@ requestAnimationFrame(waitForBootComplete);
 }catch(e){statusText('VM ERROR: '+e.message)}
 };
 window.onload=function(){
-const oracleCommand=document.getElementById('oracle-terminal-command');
-const oracleOutput=document.getElementById('oracle-terminal-output');
-const oracleMessage=document.getElementById('oracle-terminal-message');
-const oracleRun=document.getElementById('oracle-terminal-run');
-const oracleStatus=document.getElementById('oracle-terminal-status');
-let oracleHistoryPollTimer=null,oracleHistorySignature='';
-async function oracleApi(path,options={}){
-  const identity=window.snapshotIdentity||'';
-  const token=window.snapshotAuthToken||'';
-  if(!/^acct-[a-f0-9-]{36}$/.test(identity)||!token)throw new Error('Sign in with a regular account first. Admin sessions are not Oracle account sessions.');
-  const headers={...(options.headers||{}),authorization:'Bearer '+token,'x-account-id':identity};
-  if(options.body!==undefined)headers['content-type']='application/json';
-  const response=await fetch(path,{...options,headers,cache:'no-store'});
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(data.error||data.message||('HTTP '+response.status));
-  return data;
-}
-async function refreshOracleStatus(){
-  oracleStatus.disabled=true;oracleMessage.textContent='Checking Oracle session…';
-  try{
-    const data=await oracleApi('/v1/vm/status',{method:'GET'});
-    oracleMessage.textContent='Oracle '+(data.status||'session')+' · '+(data.runtime||'runtime')+' · '+(data.cwd||'');
-  }catch(error){oracleMessage.textContent='Oracle status unavailable: '+(error&&error.message?error.message:String(error));}
-  finally{oracleStatus.disabled=false;}
-}
-async function loadOracleHistory(){
-  const historyButton=document.getElementById('oracle-terminal-history');
-  historyButton.disabled=true;oracleMessage.textContent='Loading saved Oracle results…';
-  try{
-    const data=await oracleApi('/api/account/oracle-results',{method:'GET'});
-    const records=Array.isArray(data.results)?data.results:[];
-    if(!records.length){if(oracleHistorySignature!==''){oracleHistorySignature='';oracleOutput.textContent='No saved Oracle command results for this account yet.';}oracleMessage.textContent='No saved results.';return;}
-    const signature=records.map(record=>record.id||record.completed_at||'').join('|');
-    if(signature===oracleHistorySignature){oracleMessage.textContent='Oracle results are synchronized.';return;}
-    oracleHistorySignature=signature;
-    oracleOutput.textContent=records.map(record=>{
-      const when=typeof record.completed_at==='string'?record.completed_at:'unknown time';
-      const lines=['['+when+'] $ '+(record.command||'')];
-      if(record.stdout)lines.push(record.stdout);
-      if(record.stderr)lines.push('[stderr]\n'+record.stderr);
-      lines.push('[exit code: '+record.exit_code+']');
-      return lines.join('\n');
-    }).join('\n\n')+'\n';
-    oracleMessage.textContent='Loaded '+records.length+' saved result(s) for this account.';
-  }catch(error){oracleMessage.textContent='Could not load saved results: '+(error&&error.message?error.message:String(error));}
-  finally{historyButton.disabled=false;}
-}
-async function runOracleCommand(){
-  const command=oracleCommand.value;
-  if(!command.trim()){oracleMessage.textContent='Enter a command first.';return}
-  if(command.length>8000){oracleMessage.textContent='Command is too long (maximum 8,000 characters).';return}
-  oracleRun.disabled=true;oracleMessage.textContent='Sending command to Oracle…';
-  try{
-    const result=await oracleApi('/v1/vm/exec',{method:'POST',body:JSON.stringify({command,timeout_ms:20000})});
-    const pieces=[];
-    pieces.push('$ '+command);
-    if(typeof result.stdout==='string'&&result.stdout)pieces.push(result.stdout);
-    if(typeof result.stderr==='string'&&result.stderr)pieces.push('[stderr]\n'+result.stderr);
-    if(result.exit_code!==undefined)pieces.push('[exit code: '+result.exit_code+']');
-    if(result.cwd)pieces.push('[cwd: '+result.cwd+']');
-    oracleOutput.textContent=pieces.join('\n')+'\n\n'+oracleOutput.textContent;
-    oracleMessage.textContent=result.exit_code===0?'Command completed on Oracle.':'Oracle command returned exit code '+result.exit_code+'.';
-  }catch(error){oracleMessage.textContent='Oracle command failed: '+(error&&error.message?error.message:String(error));}
-  finally{oracleRun.disabled=false;}
-}
-oracleRun.addEventListener('click',runOracleCommand);
-oracleStatus.addEventListener('click',refreshOracleStatus);
-document.getElementById('oracle-terminal-history').addEventListener('click',loadOracleHistory);
-oracleCommand.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();runOracleCommand();}});
 const keyPanel=document.getElementById('api-key-panel');
 const keyGenerate=document.getElementById('api-key-generate');
 const keyCopy=document.getElementById('api-key-copy');
@@ -764,7 +747,7 @@ function beginAccountSession(data,launchVm=true){
   window.snapshotIdentity=data.account_id;
   showAccountId(data.account_id);
   window.snapshotAuthToken=data.session_token;
-  if(/^acct-[a-f0-9-]{36}$/.test(data.account_id)){loadOracleHistory();if(launchVm){if(oracleHistoryPollTimer!==null)clearInterval(oracleHistoryPollTimer);oracleHistoryPollTimer=setInterval(()=>{if(window.snapshotIdentity===data.account_id&&window.snapshotAuthToken===data.session_token)loadOracleHistory();},10000);}}
+
   if(typeof data.virtual_ip==='string'&&/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(data.virtual_ip))window.snapshotVirtualIp=data.virtual_ip;
   if(typeof data.virtual_mac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(data.virtual_mac))window.snapshotVirtualMac=data.virtual_mac;
   try {
