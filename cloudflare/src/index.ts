@@ -1051,31 +1051,31 @@ export default {
       const isAdmin = identity === "admin" && Boolean(env.ADMIN_ACCESS_CODE) &&
         request.headers.get("x-admin-code") === env.ADMIN_ACCESS_CODE;
       if (!isAdmin && !await requestHasAccountKey(env, request, identity)) {
-        return new Response("Unauthorized\\n__ORACLE_EXIT_CODE=125\\n", {
+        return new Response("Unauthorized\n__ORACLE_EXIT_CODE=125\n", {
           status: 401, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
         });
       }
       if (identity !== "admin" && !/^acct-[a-f0-9-]{36}$/.test(identity)) {
-        return new Response("Invalid account\\n__ORACLE_EXIT_CODE=125\\n", {
+        return new Response("Invalid account\n__ORACLE_EXIT_CODE=125\n", {
           status: 400, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
         });
       }
       let form: FormData;
       try { form = await request.formData(); }
       catch {
-        return new Response("Expected form-encoded command\\n__ORACLE_EXIT_CODE=125\\n", {
+        return new Response("Expected form-encoded command\n__ORACLE_EXIT_CODE=125\n", {
           status: 400, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
         });
       }
       const command = form.get("command");
       if (typeof command !== "string" || !command.trim() || command.length > 4096) {
-        return new Response("Command must be 1 to 4096 characters\\n__ORACLE_EXIT_CODE=125\\n", {
+        return new Response("Command must be 1 to 4096 characters\n__ORACLE_EXIT_CODE=125\n", {
           status: 400, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
         });
       }
       const bridge = await getOracleBridgeConfig(env);
       if (!bridge) {
-        return new Response("Oracle bridge is not registered\\n__ORACLE_EXIT_CODE=125\\n", {
+        return new Response("Oracle bridge is not registered\n__ORACLE_EXIT_CODE=125\n", {
           status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1085,15 +1085,15 @@ export default {
       };
       if (!execution.ok) {
         const message = typeof result.error === "string" ? result.error : "Oracle command failed";
-        return new Response(message + "\\n__ORACLE_EXIT_CODE=125\\n", {
+        return new Response(message + "\n__ORACLE_EXIT_CODE=125\n", {
           status: 200, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
         });
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";
       const stderr = typeof result.stderr === "string" ? result.stderr : "";
       const exitCode = typeof result.exit_code === "number" ? result.exit_code : 0;
-      const output = [stdout, stderr ? "[stderr]\\n" + stderr : ""].filter(Boolean).join("\\n");
-      return new Response(output + (output.endsWith("\\n") || !output ? "" : "\\n") + "__ORACLE_EXIT_CODE=" + exitCode + "\\n", {
+      const output = [stdout, stderr ? "[stderr]\n" + stderr : ""].filter(Boolean).join("\n");
+      return new Response(output + (output.endsWith("\n") || !output ? "" : "\n") + "__ORACLE_EXIT_CODE=" + exitCode + "\n", {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-oracle-exit-code": String(exitCode) },
       });
