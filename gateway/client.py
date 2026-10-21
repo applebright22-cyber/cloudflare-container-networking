@@ -12,7 +12,8 @@ import websockets
 from protocol import CLOSE, ERROR, OPEN_TCP, PING, PONG, TCP_DATA, TCP_OPENED, Frame, decode_frame, encode_frame
 
 TUNNEL_URL = os.environ.get("TUNNEL_URL", "")
-TUNNEL_TOKEN = os.environ.get("TUNNEL_TOKEN", "")
+ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
+ACCOUNT_API_KEY = os.environ.get("ACCOUNT_API_KEY", "")
 NODE_ID = os.environ.get("NODE_ID", "oracle-gateway")
 HEARTBEAT_SECONDS = 25
 MAX_STREAMS = 32
@@ -173,7 +174,8 @@ async def heartbeat(socket, lock: asyncio.Lock) -> None:
 
 async def run_connection(allowed: set[tuple[str, int]]) -> None:
     headers = {
-        "Authorization": f"Bearer {TUNNEL_TOKEN}",
+        "Authorization": f"Bearer {ACCOUNT_API_KEY}",
+        "X-Account-ID": ACCOUNT_ID,
         "X-Node-ID": NODE_ID,
         "X-Tunnel-Role": "gateway",
     }
@@ -214,8 +216,8 @@ async def run_connection(allowed: set[tuple[str, int]]) -> None:
 
 
 async def main() -> None:
-    if not TUNNEL_URL.startswith("wss://") or not TUNNEL_TOKEN:
-        emit("configuration_error", required=["TUNNEL_URL (wss://...)", "TUNNEL_TOKEN"])
+    if not TUNNEL_URL.startswith("wss://") or not ACCOUNT_ID.startswith("acct-") or not ACCOUNT_API_KEY.startswith("acct_"):
+        emit("configuration_error", required=["TUNNEL_URL (wss://...)", "ACCOUNT_ID", "ACCOUNT_API_KEY"])
         raise SystemExit(2)
     try:
         allowed = tcp_allowlist()
