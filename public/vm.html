@@ -210,7 +210,7 @@ const diagnosticCommand=[
   'if /sbin/route -n | grep -q "0.0.0.0"; then echo "--- DNS lookup ---"; if command -v nslookup >/dev/null 2>&1; then nslookup raw.githubusercontent.com; echo DNS_TEST_RC=$?; else wget -T 10 -t 1 -q -O /dev/null https://raw.githubusercontent.com/; echo DNS_TEST_RC=$?; fi; fi',
   
   'echo "--- outbound HTTPS: GitHub ---"; wget -T 15 -t 1 -S -O /dev/null https://github.com/ 2>&1; echo GITHUB_HTTPS_RC=$?',
-  'if grep -qx "DHCP_RECOVERY_OK" /tmp/network-diagnostic.log && grep -qx "DHCP_RECOVERY_RC=0" /tmp/network-diagnostic.log; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi',
+  'if grep -q "DHCP_RECOVERY_OK" /tmp/network-diagnostic.log && /sbin/ifconfig eth0 | grep -Eq "inet (addr:)?[0-9]" && /sbin/route -n | grep -q "0.0.0.0" && wget -T 15 -t 1 -q -O /dev/null https://github.com/; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi',
 ].join('\n');
 
 let manualCommandRunning=false;
@@ -219,7 +219,7 @@ if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the 
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function'){statusText('VM keyboard API unavailable.');return}
 manualCommandRunning=true;
 const marker='__MANUAL_DIAGNOSTIC_DONE__:',before=screenText().split(marker).length-1;
-const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; grep -E "^(DHCP_RECOVERY_OK|DHCP_RECOVERY_RC=0)$" /tmp/network-diagnostic.log; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
+const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; cat /tmp/network-diagnostic.log; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
 report('\n\n===== '+label+' =====\nRunning tests, then copying the complete /tmp/network-diagnostic.log into this Results text area in numbered chunks.\n'+command+'\n');
 (async()=>{
 try{
@@ -229,9 +229,35 @@ const t=screenText(),at=t.lastIndexOf(marker);
 if(t.split(marker).length-1>before&&shellPrompt(t.slice(at+marker.length)))break;
 await new Promise(resolve=>requestAnimationFrame(resolve));
 }
-report('\\nGuest diagnostic finished. Checking DHCP success markers directly; full log transfer skipped.\\n');
-}catch(e){report('\n*** NETWORK TEST EXECUTION ERROR: '+e.message+' ***\n')}
-finally{if(saveAfter&&bootComplete){let healthy=false;try{const verifyMarker='__NETWORK_TEST_RESULT__';const verifyCommand="if grep -qx 'DHCP_RECOVERY_OK' /tmp/network-diagnostic.log && grep -qx 'DHCP_RECOVERY_RC=0' /tmp/network-diagnostic.log; then echo "+verifyMarker+":PASS; else echo "+verifyMarker+":FAIL; fi\\n";await sendVmCommand(verifyCommand);for(let tries=0;tries<300;tries++){const lines=screenText().replace(/\\r/g,'').split('\\n').map(line=>line.trim());if(lines.includes(verifyMarker+':PASS')){healthy=true;break}if(lines.includes(verifyMarker+':FAIL'))break;await new Promise(resolve=>requestAnimationFrame(resolve))}}catch(e){report('\\nNetwork result verification failed: '+(e&&e.message?e.message:String(e))+'\\n')}if(!healthy){stateText('Network recovery/test failed or could not be verified; existing server snapshot preserved and autosave remains paused.');statusText('The guest log did not confirm DHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0. The existing snapshot was not overwritten.');report('\\n*** SNAPSHOT PROTECTION: guest log did not contain both exact success markers DHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0. Log-capture errors do not determine the test result. ***\\n');manualCommandRunning=false;return}report('\\nGUEST_LOG_NETWORK_VERIFICATION=PASS\\nBoth exact DHCP success markers confirmed directly in the guest log: DHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0.\\n');const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('DHCP success markers verified from the guest log; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}manualCommandRunning=false}
+const countMarker='__DIAGNOSTIC_LOG_COUNT__';
+await sendVmCommand('printf "\\n'+countMarker+'%s\\n" "$(wc -l < /tmp/network-diagnostic.log)"\n');
+let count=-1;
+for(let tries=0;tries<300;tries++){
+const t=screenText(),m=t.match(new RegExp(countMarker+'(\\d+)'));
+if(m&&shellPrompt(t.slice(t.lastIndexOf(countMarker)))){count=Number(m[1]);break}
+await new Promise(resolve=>requestAnimationFrame(resolve));
+}
+if(!Number.isSafeInteger(count)||count<0||count>2000)throw new Error('log line count unavailable or exceeds safe capture limit: '+count);
+report('LOG_CAPTURE_EXPECTED_LINES='+count+'\n');
+let captured=0;
+// Keep each transfer small enough to fit in the guest's visible terminal buffer.
+for(let start=1;start<=count;start+=4){
+const end=Math.min(count,start+3),begin='__DIAG_CHUNK_BEGIN_'+start+'__',finish='__DIAG_CHUNK_END_'+start+'__';
+await sendVmCommand('printf "\\n'+begin+'\\n"; sed -n "'+start+','+end+'p" /tmp/network-diagnostic.log; printf "\\n'+finish+'\\n"\n');
+let chunk=null;
+for(let tries=0;tries<300;tries++){
+const t=screenText(),aa=t.lastIndexOf(begin),bb=t.lastIndexOf(finish);
+// A unique end marker means the command finished; don't require a clean prompt line,
+// because wrapped output and terminal scrollback can obscure the prompt.
+if(aa>=0&&bb>aa){chunk=t.slice(aa+begin.length,bb).replace(/^\r?\n/,'').replace(/\r?\n$/,'');break}
+await new Promise(resolve=>requestAnimationFrame(resolve));
+}
+if(chunk===null)throw new Error('failed capturing log lines '+start+'-'+end);
+report(chunk+'\n');captured+=end-start+1;
+}
+report('LOG_CAPTURE_CAPTURED_LINES='+captured+'\nLOG_CAPTURE_COMPLETE='+(captured===count?'true':'false')+'\n');
+}catch(e){report('\n*** DIAGNOSTIC LOG CAPTURE FAILED: '+e.message+' ***\n')}
+finally{if(saveAfter&&bootComplete){let healthy=false;try{const verifyMarker='__NETWORK_TEST_RESULT__';const verifyCommand="if grep -qx 'DHCP_RECOVERY_OK' /tmp/network-diagnostic.log && grep -qx 'DHCP_RECOVERY_RC=0' /tmp/network-diagnostic.log && grep -qx 'DNS_TEST_RC=0' /tmp/network-diagnostic.log && grep -qx 'GITHUB_HTTPS_RC=0' /tmp/network-diagnostic.log && grep -qx 'NETWORK_RECOVERY_PASS' /tmp/network-diagnostic.log; then echo "+verifyMarker+":PASS; else echo "+verifyMarker+":FAIL; fi\\n";await sendVmCommand(verifyCommand);for(let tries=0;tries<300;tries++){const lines=screenText().replace(/\\r/g,'').split('\\n').map(line=>line.trim());if(lines.includes(verifyMarker+':PASS')){healthy=true;break}if(lines.includes(verifyMarker+':FAIL'))break;await new Promise(resolve=>requestAnimationFrame(resolve))}}catch(e){report('\\nNetwork result verification failed: '+(e&&e.message?e.message:String(e))+'\\n')}if(!healthy){stateText('Network recovery/test failed or could not be verified; existing server snapshot preserved and autosave remains paused.');statusText('The guest log did not confirm DHCP, DNS and HTTPS success. The existing snapshot was not overwritten.');report('\\n*** SNAPSHOT PROTECTION: guest-log verification did not confirm all DHCP, DNS and HTTPS success markers. Log-capture errors do not determine the test result. ***\\n');manualCommandRunning=false;return}report('\\nGUEST_LOG_NETWORK_VERIFICATION=PASS\\nDHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0 confirmed directly in the guest log. DNS and HTTPS checks also passed.\\n');const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('DHCP recovery, DNS and HTTPS verified from the guest log; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}manualCommandRunning=false}
 })();
 }
 document.getElementById('run-network-test').onclick=function(){if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the shell; refusing to overlap commands.');return}runDiagnostic('MANUAL NETWORK TEST');statusText('Network test running; waiting for the shell to finish.')};
