@@ -57,6 +57,79 @@ export class AccountRegistry extends DurableObject {
       if (!config) return json({ error: "bridge_not_registered" }, 404);
       return json(config);
     }
+    // Oracle reverse bridge: the Oracle host polls outbound over HTTPS, so the Worker
+    // never fetches the Oracle public IP. Jobs/results live in this Durable Object.
+    if (url.pathname === "/oracle/heartbeat" && request.method === "GET") {
+      const lastSeen = await this.ctx.storage.get<number>("oracle-last-seen") ?? 0;
+      return json({ online: Date.now() - lastSeen < 15000, last_seen_at: lastSeen ? new Date(lastSeen).toISOString() : null });
+    }
+    if (url.pathname === "/oracle/queue/enqueue" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as {
+        id?: unknown; action?: unknown; identity?: unknown; payload?: unknown;
+      } | null;
+      if (!body || typeof body.id !== "string" || !/^[a-f0-9-]{36}$/.test(body.id) ||
+          (body.action !== "status" && body.action !== "exec") ||
+          typeof body.identity !== "string" ||
+          !(body.identity === "admin" || validAccountId(body.identity))) {
+        return json({ error: "invalid_oracle_job" }, 400);
+      }
+      const jobKey = "oracle-job:" + body.id;
+      const existing = await this.ctx.storage.get(jobKey);
+      if (existing) return json({ error: "duplicate_job_id" }, 409);
+      const job = {
+        id: body.id, action: body.action, identity: body.identity,
+        payload: body.payload ?? null, status: "queued", created_at: Date.now(),
+      };
+      await this.ctx.storage.put(jobKey, job);
+      const queueKey = "oracle-queue:" + String(job.created_at).padStart(13, "0") + ":" + body.id;
+      await this.ctx.storage.put(queueKey, body.id);
+      return json({ ok: true, id: body.id }, 202);
+    }
+    if (url.pathname === "/oracle/queue/next" && request.method === "GET") {
+      await this.ctx.storage.put("oracle-last-seen", Date.now());
+      const page = await this.ctx.storage.list<string>({ prefix: "oracle-queue:", limit: 1 });
+      const first = Array.from(page.entries())[0];
+      if (!first) return json({ job: null });
+      const [queueKey, jobId] = first;
+      await this.ctx.storage.delete(queueKey);
+      const jobKey = "oracle-job:" + jobId;
+      const job = await this.ctx.storage.get<Record<string, unknown>>(jobKey);
+      if (!job || job.status !== "queued") return json({ job: null });
+      job.status = "processing";
+      job.started_at = Date.now();
+      await this.ctx.storage.put(jobKey, job);
+      return json({ job: { id: job.id, action: job.action, identity: job.identity, payload: job.payload } });
+    }
+    if (url.pathname === "/oracle/queue/complete" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as {
+        id?: unknown; status?: unknown; result?: unknown;
+      } | null;
+      if (!body || typeof body.id !== "string" || !/^[a-f0-9-]{36}$/.test(body.id) ||
+          !Number.isInteger(body.status) || (body.status as number) < 100 || (body.status as number) > 599) {
+        return json({ error: "invalid_oracle_result" }, 400);
+      }
+      const key = "oracle-job:" + body.id;
+      const job = await this.ctx.storage.get<Record<string, unknown>>(key);
+      if (!job || job.status !== "processing") return json({ error: "oracle_job_not_processing" }, 404);
+      job.status = "completed";
+      job.http_status = body.status;
+      job.result = body.result ?? {};
+      job.completed_at = Date.now();
+      await this.ctx.storage.put(key, job);
+      await this.ctx.storage.put("oracle-last-seen", Date.now());
+      return json({ ok: true, id: body.id });
+    }
+    if (url.pathname === "/oracle/queue/result" && request.method === "GET") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!/^[a-f0-9-]{36}$/.test(id)) return json({ error: "invalid_job_id" }, 400);
+      const key = "oracle-job:" + id;
+      const job = await this.ctx.storage.get<Record<string, unknown>>(key);
+      if (!job) return json({ error: "job_not_found" }, 404);
+      if (job.status !== "completed") return json({ ready: false });
+      await this.ctx.storage.delete(key);
+      return json({ ready: true, status: job.http_status, result: job.result });
+    }
+
     // Internal-only Worker binding route: list account IDs without changing Durable Object storage.
     if (url.pathname === "/admin/list-accounts" && request.method === "GET") {
       const accounts: Array<{ username: string; account_id: string }> = [];
