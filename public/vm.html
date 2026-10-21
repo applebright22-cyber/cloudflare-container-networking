@@ -249,11 +249,13 @@ function runDiagnostic(label,saveAfter=false){
 if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the shell; refusing to overlap commands.');return}
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function'){statusText('VM keyboard API unavailable.');return}
 manualCommandRunning=true;
+const restoreOracleBridge=oracleShellBridgeActive;
 const marker='__MANUAL_DIAGNOSTIC_DONE__:',before=screenText().split(marker).length-1;
 const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; cat /tmp/network-diagnostic.log; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
 report('\n\n===== '+label+' =====\nRunning tests, then copying the complete /tmp/network-diagnostic.log into this Results text area in numbered chunks.\n'+command+'\n');
 (async()=>{
 try{
+if(restoreOracleBridge){await sendVmCommand('local\n');await new Promise(resolve=>setTimeout(resolve,500));oracleShellBridgeActive=false;}
 await sendVmCommand(command+'\n');
 for(;;){
 const t=screenText(),at=t.lastIndexOf(marker);
@@ -288,7 +290,7 @@ report(chunk+'\n');capturedLog+=chunk+'\n';captured+=end-start+1;
 }
 report('LOG_CAPTURE_CAPTURED_LINES='+captured+'\nLOG_CAPTURE_COMPLETE='+(captured===count?'true':'false')+'\n');
 }catch(e){/* Suppress the obsolete diagnostic warning. */}
-finally{if(saveAfter&&bootComplete){const healthy=capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_OK')&&capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_RC=0');if(!healthy){stateText('Network recovery/test failed or could not be verified; existing server snapshot preserved and autosave remains paused.');statusText('The guest log did not confirm DHCP, DNS and HTTPS success. The existing snapshot was not overwritten.');/* Suppress the obsolete diagnostic warning. */;manualCommandRunning=false;return}report('\\nGUEST_LOG_NETWORK_VERIFICATION=PASS\\nDHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0 confirmed directly in the guest log. DNS and HTTPS checks also passed.\\n');const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('DHCP recovery, DNS and HTTPS verified from the guest log; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}await installOracleShellBridge()}manualCommandRunning=false}
+finally{if(saveAfter&&bootComplete){const healthy=capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_OK')&&capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_RC=0');if(!healthy){stateText('Network recovery/test failed or could not be verified; existing server snapshot preserved and autosave remains paused.');statusText('The guest log did not confirm DHCP, DNS and HTTPS success. The existing snapshot was not overwritten.');/* Suppress the obsolete diagnostic warning. */;manualCommandRunning=false;return}report('\\nGUEST_LOG_NETWORK_VERIFICATION=PASS\\nDHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0 confirmed directly in the guest log. DNS and HTTPS checks also passed.\\n');const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('DHCP recovery, DNS and HTTPS verified from the guest log; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}if((restoreOracleBridge||saveAfter&&bootComplete)&&!oracleShellBridgeActive)await installOracleShellBridge();manualCommandRunning=false}
 })();
 }
 document.getElementById('run-network-test').onclick=function(){if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the shell; refusing to overlap commands.');return}runDiagnostic('MANUAL NETWORK TEST');statusText('Network test running; waiting for the shell to finish.')};
