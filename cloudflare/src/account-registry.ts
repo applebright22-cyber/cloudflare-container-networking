@@ -30,9 +30,33 @@ function validAccountId(value: string): boolean {
 
 export class AccountRegistry extends DurableObject {
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
+    // Internal-only Worker binding route: remove all user accounts, sessions, and IP allocations.
+    if (url.pathname === "/admin/clear-accounts" && request.method === "POST") {
+      const accounts: Array<{ username: string; account_id: string }> = [];
+      const userKeys: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix: "auth-user:", limit: 1000, cursor });
+        for (const [key, value] of page) {
+          userKeys.push(key);
+          const username = key.slice("auth-user:".length);
+          if (typeof value.account_id === "string") accounts.push({ username, account_id: value.account_id });
+        }
+        cursor = page.list_complete ? undefined : page.cursor;
+      } while (cursor);
 
-
+      const prefixes = ["auth-session:", "network-allocation:", "auth-user:"];
+      for (const prefix of prefixes) {
+        let deleteCursor: string | undefined;
+        do {
+          const page = await this.ctx.storage.list({ prefix, limit: 1000, cursor: deleteCursor });
+          const keys = Array.from(page.keys());
+          if (keys.length) await this.ctx.storage.delete(keys);
+          deleteCursor = page.list_complete ? undefined : page.cursor;
+        } while (deleteCursor);
+      }
+      return json({ ok: true, accounts, accounts_removed: accounts.length });
+    }
 
     if (url.pathname === "/auth/rate-limit" && request.method === "POST") {
       const body = await request.json().catch(() => null) as { ip?: unknown; action?: unknown } | null;
@@ -242,6 +266,11 @@ export class AccountRegistry extends DurableObject {
       const accountId = decodeURIComponent(match[1]);
       if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
       const key = "account:" + accountId;
+      if (request.method === "DELETE") {
+        const existed = await this.ctx.storage.get(key);
+        await this.ctx.storage.delete(key);
+        return json({ ok: true, deleted: Boolean(existed), account_id: accountId });
+      }
       const record = await this.ctx.storage.get<StoredAccount>(key);
       if (!record) return json({ error: "account_not_found" }, 404);
 
