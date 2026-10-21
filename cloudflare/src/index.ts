@@ -595,6 +595,35 @@ export default {
       return json({ ...progress, complete: progress.status === "complete", ready_to_login: progress.status === "complete" });
     }
 
+    // Rotate the signed-in user's POS API key. The raw key is returned once; only its SHA-256 is stored.
+    if (url.pathname === "/api/account/api-key/rotate" && request.method === "POST") {
+      let body: { account_id?: unknown; session_token?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const accountId = typeof body.account_id === "string" ? body.account_id : "";
+      const sessionToken = typeof body.session_token === "string" ? body.session_token : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, token: sessionToken }),
+      });
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+
+      const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+      const apiKey = "acct_" + Array.from(keyBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
+      const apiKeyHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+      const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      const updated = await accountRegistry.fetch("https://account-registry.internal/account/" + accountId + "/api-key", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ api_key_sha256: apiKeyHash }),
+      }).catch(() => new Response("account_key_rotation_failed", { status: 500 }));
+      if (!updated.ok) return json({ error: "api_key_rotation_failed", status: updated.status }, 502);
+      return json({ ok: true, account_id: accountId, api_key: apiKey, notice: "Copy this key now. It will not be shown again." });
+    }
+
     if (url.pathname === "/api/auth/session" && request.method === "POST") {
       let body: { account_id?: unknown; session_token?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
