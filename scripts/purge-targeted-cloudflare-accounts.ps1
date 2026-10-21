@@ -11,7 +11,14 @@ param(
         "acct-715b8575-55d4-4910-8dc3-10cca9035052",
         "acct-cb16e416-ef8c-4357-a445-6a42f3f96f93",
         "acct-c1377177-788d-40e8-9148-9b09b18d52a2",
-        "acct-78bcaf07-607c-4110-9102-8565c1a68d41"
+        "acct-78bcaf07-607c-4110-9102-8565c1a68d41",
+        "acct-60037b2f-54e4-4df9-a880-2aa02d46ae45",
+        "acct-089455b4-ee30-40e2-b902-704e15e5480a",
+        "acct-e853077e-7dfc-4609-a38c-9b7ac95d9d25",
+        "acct-bf1bcbda-bd74-463b-960c-45a732d8992b",
+        "acct-2149e170-2299-434e-a136-89cf526d4ee9",
+        "acct-4a9500a8-e3ad-4dfd-9585-4b2aea8623be",
+        "acct-fb5fe7e0-237d-44ad-9770-cb53cae79ca2"
     ),
     [switch]$Execute
 )
