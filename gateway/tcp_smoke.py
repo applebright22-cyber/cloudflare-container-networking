@@ -14,7 +14,7 @@ NODE_ID = os.environ.get("NODE_ID", "oracle-gateway")
 
 
 async def run_smoke() -> None:
-    if not TUNNEL_URL.startswith("wss://") or not ACCOUNT_ID.startsWith("acct-") || !ACCOUNT_API_KEY.startsWith("acct_"):
+    if not TUNNEL_URL.startswith("wss://") or not ACCOUNT_ID.startswith("acct-") or not ACCOUNT_API_KEY.startswith("acct_"):
         raise RuntimeError("Set TUNNEL_URL (wss://...), ACCOUNT_ID and ACCOUNT_API_KEY")
     headers = {
         "Authorization": f"Bearer {ACCOUNT_API_KEY}",
