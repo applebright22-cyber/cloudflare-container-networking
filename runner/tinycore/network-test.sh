@@ -32,11 +32,8 @@ if command -v nslookup >/dev/null 2>&1; then
 else
   echo "DNS_TEST=nslookup_unavailable"
 fi
-echo "--- outbound HTTPS: example.com ---"
+echo "--- outbound HTTPS: raw.githubusercontent.com (bootstrap host) ---"
 if command -v wget >/dev/null 2>&1; then
-  wget -T 12 -q -O /dev/null https://example.com
-  echo "EXAMPLE_HTTPS_RC=$?"
-  echo "--- outbound HTTPS: raw.githubusercontent.com (bootstrap host) ---"
   wget -T 12 -q -O /dev/null https://raw.githubusercontent.com/brightlambre22-sketch/cloudflare-container-networking/main/README.md
   echo "GITHUB_HTTPS_RC=$?"
 else
