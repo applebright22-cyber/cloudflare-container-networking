@@ -100,6 +100,75 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // Permanently clear all user accounts, sessions, per-account snapshots, and queued provisioning jobs.
+    // The shared auth registry and Admin baseline snapshot are preserved.
+    if (url.pathname === "/api/admin/accounts" && request.method === "DELETE") {
+      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_code_not_configured" }, 503);
+      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_CODE)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const cleared = await authRegistry.fetch("https://account-registry.internal/admin/clear-accounts", { method: "POST" });
+      if (!cleared.ok) return json({ error: "account_registry_clear_failed", status: cleared.status }, 502);
+      const result = await cleared.json() as { accounts?: Array<{ account_id?: unknown; username?: unknown }> };
+      const accounts = Array.isArray(result.accounts) ? result.accounts : [];
+      const failures: Array<{ account_id: string; step: string; error: string }> = [];
+      let snapshotsDeleted = 0;
+
+      await Promise.all(accounts.map(async (entry) => {
+        const accountId = typeof entry.account_id === "string" ? entry.account_id : "";
+        if (!/^acct-[a-f0-9-]{36}$/.test(accountId)) return;
+
+        const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+        const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(accountId));
+
+        const accountDelete = await accountRegistry.fetch("https://account-registry.internal/account/" + accountId, { method: "DELETE" })
+          .catch((error) => new Response(String(error), { status: 500 }));
+        if (!accountDelete.ok && accountDelete.status !== 404) {
+          failures.push({ account_id: accountId, step: "account_record", error: "http_" + accountDelete.status });
+        }
+
+        const cancel = await provisioner.fetch("https://account-provisioner.internal/cancel", { method: "DELETE" })
+          .catch((error) => new Response(String(error), { status: 500 }));
+        if (!cancel.ok) failures.push({ account_id: accountId, step: "provisioning_job", error: "http_" + cancel.status });
+
+        let cursor: string | undefined;
+        do {
+          const page = await env.VM_SNAPSHOTS.list({ prefix: "vm-snapshots/" + accountId + "/", limit: 1000, cursor })
+            .catch(() => null);
+          if (!page) {
+            failures.push({ account_id: accountId, step: "snapshot_objects", error: "r2_list_failed" });
+            break;
+          }
+          if (page.objects.length) {
+            try {
+              await env.VM_SNAPSHOTS.delete(page.objects.map((object) => object.key));
+              snapshotsDeleted += page.objects.length;
+            } catch {
+              failures.push({ account_id: accountId, step: "snapshot_objects", error: "r2_delete_failed" });
+            }
+          }
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+
+        try {
+          await env.VM_SNAPSHOTS.delete("runtime-jobs/" + accountId + ".json");
+        } catch {
+          failures.push({ account_id: accountId, step: "runtime_job", error: "r2_delete_failed" });
+        }
+      }));
+
+      return json({
+        ok: failures.length === 0,
+        accounts_cleared_from_auth_registry: accounts.length,
+        account_records_and_snapshots_processed: accounts.filter((entry) => typeof entry.account_id === "string" && /^acct-[a-f0-9-]{36}$/.test(entry.account_id)).length,
+        snapshot_objects_deleted: snapshotsDeleted,
+        failures,
+        preserved: ["auth-users Durable Object namespace identity", "Admin baseline snapshot"],
+      }, failures.length ? 207 : 200);
+    }
+
     // Authenticated API read-back verification for a snapshot written by Workerd.
     // This validates R2 bytes only; it does not claim that v86 restored the guest.
     if (url.pathname === "/v1/runtime/snapshot-readback") {
