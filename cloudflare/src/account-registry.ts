@@ -31,6 +31,25 @@ function validAccountId(value: string): boolean {
 export class AccountRegistry extends DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    // Internal-only Worker binding route: list account IDs without changing Durable Object storage.
+    if (url.pathname === "/admin/list-accounts" && request.method === "GET") {
+      const accounts: Array<{ username: string; account_id: string }> = [];
+      let startAfter: string | undefined;
+      do {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix: "auth-user:", limit: 1000, startAfter });
+        const entries = Array.from(page.entries());
+        for (const [key, value] of entries) {
+          const username = key.slice("auth-user:".length);
+          if (typeof value.account_id === "string" && validAccountId(value.account_id)) {
+            accounts.push({ username, account_id: value.account_id });
+          }
+        }
+        startAfter = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
+      } while (startAfter);
+      accounts.sort((left, right) => left.account_id.localeCompare(right.account_id));
+      return json({ ok: true, accounts, account_ids: accounts.map((account) => account.account_id), count: accounts.length });
+    }
+
     // Internal-only Worker binding route: remove all user accounts, sessions, and IP allocations.
     if (url.pathname === "/admin/clear-accounts" && request.method === "POST") {
       const accounts: Array<{ username: string; account_id: string }> = [];

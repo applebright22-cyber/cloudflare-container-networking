@@ -100,6 +100,25 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // Read-only account ID inventory from the shared AccountRegistry Durable Object.
+    // Uses the existing /api/admin/accounts path with GET; does not delete or modify accounts.
+    if (url.pathname === "/api/admin/accounts" && request.method === "GET") {
+      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_code_not_configured" }, 503);
+      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_CODE)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const listed = await authRegistry.fetch("https://account-registry.internal/admin/list-accounts", { method: "GET" })
+        .catch(() => new Response("registry_list_failed", { status: 500 }));
+      if (!listed.ok) return json({ error: "account_registry_list_failed", status: listed.status }, 502);
+      const result = await listed.json() as { accounts?: Array<{ username?: unknown; account_id?: unknown }>; account_ids?: unknown; count?: unknown };
+      const accounts = Array.isArray(result.accounts) ? result.accounts.filter((entry) =>
+        typeof entry.account_id === "string" && /^acct-[a-f0-9-]{36}$/.test(entry.account_id)
+      ) : [];
+      const accountIds = accounts.map((entry) => entry.account_id as string).sort();
+      return json({ ok: true, source: "cloudflare-container-networking_AccountRegistry", prefix: "acct-", count: accountIds.length, account_ids: accountIds, accounts });
+    }
+
     // Permanently clear all user accounts, sessions, per-account snapshots, and queued provisioning jobs.
     // The shared auth registry and Admin baseline snapshot are preserved.
     if (url.pathname === "/api/admin/accounts" && request.method === "DELETE") {
