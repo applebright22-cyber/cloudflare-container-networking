@@ -208,7 +208,7 @@ const diagnosticCommand=[
   'echo "--- network interface counters ---"; /sbin/ifconfig -a 2>&1; echo "--- route table ---"; /sbin/route -n 2>&1; echo "--- DNS configuration ---"; cat /etc/resolv.conf 2>&1',
   'if ! /sbin/route -n | grep -q "0.0.0.0"; then echo NO_DEFAULT_GATEWAY; else echo DEFAULT_GATEWAY_PRESENT; fi',
   'if /sbin/route -n | grep -q "0.0.0.0"; then echo "--- DNS lookup ---"; if command -v nslookup >/dev/null 2>&1; then nslookup raw.githubusercontent.com; echo DNS_TEST_RC=$?; else wget -T 10 -t 1 -q -O /dev/null https://raw.githubusercontent.com/; echo DNS_TEST_RC=$?; fi; fi',
-  'echo "--- outbound HTTPS: example.com ---"; wget -T 15 -t 1 -S -O /dev/null https://example.com/ 2>&1; echo EXAMPLE_HTTPS_RC=$?',
+  
   'echo "--- outbound HTTPS: GitHub ---"; wget -T 15 -t 1 -S -O /dev/null https://github.com/ 2>&1; echo GITHUB_HTTPS_RC=$?',
   'if grep -q "DHCP_RECOVERY_OK" /tmp/network-diagnostic.log && /sbin/ifconfig eth0 | grep -Eq "inet (addr:)?[0-9]" && /sbin/route -n | grep -q "0.0.0.0" && wget -T 15 -t 1 -q -O /dev/null https://github.com/; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi',
 ].join('\n');
