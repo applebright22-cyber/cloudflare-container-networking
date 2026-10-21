@@ -81,6 +81,68 @@ export class AccountRegistry extends DurableObject {
       return json({ ok: true, accounts, accounts_removed: accounts.length });
     }
 
+    // Remove only shared-registry entries belonging to one validated account ID.
+    // The network-next-host counter is intentionally retained to prevent IP reuse collisions.
+    if (url.pathname === "/admin/purge-account" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { account_id?: unknown } | null;
+      const accountId = typeof body?.account_id === "string" ? body.account_id : "";
+      if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
+
+      const usernamesToDelete: string[] = [];
+      let afterUser: string | undefined;
+      do {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({
+          prefix: "auth-user:", limit: 1000, startAfter: afterUser,
+        });
+        const entries = Array.from(page.entries());
+        for (const [key, value] of entries) {
+          if (value.account_id === accountId) usernamesToDelete.push(key);
+        }
+        afterUser = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
+      } while (afterUser);
+
+      const sessionKeysToDelete: string[] = [];
+      let afterSession: string | undefined;
+      do {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({
+          prefix: "auth-session:", limit: 1000, startAfter: afterSession,
+        });
+        const entries = Array.from(page.entries());
+        for (const [key, value] of entries) {
+          if (value.account_id === accountId) sessionKeysToDelete.push(key);
+        }
+        afterSession = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
+      } while (afterSession);
+
+      const keys = [
+        ...usernamesToDelete,
+        ...sessionKeysToDelete,
+        "network-allocation:" + accountId,
+      ];
+      for (let offset = 0; offset < keys.length; offset += 128) {
+        await this.ctx.storage.delete(keys.slice(offset, offset + 128));
+      }
+      return json({
+        ok: true, account_id: accountId,
+        auth_users_deleted: usernamesToDelete.length,
+        sessions_deleted: sessionKeysToDelete.length,
+        network_allocation_deleted: keys.includes("network-allocation:" + accountId),
+        network_next_host_counter_preserved: true,
+      });
+    }
+
+    // Internal-only route: clear storage attached to this account-specific object.
+    // The Worker calls this only on idFromName(accountId), never on "auth-users".
+    if (url.pathname === "/admin/purge-account-data" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { account_id?: unknown } | null;
+      if (typeof body?.account_id !== "string" || !validAccountId(body.account_id)) {
+        return json({ error: "invalid_account_id" }, 400);
+      }
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      return json({ ok: true, account_id: body.account_id, storage_cleared: true, alarm_deleted: true });
+    }
+
     if (url.pathname === "/auth/rate-limit" && request.method === "POST") {
       const body = await request.json().catch(() => null) as { ip?: unknown; action?: unknown } | null;
       if (typeof body?.ip !== "string" || body.ip.length < 1 || body.ip.length > 80 ||
