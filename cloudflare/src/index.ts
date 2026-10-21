@@ -841,9 +841,16 @@ export default {
 
     if (url.pathname === "/api/vm/agent-ticket") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
-      if (request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
-      const vmId = "admin";
+      const requestedAccountId = request.headers.get("x-account-id") ?? "";
+      let vmId: string;
+      if (/^acct-[a-f0-9-]{36}$/.test(requestedAccountId)) {
+        if (!await requestHasAccountKey(env, request, requestedAccountId)) return json({ error: "unauthorized" }, 401);
+        vmId = requestedAccountId;
+      } else {
+        if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
+        if (request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
+        vmId = "admin";
+      }
       const ticket = crypto.randomUUID();
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(vmId));
       const ticketResponse = await coordinator.fetch("https://vm-execution.internal/ticket", {
@@ -860,8 +867,9 @@ export default {
       if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
         return json({ error: "websocket_upgrade_required" }, 426);
       }
-      const ticket = url.searchParams.get("ticket") ?? "";
-      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("admin"));
+      const vmId = url.searchParams.get("account_id") ?? "admin";
+      if (!(vmId === "admin" || /^acct-[a-f0-9-]{36}$/.test(vmId))) return json({ error: "invalid_account_id" }, 400);
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(vmId));
       return coordinator.fetch(request);
     }
 
