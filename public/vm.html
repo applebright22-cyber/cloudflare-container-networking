@@ -69,11 +69,12 @@ body:not(.logged-in) #oracle-terminal-panel{display:none}
 </section>
 <section id="oracle-terminal-panel" aria-labelledby="oracle-terminal-title">
   <h2 id="oracle-terminal-title">Oracle persistent terminal</h2>
-  <p>The Tiny Core/v86 desktop remains running above/below as its own browser VM. Commands entered in this terminal are sent through the authenticated Cloudflare API to your account's persistent Oracle session, so they continue independently of the browser VM.</p>
+  <p>The Tiny Core/v86 desktop remains visible as the browser VM. Commands entered in this Oracle terminal go through the authenticated Cloudflare API to your persistent Oracle session. The guest's built-in Tiny Core shell remains a separate environment.</p>
   <textarea id="oracle-terminal-command" spellcheck="false" autocomplete="off" placeholder="Enter an Oracle command, e.g. pwd or whoami. Ctrl+Enter runs it."></textarea>
   <div id="oracle-terminal-actions">
     <button id="oracle-terminal-run" type="button">Run on Oracle</button>
     <button id="oracle-terminal-status" type="button">Refresh Oracle status</button>
+    <button id="oracle-terminal-history" type="button">Load saved results</button>
     <span id="oracle-terminal-message" role="status" aria-live="polite">Sign in with a regular account to connect.</span>
   </div>
   <pre id="oracle-terminal-output">Oracle command output will appear here.</pre>
@@ -649,6 +650,25 @@ async function refreshOracleStatus(){
   }catch(error){oracleMessage.textContent='Oracle status unavailable: '+(error&&error.message?error.message:String(error));}
   finally{oracleStatus.disabled=false;}
 }
+async function loadOracleHistory(){
+  const historyButton=document.getElementById('oracle-terminal-history');
+  historyButton.disabled=true;oracleMessage.textContent='Loading saved Oracle results…';
+  try{
+    const data=await oracleApi('/api/account/oracle-results',{method:'GET'});
+    const records=Array.isArray(data.results)?data.results:[];
+    if(!records.length){oracleOutput.textContent='No saved Oracle command results for this account yet.';oracleMessage.textContent='No saved results.';return;}
+    oracleOutput.textContent=records.map(record=>{
+      const when=typeof record.completed_at==='string'?record.completed_at:'unknown time';
+      const lines=['['+when+'] $ '+(record.command||'')];
+      if(record.stdout)lines.push(record.stdout);
+      if(record.stderr)lines.push('[stderr]\\n'+record.stderr);
+      lines.push('[exit code: '+record.exit_code+']');
+      return lines.join('\\n');
+    }).join('\\n\\n')+'\\n';
+    oracleMessage.textContent='Loaded '+records.length+' saved result(s) for this account.';
+  }catch(error){oracleMessage.textContent='Could not load saved results: '+(error&&error.message?error.message:String(error));}
+  finally{historyButton.disabled=false;}
+}
 async function runOracleCommand(){
   const command=oracleCommand.value;
   if(!command.trim()){oracleMessage.textContent='Enter a command first.';return}
@@ -669,6 +689,7 @@ async function runOracleCommand(){
 }
 oracleRun.addEventListener('click',runOracleCommand);
 oracleStatus.addEventListener('click',refreshOracleStatus);
+document.getElementById('oracle-terminal-history').addEventListener('click',loadOracleHistory);
 oracleCommand.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();runOracleCommand();}});
 const keyPanel=document.getElementById('api-key-panel');
 const keyGenerate=document.getElementById('api-key-generate');
@@ -739,6 +760,7 @@ function beginAccountSession(data,launchVm=true){
   window.snapshotIdentity=data.account_id;
   showAccountId(data.account_id);
   window.snapshotAuthToken=data.session_token;
+  if(/^acct-[a-f0-9-]{36}$/.test(data.account_id))loadOracleHistory();
   if(typeof data.virtual_ip==='string'&&/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(data.virtual_ip))window.snapshotVirtualIp=data.virtual_ip;
   if(typeof data.virtual_mac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(data.virtual_mac))window.snapshotVirtualMac=data.virtual_mac;
   try {
