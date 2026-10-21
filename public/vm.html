@@ -42,6 +42,7 @@ body:not(.logged-in) #account-id-panel{display:none}
   </form>
 </section>
 <div id="status">Starting Linux VM...</div>
+<div id="provisioning-notice" role="status" aria-live="polite" style="padding:10px;margin:8px 0;border:1px solid #b7791f;border-radius:6px;background:#fff8e6;color:#633c00;font-weight:600">Oracle connection setup has not finished. Keep this browser tab open until the dashboard confirms the Oracle bridge is connected and the VM snapshot is saved.</div>
 <section id="account-id-panel" aria-label="Account ID">
   <strong>Account ID:</strong>
   <code id="account-id-value">Not signed in</code>
@@ -79,7 +80,10 @@ body:not(.logged-in) #account-id-panel{display:none}
 window.startVm=async function(){
 const status=document.getElementById('status'),results=document.getElementById('results'),mystLog=document.getElementById('myst-log'),copyStatus=document.getElementById('copy-status'),stateStatus=document.getElementById('state-status');
 const nodeId='7cbee0e9-da6b-4808-92a7-4a3c2a45a840',apiUrl=window.location.origin;
-let reportTimer=null,bootstrapStarted=false,bootComplete=false;
+let reportTimer=null,bootstrapStarted=false,bootComplete=false,oracleProvisioningStarted=false,oracleProvisioningComplete=false;
+const provisioningNotice=document.getElementById('provisioning-notice');
+function setProvisioningState(message,complete=false){oracleProvisioningComplete=complete;if(provisioningNotice){provisioningNotice.textContent=message;provisioningNotice.style.borderColor=complete?'#2f855a':'#b7791f';provisioningNotice.style.background=complete?'#edfdf3':'#fff8e6';provisioningNotice.style.color=complete?'#22543d':'#633c00';}} 
+window.addEventListener('beforeunload',function(event){if(oracleProvisioningStarted&&!oracleProvisioningComplete){event.preventDefault();event.returnValue='Oracle provisioning is still running. Keep this tab open until the connection and snapshot save finish.';return event.returnValue;}});
 
 function statusText(t){status.textContent=t}
 let snapshotBusy=false,snapshotLoadFailed=false,vmLoaded=false,restoredSnapshot=false,autosaveTimer=null;
@@ -110,6 +114,7 @@ if(!response.ok)throw new Error('snapshot manifest failed with HTTP '+response.s
 const result=await response.json();
 if(window.snapshotNeedsInitialSave===true&&String(window.snapshotIdentity||'').startsWith('acct-')){window.snapshotNeedsInitialSave=false;try{sessionStorage.removeItem('vm-initial-snapshot-pending')}catch(e){}}
 stateText('Server snapshot saved at '+new Date(result.savedAt||savedAt).toLocaleTimeString());
+if(oracleProvisioningStarted&&oracleShellBridgeActive){setProvisioningState('Oracle connection is ready and the VM snapshot is saved. You may now close this tab or log out.',true);}
 report('\\nVM_SNAPSHOT_SAVE_OK bytes='+state.byteLength+' chunks='+chunks+' savedAt='+(result.savedAt||savedAt)+'\\n');
 return true;
 }catch(e){stateText('Snapshot save failed: '+(e&&e.message?e.message:'server storage unavailable'));report('\\n*** VM SNAPSHOT SAVE FAILED: '+(e&&e.message?e.message:String(e))+' ***\\n');return false}
@@ -408,6 +413,9 @@ if(isAdmin&&!/^[0-9]{5}$/.test(adminCode)){
   stateText('Admin terminal bridge needs the current admin code.');
   return false;
 }
+oracleProvisioningStarted=true;
+setProvisioningState('Oracle connection setup is in progress. Keep this browser tab open until the bridge connects and the VM snapshot is saved.');
+stateText('Provisioning Oracle terminal connection; keep this tab open.');
 const accountLiteral=identity.replace(/[^a-zA-Z0-9-]/g,'');
 const tokenLiteral=token.replace(/[^a-f0-9]/g,'');
 const adminLiteral=adminCode.replace(/[^0-9]/g,'');
@@ -451,7 +459,7 @@ const deadline=Date.now()+30000;
 while(Date.now()<deadline){
   if(screenText().includes('ORACLE_BACKEND_CONNECTED account='+identity)){
     oracleShellBridgeActive=true;
-    stateText('Tiny Core terminal is connected to the Oracle backend. Type local to return to the guest shell.');
+    stateText('Tiny Core terminal is connected to the Oracle backend. Saving the VM snapshot; keep this tab open until complete.');
     statusText('One terminal active: commands in the visible Tiny Core terminal execute on Oracle.');
     // Persist the guest after curl is installed and the bridge is confirmed. Keep autosave enabled.
     if(bootComplete && vmLoaded && !snapshotLoadFailed){
@@ -459,8 +467,10 @@ while(Date.now()<deadline){
       if(saved){
         if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
         stateText('Oracle bridge connected; VM snapshot saved. Autosave enabled.');
+        setProvisioningState('Oracle connection is ready and the VM snapshot is saved. You may now close this tab or log out.',true);
       }else{
-        stateText('Oracle bridge connected, but snapshot save failed. The five-minute autosave will retry.');
+        stateText('Oracle bridge connected, but snapshot save failed. Keep this tab open; autosave will retry.');
+        setProvisioningState('Oracle bridge connected, but snapshot saving is still pending. Keep this browser tab open until the save succeeds.');
         if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
       }
     }
@@ -468,7 +478,8 @@ while(Date.now()<deadline){
   }
   await new Promise(resolve=>requestAnimationFrame(resolve));
 }
-stateText('Oracle terminal bridge did not confirm startup. The Tiny Core shell remains available.');
+stateText('Oracle terminal bridge did not confirm startup. Keep this tab open while troubleshooting; the Tiny Core shell remains available.');
+setProvisioningState('Oracle provisioning is not complete. Keep this browser tab open; the terminal bridge has not confirmed a connection.');
 return false;
 }
 
