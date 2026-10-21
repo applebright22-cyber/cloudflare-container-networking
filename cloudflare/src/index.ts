@@ -876,12 +876,8 @@ export default {
     if (url.pathname === "/api/oracle/network-ticket") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
       const supplied = request.headers.get("x-executor-token") ?? "";
-      if (!env.ORACLE_EXECUTOR_TOKEN || supplied.length !== env.ORACLE_EXECUTOR_TOKEN.length ||
-          !crypto.subtle.timingSafeEqual) {
-        // The Workers Web Crypto API has no timingSafeEqual; compare equal-length tokens below.
-        if (!env.ORACLE_EXECUTOR_TOKEN || supplied.length !== env.ORACLE_EXECUTOR_TOKEN.length) {
-          return json({ error: "unauthorized" }, 401);
-        }
+      if (!env.ORACLE_EXECUTOR_TOKEN || supplied.length !== env.ORACLE_EXECUTOR_TOKEN.length) {
+        return json({ error: "unauthorized" }, 401);
       }
       let difference = 0;
       for (let i = 0; i < supplied.length; i += 1) {
