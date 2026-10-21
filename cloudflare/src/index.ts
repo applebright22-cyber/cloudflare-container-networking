@@ -19,6 +19,8 @@ export interface Env {
   WISP_RELAY: DurableObjectNamespace<WispRelay>;
   VM_BASELINE_ID?: string;
   ADMIN_ACCESS_CODE?: string;
+  ORACLE_EXECUTOR_URL?: string;
+  ORACLE_EXECUTOR_TOKEN?: string;
   VM_SNAPSHOTS: R2Bucket;
   ASSETS: Fetcher;
 }
@@ -872,6 +874,42 @@ export default {
     if (url.pathname === "/v1/vm/status" || url.pathname === "/v1/vm/exec") {
       const vmId = request.headers.get("x-account-id") ?? "";
       if (!await requestHasAccountKey(env, request, vmId)) return json({ error: "unauthorized" }, 401);
+
+      // When configured, use the browserless Oracle executor. Keep the existing
+      // Durable Object browser agent as a fallback until Oracle is connected.
+      if (env.ORACLE_EXECUTOR_URL && env.ORACLE_EXECUTOR_TOKEN) {
+        if (url.pathname.endsWith("/status")) {
+          if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+          const endpoint = new URL("/status", env.ORACLE_EXECUTOR_URL);
+          endpoint.searchParams.set("identity", vmId);
+          try {
+            return await fetch(endpoint, {
+              headers: { "x-executor-token": env.ORACLE_EXECUTOR_TOKEN, "x-account-id": vmId },
+              signal: AbortSignal.timeout(5000),
+            });
+          } catch {
+            return json({ vm_id: vmId, status: "offline", execution_available: false, runtime: "oracle-v86", error: "oracle_executor_unreachable" }, 503);
+          }
+        }
+        if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+        const raw = await request.text();
+        if (raw.length > 8192) return json({ error: "body_too_large" }, 413);
+        try {
+          return await fetch(new URL("/exec", env.ORACLE_EXECUTOR_URL), {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-executor-token": env.ORACLE_EXECUTOR_TOKEN,
+              "x-account-id": vmId,
+            },
+            body: raw,
+            signal: AbortSignal.timeout(25000),
+          });
+        } catch {
+          return json({ error: "oracle_executor_unreachable", vm_id: vmId }, 503);
+        }
+      }
+
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(vmId));
       if (url.pathname.endsWith("/status")) {
         if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
