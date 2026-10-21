@@ -1,3 +1,2 @@
-# Copy to .dev.vars for local-only testing. Never commit real secrets.
-TUNNEL_TOKEN=replace-with-random-gateway-token
-CLIENT_TOKEN=replace-with-a-different-random-client-token
+# No TUNNEL_TOKEN, CLIENT_TOKEN, or VM API token is required.
+# Gateway/client requests authenticate with an account ID and its account API key.
