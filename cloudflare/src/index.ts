@@ -92,7 +92,7 @@ function oracleTokenMatches(supplied: string | null, expected: string): boolean 
 }
 
 async function queueOracleRequest(
-  env: Env, action: "status" | "exec", identity: string, payload: unknown, timeoutMs: number,
+  env: Env, action: "status" | "exec" | "echo", identity: string, payload: unknown, timeoutMs: number,
 ): Promise<Response> {
   const registry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("oracle-bridge"));
   const id = crypto.randomUUID();
@@ -964,6 +964,19 @@ export default {
         vm_ip: "10.240.0.2",
         router_ip: "10.240.0.1",
       });
+    }
+
+    // Simple text round-trip diagnostic through Oracle; does not run shell commands.
+    if (url.pathname === "/api/oracle/round-trip") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      const body = await request.json().catch(() => null) as { account_id?: unknown; message?: unknown } | null;
+      const accountId = typeof body?.account_id === "string" ? body.account_id : "";
+      const message = typeof body?.message === "string" ? body.message : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !message || message.length > 256) {
+        return json({ error: "provide_valid_account_id_and_message_up_to_256_chars" }, 400);
+      }
+      if (!await getOracleBridgeConfig(env)) return json({ error: "oracle_bridge_not_registered" }, 503);
+      return queueOracleRequest(env, "echo", accountId, { message }, 10000);
     }
 
     // Register the Oracle machine token. Oracle connects outward; no Oracle URL/IP is stored.
