@@ -126,8 +126,7 @@ function save(){try{localStorage.setItem(reportStorageKey(),results.value)}catch
 function report(t){results.value+=t;results.scrollTop=results.scrollHeight;save()}
 try{const s=localStorage.getItem(reportStorageKey());if(s)results.value=s}catch(e){}
 
-document.getElementById('clear-results').disabled=true;
-document.getElementById('clear-results').title='History is append-only for testing; text cannot be cleared from this page.';
+document.getElementById('clear-results').onclick=function(){results.value='';save()};
 document.getElementById('copy-results').onclick=async function(){
 try{await navigator.clipboard.writeText(results.value)}catch(e){results.focus();results.select();document.execCommand('copy')}
 copyStatus.textContent='Results copied.';requestAnimationFrame(()=>copyStatus.textContent='',1800)
