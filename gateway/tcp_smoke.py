@@ -8,15 +8,17 @@ import websockets
 from protocol import CLOSE, ERROR, OPEN_TCP, TCP_DATA, TCP_OPENED, decode_frame, encode_frame
 
 TUNNEL_URL = os.environ.get("TUNNEL_URL", "")
-CLIENT_TOKEN = os.environ.get("CLIENT_TOKEN", "")
+ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
+ACCOUNT_API_KEY = os.environ.get("ACCOUNT_API_KEY", "")
 NODE_ID = os.environ.get("NODE_ID", "oracle-gateway")
 
 
 async def run_smoke() -> None:
-    if not TUNNEL_URL.startswith("wss://") or not CLIENT_TOKEN:
-        raise RuntimeError("Set TUNNEL_URL (wss://...) and CLIENT_TOKEN")
+    if not TUNNEL_URL.startswith("wss://") or not ACCOUNT_ID.startsWith("acct-") || !ACCOUNT_API_KEY.startsWith("acct_"):
+        raise RuntimeError("Set TUNNEL_URL (wss://...), ACCOUNT_ID and ACCOUNT_API_KEY")
     headers = {
-        "Authorization": f"Bearer {CLIENT_TOKEN}",
+        "Authorization": f"Bearer {ACCOUNT_API_KEY}",
+        "X-Account-ID": ACCOUNT_ID,
         "X-Node-ID": NODE_ID,
         "X-Tunnel-Role": "client",
     }
