@@ -239,16 +239,26 @@ export default {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ account_id: accountId }),
           }).catch(() => new Response("request_failed", { status: 500 }));
-          if (authPurge.ok) steps.shared_auth_and_network_records = await authPurge.json().catch(() => ({ ok: true }));
-          else errors.push({ step: "shared_auth_and_network_records", error: "http_" + authPurge.status });
+          if (authPurge.ok) {
+            const authResult = await authPurge.json().catch(() => null) as Record<string, unknown> | null;
+            steps.shared_auth_and_network_records = authResult ?? { ok: false, error: "invalid_json_response" };
+            if (!authResult || authResult.ok !== true || (authResult.verification as { passed?: unknown } | undefined)?.passed !== true) {
+              errors.push({ step: "shared_auth_and_network_records", error: "readback_verification_failed" });
+            }
+          } else errors.push({ step: "shared_auth_and_network_records", error: "http_" + authPurge.status });
 
           const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
           const accountPurge = await accountRegistry.fetch("https://account-registry.internal/admin/purge-account-data", {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ account_id: accountId }),
           }).catch(() => new Response("request_failed", { status: 500 }));
-          if (accountPurge.ok) steps.account_durable_object_storage = await accountPurge.json().catch(() => ({ ok: true }));
-          else errors.push({ step: "account_durable_object_storage", error: "http_" + accountPurge.status });
+          if (accountPurge.ok) {
+            const accountResult = await accountPurge.json().catch(() => null) as Record<string, unknown> | null;
+            steps.account_durable_object_storage = accountResult ?? { ok: false, error: "invalid_json_response" };
+            if (!accountResult || accountResult.ok !== true || (accountResult.verification as { passed?: unknown } | undefined)?.passed !== true) {
+              errors.push({ step: "account_durable_object_storage", error: "readback_verification_failed" });
+            }
+          } else errors.push({ step: "account_durable_object_storage", error: "http_" + accountPurge.status });
 
           const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(accountId));
           const provisionerPurge = await provisioner.fetch("https://account-provisioner.internal/purge", { method: "POST" })
