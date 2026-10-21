@@ -49,8 +49,39 @@ async function accountApiKeyMatches(env: Env, accountId: string, suppliedKey: st
 
 async function requestHasAccountKey(env: Env, request: Request, accountId = request.headers.get("x-account-id") ?? ""): Promise<boolean> {
   const authorization = request.headers.get("authorization") ?? "";
-  if (!authorization.startsWith("Bearer ")) return false;
-  return accountApiKeyMatches(env, accountId, authorization.slice(7));
+  if (!authorization.startsWith("Bearer ") || !/^acct-[a-f0-9-]{36}$/.test(accountId)) return false;
+  const credential = authorization.slice(7);
+
+  // Keep legacy account API keys working, but also accept the existing login session
+  // token so users do not need a second, separately issued API key.
+  if (await accountApiKeyMatches(env, accountId, credential)) return true;
+  if (!/^[a-f0-9]{64}$/.test(credential)) return false;
+  const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+  const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ account_id: accountId, token: credential }),
+  });
+  return verified.ok;
+}
+
+interface OracleBridgeConfig { executor_url: string; executor_token: string; }
+
+async function getOracleBridgeConfig(env: Env): Promise<OracleBridgeConfig | null> {
+  const registry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("oracle-bridge"));
+  try {
+    const response = await registry.fetch("https://account-registry.internal/oracle/bridge-config");
+    if (response.ok) {
+      const config = await response.json() as Partial<OracleBridgeConfig>;
+      if (typeof config.executor_url === "string" && typeof config.executor_token === "string") return {
+        executor_url: config.executor_url, executor_token: config.executor_token,
+      };
+    }
+  } catch { /* Fall back to the existing Worker environment configuration. */ }
+  if (env.ORACLE_EXECUTOR_URL && env.ORACLE_EXECUTOR_TOKEN) {
+    return { executor_url: env.ORACLE_EXECUTOR_URL, executor_token: env.ORACLE_EXECUTOR_TOKEN };
+  }
+  return null;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -906,35 +937,81 @@ export default {
       });
     }
 
+    // One-time Oracle bridge registration during executor installation. The existing
+    // five-digit Admin code authorizes storing the machine-to-machine token in a DO.
+    if (url.pathname === "/api/oracle/register") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      if (!env.ADMIN_ACCESS_CODE || request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      let body: { executor_url?: unknown; executor_token?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      if (typeof body.executor_url !== "string" || typeof body.executor_token !== "string" ||
+          !/^[a-f0-9]{64}$/.test(body.executor_token)) return json({ error: "invalid_bridge_config" }, 400);
+      let endpoint: URL;
+      try { endpoint = new URL(body.executor_url); } catch { return json({ error: "invalid_executor_url" }, 400); }
+      if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password ||
+          endpoint.pathname !== "/" || endpoint.search || endpoint.hash || endpoint.hostname === "localhost" ||
+          endpoint.hostname === "127.0.0.1") return json({ error: "invalid_executor_url" }, 400);
+      const registry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("oracle-bridge"));
+      const saved = await registry.fetch("https://account-registry.internal/oracle/bridge-config", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ executor_url: endpoint.origin, executor_token: body.executor_token }),
+      });
+      if (!saved.ok) return json({ error: "bridge_registration_failed" }, 502);
+      return json({ ok: true, registered: true, executor_url: endpoint.origin });
+    }
+
+    if (url.pathname === "/api/oracle/health") {
+      if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+      if (!env.ADMIN_ACCESS_CODE || request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const bridge = await getOracleBridgeConfig(env);
+      if (!bridge) return json({ ok: false, worker_configured: false, oracle_reachable: false }, 503);
+      try {
+        const response = await fetch(new URL("/health", bridge.executor_url), {
+          headers: { "x-executor-token": bridge.executor_token },
+          signal: AbortSignal.timeout(5000),
+        });
+        const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+        return json({ ok: response.ok, worker_configured: true, oracle_reachable: response.ok, oracle: payload }, response.ok ? 200 : 503);
+      } catch {
+        return json({ ok: false, worker_configured: true, oracle_reachable: false, error: "oracle_executor_unreachable" }, 503);
+      }
+    }
+
     if (url.pathname === "/v1/vm/status" || url.pathname === "/v1/vm/exec") {
       const vmId = request.headers.get("x-account-id") ?? "";
       if (!await requestHasAccountKey(env, request, vmId)) return json({ error: "unauthorized" }, 401);
 
-      // When configured, use the browserless Oracle executor. Keep the existing
-      // Durable Object browser agent as a fallback until Oracle is connected.
-      if (env.ORACLE_EXECUTOR_URL && env.ORACLE_EXECUTOR_TOKEN) {
+      // Prefer the bridge registered by setup-oracle.sh; retain environment variables
+      // as a backwards-compatible fallback for existing deployments.
+      const oracleBridge = await getOracleBridgeConfig(env);
+      if (oracleBridge) {
         if (url.pathname.endsWith("/status")) {
           if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
-          const endpoint = new URL("/status", env.ORACLE_EXECUTOR_URL);
+          const endpoint = new URL("/status", oracleBridge.executor_url);
           endpoint.searchParams.set("identity", vmId);
           try {
             return await fetch(endpoint, {
-              headers: { "x-executor-token": env.ORACLE_EXECUTOR_TOKEN, "x-account-id": vmId },
+              headers: { "x-executor-token": oracleBridge.executor_token, "x-account-id": vmId },
               signal: AbortSignal.timeout(5000),
             });
           } catch {
-            return json({ vm_id: vmId, status: "offline", execution_available: false, runtime: "oracle-v86", error: "oracle_executor_unreachable" }, 503);
+            return json({ vm_id: vmId, status: "offline", execution_available: false, runtime: "oracle-host", error: "oracle_executor_unreachable" }, 503);
           }
         }
         if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
         const raw = await request.text();
         if (raw.length > 8192) return json({ error: "body_too_large" }, 413);
         try {
-          return await fetch(new URL("/exec", env.ORACLE_EXECUTOR_URL), {
+          return await fetch(new URL("/exec", oracleBridge.executor_url), {
             method: "POST",
             headers: {
               "content-type": "application/json",
-              "x-executor-token": env.ORACLE_EXECUTOR_TOKEN,
+              "x-executor-token": oracleBridge.executor_token,
               "x-account-id": vmId,
             },
             body: raw,
