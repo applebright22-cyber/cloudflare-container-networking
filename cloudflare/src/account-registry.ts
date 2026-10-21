@@ -33,12 +33,10 @@ export class AccountRegistry extends DurableObject {
     // Internal-only Worker binding route: remove all user accounts, sessions, and IP allocations.
     if (url.pathname === "/admin/clear-accounts" && request.method === "POST") {
       const accounts: Array<{ username: string; account_id: string }> = [];
-      const userKeys: string[] = [];
       let cursor: string | undefined;
       do {
         const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix: "auth-user:", limit: 1000, cursor });
         for (const [key, value] of page) {
-          userKeys.push(key);
           const username = key.slice("auth-user:".length);
           if (typeof value.account_id === "string") accounts.push({ username, account_id: value.account_id });
         }
