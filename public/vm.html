@@ -39,9 +39,9 @@ body:not(.logged-in) #api-key-panel{display:none}
 <div id="status">Starting Linux VM...</div>
 <section id="api-key-panel" aria-labelledby="api-key-title">
 <h2 id="api-key-title">Account API key</h2>
-<p id="api-key-warning">The existing key cannot be displayed because the server stores only its SHA-256 hash. Creating a replacement invalidates the previous key. Nothing changes unless you press the button below and confirm.</p>
+<p id="api-key-warning">Your current API key appears here after you sign in. Keys created before dashboard key display was enabled cannot be recovered from their stored hashes; this page will not change those keys automatically. Replacing a key invalidates the previous one.</p>
 <div id="api-key-actions">
-<button id="api-key-generate" type="button">Generate replacement API key</button>
+<button id="api-key-generate" type="button">Replace API key</button>
 <button id="api-key-copy" type="button" hidden>Copy key</button>
 <button id="api-key-hide" type="button" hidden>Hide key</button>
 <span id="api-key-message" role="status" aria-live="polite"></span>
@@ -589,6 +589,19 @@ const keyHide=document.getElementById('api-key-hide');
 const keyValue=document.getElementById('api-key-value');
 const keyMessage=document.getElementById('api-key-message');
 function clearDisplayedApiKey(){keyValue.textContent='';keyValue.hidden=true;keyCopy.hidden=true;keyHide.hidden=true;}
+async function loadCurrentApiKey(){
+  if(!window.snapshotIdentity||!String(window.snapshotIdentity).startsWith('acct-')||!window.snapshotAuthToken)return;
+  keyMessage.textContent='Loading current API key…';clearDisplayedApiKey();
+  try{
+    const response=await fetch('/api/account/api-key?account_id='+encodeURIComponent(window.snapshotIdentity),{method:'GET',headers:{authorization:'Bearer '+window.snapshotAuthToken},cache:'no-store'});
+    const data=await response.json().catch(()=>({}));
+    if(response.status===404){keyMessage.textContent='This account’s key was created before dashboard display was enabled. It has not been changed; its original value cannot be recovered from the stored hash.';return;}
+    if(!response.ok)throw new Error(data.error||'HTTP '+response.status);
+    if(typeof data.api_key!=='string'||!/^acct_[a-f0-9]{64}$/.test(data.api_key))throw new Error('The server response did not contain a valid API key.');
+    keyValue.textContent=data.api_key;keyValue.hidden=false;keyCopy.hidden=false;keyHide.hidden=false;
+    keyMessage.textContent='Current API key loaded. Copy it if needed; it will load again when you sign in.';
+  }catch(error){keyMessage.textContent='Could not load the current API key: '+(error&&error.message?error.message:'request failed');}
+}
 keyGenerate.addEventListener('click',async()=>{
   if(!window.snapshotIdentity||!String(window.snapshotIdentity).startsWith('acct-')||!window.snapshotAuthToken){
     keyMessage.textContent='Log in with a regular account first. Admin sessions do not have a user API key.';
@@ -642,7 +655,7 @@ function beginAccountSession(data,launchVm=true){
   window.snapshotNeedsInitialSave=data.snapshot_initialization_required===true;
   try{if(window.snapshotNeedsInitialSave)sessionStorage.setItem('vm-initial-snapshot-pending',data.account_id);else window.snapshotNeedsInitialSave=sessionStorage.getItem('vm-initial-snapshot-pending')===data.account_id}catch(e){}
   try{sessionStorage.setItem('vm-account-id',data.account_id);sessionStorage.setItem('vm-session-token',data.session_token)}catch(e){}
-  if(launchVm){panel.hidden=true;document.body.classList.add('logged-in');window.startVm();}
+  if(launchVm){panel.hidden=true;document.body.classList.add('logged-in');loadCurrentApiKey();window.startVm();}
 }
 const progressLabels={
   queued:'Waiting for a VM worker…',starting_vm:'Starting the Linux VM…',booting_linux:'Booting Tiny Core Linux…',
