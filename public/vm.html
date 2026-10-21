@@ -13,6 +13,14 @@ button{font:inherit;padding:6px 10px;cursor:pointer}
 #myst-log{margin:0;padding:8px;height:220px;overflow:auto;white-space:pre-wrap;user-select:text;background:#000;color:#ddd;border-top:1px solid #333}
 #results{box-sizing:border-box;width:100%;min-height:300px;background:#000;color:#ddd;border:1px solid #444;padding:8px;font:14px monospace;resize:vertical}
 #screen_container{width:100%;min-height:480px}
+#api-key-panel{padding:12px;background:#181818;border-bottom:1px solid #333}
+body:not(.logged-in) #api-key-panel{display:none}
+#api-key-panel h2{font-size:15px;margin:0 0 8px}
+#api-key-panel p{font-size:12px;line-height:1.5;max-width:900px}
+#api-key-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#api-key-value{display:block;width:100%;max-width:900px;box-sizing:border-box;background:#080808;color:#b8f7c4;border:1px solid #444;padding:9px;font:12px monospace;overflow-wrap:anywhere;white-space:pre-wrap}
+#api-key-message{color:#ffc66d;font-size:12px}
+#api-key-warning{color:#ffcf70}
 </style>
 </head>
 <body>
@@ -29,6 +37,17 @@ button{font:inherit;padding:6px 10px;cursor:pointer}
   </form>
 </section>
 <div id="status">Starting Linux VM...</div>
+<section id="api-key-panel" aria-labelledby="api-key-title">
+<h2 id="api-key-title">Account API key</h2>
+<p id="api-key-warning">The existing key cannot be displayed because the server stores only its SHA-256 hash. Creating a replacement invalidates the previous key. Nothing changes unless you press the button below and confirm.</p>
+<div id="api-key-actions">
+<button id="api-key-generate" type="button">Generate replacement API key</button>
+<button id="api-key-copy" type="button" hidden>Copy key</button>
+<button id="api-key-hide" type="button" hidden>Hide key</button>
+<span id="api-key-message" role="status" aria-live="polite"></span>
+</div>
+<pre id="api-key-value" hidden></pre>
+</section>
 <div id="toolbar">
 <button id="save-vm-state" type="button">Save VM state</button>
 <button id="clear-vm-state" type="button">Delete saved state</button>
@@ -563,6 +582,37 @@ requestAnimationFrame(waitForBootComplete);
 }catch(e){statusText('VM ERROR: '+e.message)}
 };
 window.onload=function(){
+const keyPanel=document.getElementById('api-key-panel');
+const keyGenerate=document.getElementById('api-key-generate');
+const keyCopy=document.getElementById('api-key-copy');
+const keyHide=document.getElementById('api-key-hide');
+const keyValue=document.getElementById('api-key-value');
+const keyMessage=document.getElementById('api-key-message');
+function clearDisplayedApiKey(){keyValue.textContent='';keyValue.hidden=true;keyCopy.hidden=true;keyHide.hidden=true;}
+keyGenerate.addEventListener('click',async()=>{
+  if(!window.snapshotIdentity||!String(window.snapshotIdentity).startsWith('acct-')||!window.snapshotAuthToken){
+    keyMessage.textContent='Log in with a regular account first. Admin sessions do not have a user API key.';
+    return;
+  }
+  const approved=confirm('This creates a new API key and invalidates the previous key. The previous key cannot be recovered. Continue?');
+  if(!approved)return;
+  keyGenerate.disabled=true;keyMessage.textContent='Generating replacement key…';clearDisplayedApiKey();
+  try{
+    const response=await fetch('/api/account/api-key/rotate',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||'HTTP '+response.status);
+    if(typeof data.api_key!=='string'||!/^acct_[a-f0-9]{64}$/.test(data.api_key))throw new Error('The server response did not contain a valid API key.');
+    keyValue.textContent=data.api_key;keyValue.hidden=false;keyCopy.hidden=false;keyHide.hidden=false;
+    keyMessage.textContent='Replacement created. Copy it to a password manager now; it will not be shown again after you hide it or leave this page.';
+  }catch(error){keyMessage.textContent='Could not create a replacement key: '+(error&&error.message?error.message:'request failed');}
+  finally{keyGenerate.disabled=false;}
+});
+keyCopy.addEventListener('click',async()=>{
+  if(keyValue.hidden||!keyValue.textContent)return;
+  try{await navigator.clipboard.writeText(keyValue.textContent);keyMessage.textContent='API key copied to clipboard.';}
+  catch(e){keyMessage.textContent='Clipboard access was blocked. Select and copy the displayed key manually.';}
+});
+keyHide.addEventListener('click',()=>{clearDisplayedApiKey();keyMessage.textContent='Key hidden from this page.';});
 const panel=document.getElementById('login-panel'),form=document.getElementById('login-form'),access=document.getElementById('access-type');
 const code=document.getElementById('admin-code'),username=document.getElementById('username'),password=document.getElementById('user-password');
 const message=document.getElementById('login-message'),createButton=document.getElementById('create-account'),loginButton=document.getElementById('open-vm');
