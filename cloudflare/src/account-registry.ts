@@ -114,21 +114,53 @@ export class AccountRegistry extends DurableObject {
         afterSession = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
       } while (afterSession);
 
-      const keys = [
-        ...usernamesToDelete,
-        ...sessionKeysToDelete,
-        "network-allocation:" + accountId,
-      ];
+      const allocationKey = "network-allocation:" + accountId;
+      const keys = [...usernamesToDelete, ...sessionKeysToDelete, allocationKey];
       for (let offset = 0; offset < keys.length; offset += 128) {
         await this.ctx.storage.delete(keys.slice(offset, offset + 128));
       }
+
+      // Read back the affected records before reporting success.
+      const remainingUsers: string[] = [];
+      let verifyAfterUser: string | undefined;
+      do {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({
+          prefix: "auth-user:", limit: 1000, startAfter: verifyAfterUser,
+        });
+        const entries = Array.from(page.entries());
+        for (const [key, value] of entries) {
+          if (value.account_id === accountId) remainingUsers.push(key);
+        }
+        verifyAfterUser = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
+      } while (verifyAfterUser);
+
+      const remainingSessions: string[] = [];
+      let verifyAfterSession: string | undefined;
+      do {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({
+          prefix: "auth-session:", limit: 1000, startAfter: verifyAfterSession,
+        });
+        const entries = Array.from(page.entries());
+        for (const [key, value] of entries) {
+          if (value.account_id === accountId) remainingSessions.push(key);
+        }
+        verifyAfterSession = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
+      } while (verifyAfterSession);
+      const allocationRemains = await this.ctx.storage.get(allocationKey) !== undefined;
+      const verified = remainingUsers.length === 0 && remainingSessions.length === 0 && !allocationRemains;
       return json({
-        ok: true, account_id: accountId,
+        ok: verified, account_id: accountId,
         auth_users_deleted: usernamesToDelete.length,
         sessions_deleted: sessionKeysToDelete.length,
-        network_allocation_deleted: keys.includes("network-allocation:" + accountId),
+        network_allocation_deleted: !allocationRemains,
+        verification: {
+          passed: verified,
+          remaining_auth_users: remainingUsers.length,
+          remaining_sessions: remainingSessions.length,
+          network_allocation_remains: allocationRemains,
+        },
         network_next_host_counter_preserved: true,
-      });
+      }, verified ? 200 : 500);
     }
 
     // Internal-only route: clear storage attached to this account-specific object.
@@ -140,7 +172,13 @@ export class AccountRegistry extends DurableObject {
       }
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
-      return json({ ok: true, account_id: body.account_id, storage_cleared: true, alarm_deleted: true });
+      const remaining = await this.ctx.storage.list({ limit: 1 });
+      const storageCleared = remaining.size === 0;
+      return json({
+        ok: storageCleared, account_id: body.account_id,
+        storage_cleared: storageCleared, alarm_deleted: true,
+        verification: { passed: storageCleared, remaining_key_count_at_least: remaining.size },
+      }, storageCleared ? 200 : 500);
     }
 
     if (url.pathname === "/auth/rate-limit" && request.method === "POST") {
