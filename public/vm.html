@@ -631,6 +631,7 @@ const oracleOutput=document.getElementById('oracle-terminal-output');
 const oracleMessage=document.getElementById('oracle-terminal-message');
 const oracleRun=document.getElementById('oracle-terminal-run');
 const oracleStatus=document.getElementById('oracle-terminal-status');
+let oracleHistoryPollTimer=null,oracleHistorySignature='';
 async function oracleApi(path,options={}){
   const identity=window.snapshotIdentity||'';
   const token=window.snapshotAuthToken||'';
@@ -656,7 +657,10 @@ async function loadOracleHistory(){
   try{
     const data=await oracleApi('/api/account/oracle-results',{method:'GET'});
     const records=Array.isArray(data.results)?data.results:[];
-    if(!records.length){oracleOutput.textContent='No saved Oracle command results for this account yet.';oracleMessage.textContent='No saved results.';return;}
+    if(!records.length){if(oracleHistorySignature!==''){oracleHistorySignature='';oracleOutput.textContent='No saved Oracle command results for this account yet.';}oracleMessage.textContent='No saved results.';return;}
+    const signature=records.map(record=>record.id||record.completed_at||'').join('|');
+    if(signature===oracleHistorySignature){oracleMessage.textContent='Oracle results are synchronized.';return;}
+    oracleHistorySignature=signature;
     oracleOutput.textContent=records.map(record=>{
       const when=typeof record.completed_at==='string'?record.completed_at:'unknown time';
       const lines=['['+when+'] $ '+(record.command||'')];
@@ -760,7 +764,7 @@ function beginAccountSession(data,launchVm=true){
   window.snapshotIdentity=data.account_id;
   showAccountId(data.account_id);
   window.snapshotAuthToken=data.session_token;
-  if(/^acct-[a-f0-9-]{36}$/.test(data.account_id))loadOracleHistory();
+  if(/^acct-[a-f0-9-]{36}$/.test(data.account_id)){loadOracleHistory();if(launchVm){if(oracleHistoryPollTimer!==null)clearInterval(oracleHistoryPollTimer);oracleHistoryPollTimer=setInterval(()=>{if(window.snapshotIdentity===data.account_id&&window.snapshotAuthToken===data.session_token)loadOracleHistory();},10000);}}
   if(typeof data.virtual_ip==='string'&&/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(data.virtual_ip))window.snapshotVirtualIp=data.virtual_ip;
   if(typeof data.virtual_mac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(data.virtual_mac))window.snapshotVirtualMac=data.virtual_mac;
   try {
