@@ -69,6 +69,7 @@ body:not(.logged-in) #account-id-panel{display:none}
 <button id="clear-results" type="button">Clear results</button>
 <span id="copy-status"></span>
 <span id="state-status" aria-live="polite">Saved state: checkingâ¦</span>
+<span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span>
 </div>
 <textarea id="results" spellcheck="false" placeholder="Full startup/network report. It is saved locally so you can copy it in sections."></textarea>
 
@@ -312,6 +313,31 @@ statusText('Keyboard input failed: '+(e&&e.message?e.message:String(e)));
 };
 
 let apiAgentSocket=null,apiAgentConnecting=false,apiExecBusy=false,apiAgentReconnectPending=false;
+let oracleStatusTimer=null;
+async function checkOracleBridge(){
+  const label=document.getElementById('oracle-bridge-status');
+  if(!label)return;
+  try{
+    const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
+    if(data.status==='online'){
+      label.textContent='Oracle bridge: online';
+      label.title='Oracle outbound WebSocket connected; account command routing is still a separate integration step.';
+    }else{
+      label.textContent='Oracle bridge: offline';
+      label.title='Oracle executor has not connected to Cloudflare.';
+    }
+  }catch(error){
+    label.textContent='Oracle bridge: unavailable';
+    label.title=error&&error.message?error.message:'Status request failed';
+  }
+}
+function startOracleBridgeStatus(){
+  if(oracleStatusTimer!==null)return;
+  checkOracleBridge();
+  oracleStatusTimer=setInterval(checkOracleBridge,15000);
+}
 async function connectApiAgent(){
 if(window.snapshotIdentity!=='admin'||!window.snapshotAdminCode||apiAgentConnecting)return;
 if(apiAgentSocket&&apiAgentSocket.readyState<=1)return;
@@ -400,6 +426,7 @@ function markerResult(text,marker){const at=String(text||'').lastIndexOf(marker)
 async function next(){
 if(i>=commands.length){
 bootComplete=true;
+startOracleBridgeStatus();
 statusText('DHCP and CA certificate checks complete. Saving the Admin baseline snapshot.');
 report('\n===== STARTUP COMPLETE — MYSTERIUM DISABLED =====\n');
 while(snapshotBusy)await new Promise(r=>requestAnimationFrame(r));
@@ -503,6 +530,7 @@ startBootMonitor();
 return;
 }
 bootComplete=true;
+startOracleBridgeStatus();
 statusText('Saved VM resumed; writing login proof to the guest terminal.');
 // Do not autosave a restored guest until its DHCP/DNS/HTTPS check passes.
 connectApiAgent();
