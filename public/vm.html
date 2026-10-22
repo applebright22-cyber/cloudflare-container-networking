@@ -471,7 +471,13 @@ const sendGuestLine=async(line,timeout=10000)=>{
 stateText('Preparing Oracle terminal bridge in short shell commands…');
 await sendGuestLine("stty -echo 2>/dev/null; if ! command -v curl >/dev/null 2>&1; then tce-load -wi curl >/tmp/oracle-curl-install.log 2>&1; fi",20000);
 await sendGuestLine("command -v curl >/dev/null 2>&1 && echo ORACLE_CURL_OK || { echo ORACLE_CURL_MISSING_"+bootstrapRunId+"; cat /tmp/oracle-curl-install.log 2>/dev/null; }");
-if(screenText().includes('ORACLE_CURL_MISSING_'+bootstrapRunId))throw new Error('curl is missing in Tiny Core. The installation log is shown in the guest terminal; the bridge script was not started.');
+if(screenText().includes('ORACLE_CURL_MISSING_'+bootstrapRunId)){
+ const diagnostic=screenText();
+ stateText('curl is missing in Tiny Core. Bootstrap stopped safely; inspect the curl installation output in the visible terminal.');
+ setProvisioningState('Oracle connection is not ready: Tiny Core could not confirm curl. Keep this tab open while checking the terminal output.');
+ report('\\n===== ORACLE CURL INSTALL FAILED =====\\n'+diagnostic+'\\n===== END CURL DIAGNOSTIC =====\\n');
+ return false;
+}
 await sendGuestLine(": > /tmp/oracle-shell.b64");
 for(let i=0;i<encodedScript.length;i+=60){
  await sendGuestLine("printf '%s' '"+encodedScript.slice(i,i+60)+"' >> /tmp/oracle-shell.b64");
