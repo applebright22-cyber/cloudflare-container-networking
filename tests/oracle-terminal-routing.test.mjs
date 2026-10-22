@@ -19,6 +19,7 @@ test("authenticated account execution validates the session before forwarding it
 test("Oracle coordinator includes account_id in each execution message", () => {
   assert.ok(coordinator.includes('request.headers.get("x-account-id")'));
   assert.ok(coordinator.includes('account_id: accountId'));
+  assert.ok(coordinator.includes("vm_id: pending.accountId"), "result must report the selected account session, not the shared transport identity");
 });
 
 test("dashboard has a terminal that sends commands through the Oracle API", () => {
