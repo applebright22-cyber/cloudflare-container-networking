@@ -453,30 +453,33 @@ const script = [
 'done',
 ].join('\n');
 const encodedScript=btoa(unescape(encodeURIComponent(script)));
-const waitForGuestPrompt=async(timeout=6000)=>{
+let oracleStep=0;
+const waitForMarker=async(marker,timeout=10000)=>{
  const until=Date.now()+timeout;
  while(Date.now()<until){
-  const last=screenText().replace(/\\s+$/,'').split(/\\r?\\n/).pop()||'';
-  if(/(?:^|[#$>]\\s*)$/.test(last)&&last.length<100)return true;
+  if(screenText().includes(marker))return true;
   await new Promise(resolve=>requestAnimationFrame(resolve));
  }
  return false;
 };
-const sendGuestLine=async(line,timeout=6000)=>{
- await sendVmCommand(line+'\\n');
- if(!await waitForGuestPrompt(timeout))throw new Error('Tiny Core did not return to its shell prompt while preparing the Oracle bridge.');
+const sendGuestLine=async(line,timeout=10000)=>{
+ const marker='__ORACLE_BOOT_STEP_'+(++oracleStep)+'__';
+ await sendVmCommand(line+'; printf "\\\\n'+marker+'\\\\n"\\n');
+ if(!await waitForMarker(marker,timeout))throw new Error('Tiny Core did not confirm bootstrap step '+oracleStep+'. The bridge script was not started.');
 };
 stateText('Preparing Oracle terminal bridge in short shell commands…');
-await sendGuestLine("if ! command -v curl >/dev/null 2>&1; then tce-load -wi curl >/tmp/oracle-curl-install.log 2>&1; fi; command -v curl >/dev/null 2>&1");
+await sendGuestLine("stty -echo 2>/dev/null; if ! command -v curl >/dev/null 2>&1; then tce-load -wi curl >/tmp/oracle-curl-install.log 2>&1; fi");
+await sendGuestLine("command -v curl >/dev/null 2>&1 || { echo ORACLE_CURL_MISSING; exit 1; }");
 await sendGuestLine(": > /tmp/oracle-shell.b64");
-for(let i=0;i<encodedScript.length;i+=160){
- await sendGuestLine("printf '%s' '"+encodedScript.slice(i,i+160)+"' >> /tmp/oracle-shell.b64");
+for(let i=0;i<encodedScript.length;i+=100){
+ await sendGuestLine("printf '%s' '"+encodedScript.slice(i,i+100)+"' >> /tmp/oracle-shell.b64");
 }
-await sendGuestLine("base64 -d /tmp/oracle-shell.b64 > /tmp/oracle-shell.sh && chmod 700 /tmp/oracle-shell.sh");
+await sendGuestLine("base64 -d /tmp/oracle-shell.b64 > /tmp/oracle-shell.sh && chmod 700 /tmp/oracle-shell.sh && test -s /tmp/oracle-shell.sh");
 await sendGuestLine("export ORACLE_WORKER_URL='"+apiUrl+"'");
 await sendGuestLine("export ORACLE_ACCOUNT_ID='"+accountLiteral+"'");
 await sendGuestLine("export ORACLE_SESSION_TOKEN='"+tokenLiteral+"'");
 await sendGuestLine("export ORACLE_ADMIN_CODE='"+adminLiteral+"'");
+await sendGuestLine("stty echo 2>/dev/null");
 stateText('Starting Oracle terminal bridge…');
 await sendVmCommand("/bin/sh /tmp/oracle-shell.sh\\n");
 const deadline=Date.now()+30000;
