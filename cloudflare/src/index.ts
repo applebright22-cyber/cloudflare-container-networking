@@ -865,6 +865,33 @@ export default {
       }));
     }
 
+    // Authenticated account terminal capability probe. It never runs a shell command.
+    if (url.pathname === "/api/account/exec/status") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      let body: { account_id?: unknown; session_token?: unknown };
+      try { body = await request.json() as typeof body; }
+      catch { return json({ error: "invalid_json" }, 400); }
+      const accountId = typeof body.account_id === "string" ? body.account_id : "";
+      const sessionToken = typeof body.session_token === "string" ? body.session_token : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, token: sessionToken }),
+      });
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      const enabled = env.ORACLE_ACCOUNT_EXEC_ENABLED === "true";
+      return json({
+        enabled,
+        runtime: "oracle-host",
+        ...(enabled ? {} : {
+          reason: "Per-account OS/container isolation must be enabled and verified before exposing host shell commands."
+        })
+      });
+    }
+
     // Authenticated account terminal -> Oracle persistent session. This route is
     // deliberately fail-closed until Oracle per-account OS/container isolation is
     // enabled; account-named directories alone do not isolate arbitrary shell code.
