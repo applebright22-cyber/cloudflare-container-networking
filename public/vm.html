@@ -220,6 +220,7 @@ copyStatus.textContent='Results copied.';requestAnimationFrame(()=>copyStatus.te
 async function pasteIntoVm(){
 try{
 const text=await navigator.clipboard.readText();if(!text)throw new Error('empty');
+if(oracleTerminalMode){oracleTerminalInput=(oracleTerminalInput+text.replace(/\r\n/g,'\n').replace(/\r/g,'')).slice(0,4096);drawOracleTerminal();copyStatus.textContent='Pasted into Oracle command line.';return}
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('VM not ready');
 window.emulator.keyboard_send_text(text);if(!/[\r\n]$/.test(text))window.emulator.keyboard_send_text('\n');
 copyStatus.textContent='Pasted and executed.'
@@ -260,6 +261,7 @@ while(lines.length&& !lines[lines.length-1].trim())lines.pop();
 return lines;
 }
 function mirror(){
+if(oracleTerminalMode)return;
 const raw=screenText().replace(/\r/g,'');
 const lines=normalizeScreenLines(raw);
 if(!raw.trim())return;
