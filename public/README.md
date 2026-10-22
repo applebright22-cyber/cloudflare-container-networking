@@ -1,29 +1,14 @@
-# Tiny Core / v86 boot assets
+# Browser VM assets
 
-The repository's canonical Tiny Core boot image is the verified custom
-DHCP-enabled Pure64 image:
+The active dashboard is vm.html. It loads the v86 browser runtime from /v86/libv86.js and /v86/v86.wasm, then restores the selected user's saved emulator state through the Cloudflare snapshot API.
 
-`public/boot/TinyCore_Pure64-11.0.iso`
+The current vm.html code does not select a boot ISO by filename. Files under boot/ are checked-in reference/experimental images, not the active snapshot-restore source. Do not treat an ISO's presence as proof that the browser VM boots from it.
 
-It is based on Tiny Core Pure64 11.1 and was remastered from the working
-Pure64 base. Its startup hook brings up `eth0` and requests an IPv4 address
-through DHCP.
+## Assets
 
-Expected boot layout:
+- bios/seabios.bin and bios/vgabios.bin: BIOS assets for v86.
+- v86/libv86.js and v86/v86.wasm: browser emulator runtime.
+- v86/backup-pre-x64/: retained older runtime backup; not loaded by the current dashboard.
+- boot/: experimental/reference TinyCore ISO files and checksum metadata.
 
-```text
-public/
-├── boot/
-│   └── TinyCore_Pure64-11.0.iso
-├── bios/
-│   ├── seabios.bin
-│   └── vgabios.bin
-└── v86/
-    ├── libv86.js
-    └── v86.wasm
-```
-
-`TinyCore_Pure64-11.0.iso` is the canonical checked-in boot asset for the browser/v86 VM.
-
-The browser/v86 VM remains a boot/reference PoC. It is not the always-on
-runtime for the persistent Tiny Core node.
+The VM's guest state is stored in Cloudflare R2 per snapshot identity. The browser VM is not an always-on server runtime: guest execution stops when the browser session stops.
