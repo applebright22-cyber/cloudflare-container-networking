@@ -1,9 +1,7 @@
 name: Workerd guest snapshot round-trip
 
 on:
-  workflow_dispatch:
-  # This long-running integration test is intentionally manual. Fast regression
-  # tests and the headless-v86 build still run in PR checks.
+  # Long snapshot test is manual-only; Oracle connection checks should not wait on it.
   workflow_dispatch:
 
 jobs:
