@@ -110,12 +110,23 @@ export class VmExecution extends DurableObject {
       if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 20_000) {
         return json({ error: "timeout_ms_must_be_1000_to_20000" }, 400);
       }
+      // The Oracle connection is a single transport, but each command must name
+      // the authenticated account session that Oracle will execute in.
+      const requestedAccount = request.headers.get("x-account-id");
+      const accountId = identity === "admin" ? "admin" : (requestedAccount ?? "");
+      if (identity === "admin" && accountId !== "admin") return json({ error: "invalid_account_id" }, 400);
+      if (identity === "oracle" && accountId !== "admin" && !/^acct-[a-f0-9-]{36}$/.test(accountId)) {
+        return json({ error: "invalid_or_missing_account_id" }, 400);
+      }
+      if (identity !== "admin" && identity !== "oracle") {
+        return json({ error: "unsupported_execution_transport" }, 400);
+      }
       const socket = this.ctx.getWebSockets(identity).find((candidate) => candidate.readyState === WebSocket.OPEN);
-      if (!socket) return json({ error: "vm_offline", vm_id: identity, hint: "Open the VM dashboard, sign in as admin, and wait for startup or snapshot restore to finish." }, 503);
+      if (!socket) return json({ error: "vm_offline", vm_id: identity, hint: "The Oracle outbound agent must be connected before execution." }, 503);
 
       const id = crypto.randomUUID();
       try {
-        socket.send(JSON.stringify({ type: "exec", id, command: body.command, timeout_ms: timeout }));
+        socket.send(JSON.stringify({ type: "exec", id, account_id: accountId, command: body.command, timeout_ms: timeout }));
       } catch {
         return json({ error: "vm_agent_send_failed" }, 502);
       }
