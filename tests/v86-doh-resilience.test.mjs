@@ -85,7 +85,7 @@ test("DoH response must be a successful DNS wire-format response", async () => {
   assert.equal(calls.length, 2);
   assert.equal(output.dns.flags, 33154); // QR + RD + RA + SERVFAIL
   assert.deepEqual(output.dns.questions, input.dns.questions);
-  assert.deepEqual(output.dns.answers, []);
+  assert.deepEqual(Array.from(output.dns.answers), []);
   assert.ok(!output.udp.data, "do not pass an HTTP error body off as a DNS response");
 });
 
