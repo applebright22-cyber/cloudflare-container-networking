@@ -34,3 +34,11 @@ test("long snapshot round-trip workflow is manual-only during Oracle integration
   assert.ok(!triggers.includes("\n  push:"));
   assert.ok(!triggers.includes("\n  pull_request:"));
 });
+
+test("TinyCore startup checks Oracle bridge health without adding another terminal", () => {
+  assert.ok(index.includes('url.pathname === "/api/vm/oracle-status"'), "Cloudflare exposes a read-only Oracle connection status");
+  assert.ok(index.includes('idFromName("oracle")'), "status check targets the existing Oracle coordinator");
+  assert.ok(dashboard.includes("function checkOracleBridge()"), "dashboard polls bridge health");
+  assert.ok(dashboard.includes("startOracleBridgeStatus();"), "bridge check starts on fresh and restored VM startup");
+  assert.ok(dashboard.includes('id="oracle-bridge-status"'), "connection state is visible in the existing dashboard");
+});
