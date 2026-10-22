@@ -395,7 +395,7 @@ stateText('VM ready, API agent connection failed: '+(error&&error.message?error.
 async function sendVmCommand(cmd){
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('v86 keyboard API unavailable');
 if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
-await window.emulator.keyboard_send_text(cmd,15);
+window.emulator.keyboard_send_text(cmd);
 
 }
 let oracleShellBridgeActive=false;
@@ -481,7 +481,7 @@ await sendGuestLine("export ORACLE_SESSION_TOKEN='"+tokenLiteral+"'");
 await sendGuestLine("export ORACLE_ADMIN_CODE='"+adminLiteral+"'");
 await sendGuestLine("stty echo 2>/dev/null");
 stateText('Starting Oracle terminal bridge…');
-await sendVmCommand("/bin/sh /tmp/oracle-shell.sh\\n");
+await sendVmCommand("/bin/sh /tmp/oracle-shell.sh\n");
 const deadline=Date.now()+30000;
 while(Date.now()<deadline){
   if(screenText().includes('ORACLE_BACKEND_CONNECTED account='+identity)){
