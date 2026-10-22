@@ -22,10 +22,15 @@ test("Oracle coordinator includes account_id in each execution message", () => {
   assert.ok(coordinator.includes("vm_id: pending.accountId"), "result must report the selected account session, not the shared transport identity");
 });
 
-test("TinyCore remains the only terminal UI; Oracle execution adds no separate panel", () => {
-  assert.ok(dashboard.includes('id="screen_container"'), "existing TinyCore/v86 terminal remains present");
-  assert.ok(!dashboard.includes("oracle-terminal-panel"), "do not add a second Oracle terminal UI");
-  assert.ok(!dashboard.includes("oracle-command"), "commands must continue to originate in TinyCore");
+test("the existing terminal surface routes regular-account commands to Oracle without adding another panel", () => {
+  assert.ok(dashboard.includes('id="screen_container"'), "the existing TinyCore guest remains available for the relay");
+  assert.ok(dashboard.includes('id="myst-log"'), "the existing terminal output surface is reused");
+  assert.ok(dashboard.includes("function activateOracleTerminal()"), "regular accounts switch the existing terminal surface to Oracle");
+  assert.ok(dashboard.includes("fetch('/api/account/exec'"), "terminal commands go through the authenticated Cloudflare route");
+  assert.ok(dashboard.includes("session_token:window.snapshotAuthToken"), "the account session token accompanies each command");
+  assert.ok(dashboard.includes("document.body.classList.add('oracle-terminal-mode')"), "regular account mode hides guest-shell input");
+  assert.ok(dashboard.includes("if(oracleTerminalMode)return;"), "TinyCore screen mirroring does not overwrite Oracle output");
+  assert.ok(!dashboard.includes("oracle-terminal-panel"), "do not add a second terminal UI");
 });
 test("long snapshot round-trip workflow is manual-only during Oracle integration", () => {
   const workflow = fs.readFileSync(new URL("../.github/workflows/headless-v86-snapshot-roundtrip.yml", import.meta.url), "utf8");
