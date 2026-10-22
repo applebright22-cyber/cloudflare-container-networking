@@ -62,7 +62,7 @@ body:not(.logged-in) #account-id-panel{display:none}
 <div id="toolbar">
 <button id="save-vm-state" type="button">Save VM state</button>
 <button id="clear-vm-state" type="button">Delete saved state</button>
-<button id="run-network-test" type="button">Run network test</button>
+
 <button id="run-bootstrap" type="button">Wake shell / run bootstrap</button>
 <button id="copy-results" type="button">Copy test results</button>
 <button id="paste-terminal" type="button">Paste into VM</button>
@@ -234,66 +234,6 @@ lastMirrorLines=lines;
 function mirrorLoop(){mirror();setTimeout(mirrorLoop,500)}
 setTimeout(mirrorLoop,500);
 
-const diagnosticCommand=[
-  'echo "--- NETWORK RECOVERY ---"',
-  'sudo -n /sbin/modprobe ne2k-pci 2>&1; sudo -n /sbin/modprobe 8390 2>&1',
-  `sudo -n sh -c 'set +e; iface=eth0; mac="${window.snapshotVirtualMac||'02:ff:ff:ff:ff:ff'}"; /sbin/killall udhcpc 2>/dev/null; /sbin/ifconfig "$iface" down 2>/dev/null; /sbin/ifconfig "$iface" hw ether "$mac" || { echo MAC_ASSIGN_FAILED; exit 1; }; /sbin/ifconfig "$iface" up || exit 1; attempt=1; while [ "$attempt" -le 8 ]; do echo DHCP_ATTEMPT=$attempt; /sbin/udhcpc -f -n -q -i "$iface"; rc=$?; echo DHCP_CLIENT_RC=$rc; /sbin/ifconfig "$iface"; /sbin/route -n; if /sbin/ifconfig "$iface" | grep -Eq "inet (addr:)?[0-9]" && /sbin/route -n | grep -q "0.0.0.0"; then echo DHCP_RECOVERY_OK; exit 0; fi; echo DHCP_RETRYING_NO_LEASE; if [ "$attempt" -lt 8 ]; then /sbin/ifconfig "$iface" down 2>/dev/null; /sbin/ifconfig "$iface" hw ether "$mac" 2>/dev/null; /sbin/ifconfig "$iface" up; sleep 3; fi; attempt=$((attempt+1)); done; echo DHCP_RECOVERY_TIMEOUT; exit 1'; echo DHCP_RECOVERY_RC=$?`,
-  'echo "--- network interface counters ---"; /sbin/ifconfig -a 2>&1; echo "--- route table ---"; /sbin/route -n 2>&1; echo "--- DNS configuration ---"; cat /etc/resolv.conf 2>&1',
-  'if ! /sbin/route -n | grep -q "0.0.0.0"; then echo NO_DEFAULT_GATEWAY; else echo DEFAULT_GATEWAY_PRESENT; fi',
-  'if /sbin/route -n | grep -q "0.0.0.0"; then echo "--- DNS lookup ---"; if command -v nslookup >/dev/null 2>&1; then nslookup raw.githubusercontent.com; echo DNS_TEST_RC=$?; else wget -T 10 -t 1 -q -O /dev/null https://raw.githubusercontent.com/; echo DNS_TEST_RC=$?; fi; fi',
-  
-  'echo "--- outbound HTTPS: GitHub ---"; wget -T 15 -t 1 -S -O /dev/null https://github.com/ 2>&1; echo GITHUB_HTTPS_RC=$?',
-  'if grep -q "DHCP_RECOVERY_OK" /tmp/network-diagnostic.log && /sbin/ifconfig eth0 | grep -Eq "inet (addr:)?[0-9]" && /sbin/route -n | grep -q "0.0.0.0" && wget -T 15 -t 1 -q -O /dev/null https://github.com/; then echo NETWORK_RECOVERY_PASS; else echo NETWORK_RECOVERY_FAIL; fi',
-].join('\n');
-
-let manualCommandRunning=false;
-function runDiagnostic(label,saveAfter=false){
-if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the shell; refusing to overlap commands.');return}
-if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function'){statusText('VM keyboard API unavailable.');return}
-manualCommandRunning=true;
-const marker='__MANUAL_DIAGNOSTIC_DONE__:',before=screenText().split(marker).length-1;
-const command='( '+diagnosticCommand+' ) > /tmp/network-diagnostic.log 2>&1; rc=$?; cat /tmp/network-diagnostic.log; printf "\\n__MANUAL_DIAGNOSTIC_DONE__:%s\\n" "$rc"';
-report('\n\n===== '+label+' =====\nRunning tests, then copying the complete /tmp/network-diagnostic.log into this Results text area in numbered chunks.\n'+command+'\n');
-(async()=>{
-try{
-await sendVmCommand(command+'\n');
-for(;;){
-const t=screenText(),at=t.lastIndexOf(marker);
-if(t.split(marker).length-1>before&&shellPrompt(t.slice(at+marker.length)))break;
-await new Promise(resolve=>requestAnimationFrame(resolve));
-}
-const countMarker='__DIAGNOSTIC_LOG_COUNT__';
-await sendVmCommand('printf "\\n'+countMarker+'%s\\n" "$(wc -l < /tmp/network-diagnostic.log)"\n');
-let count=-1;
-for(let tries=0;tries<300;tries++){
-const t=screenText(),m=t.match(new RegExp(countMarker+'(\\d+)'));
-if(m&&shellPrompt(t.slice(t.lastIndexOf(countMarker)))){count=Number(m[1]);break}
-await new Promise(resolve=>requestAnimationFrame(resolve));
-}
-if(!Number.isSafeInteger(count)||count<0||count>2000)throw new Error('log line count unavailable or exceeds safe capture limit: '+count);
-report('LOG_CAPTURE_EXPECTED_LINES='+count+'\n');
-let captured=0,capturedLog='';
-// Keep each transfer small enough to fit in the guest's visible terminal buffer.
-for(let start=1;start<=count;start+=4){
-const end=Math.min(count,start+3),begin='__DIAG_CHUNK_BEGIN_'+start+'__',finish='__DIAG_CHUNK_END_'+start+'__';
-await sendVmCommand('printf "\\n'+begin+'\\n"; sed -n "'+start+','+end+'p" /tmp/network-diagnostic.log; printf "\\n'+finish+'\\n"\n');
-let chunk=null;
-for(let tries=0;tries<300;tries++){
-const t=screenText(),aa=t.lastIndexOf(begin),bb=t.lastIndexOf(finish);
-// A unique end marker means the command finished; don't require a clean prompt line,
-// because wrapped output and terminal scrollback can obscure the prompt.
-if(aa>=0&&bb>aa){chunk=t.slice(aa+begin.length,bb).replace(/^\r?\n/,'').replace(/\r?\n$/,'');break}
-await new Promise(resolve=>requestAnimationFrame(resolve));
-}
-if(chunk===null)throw new Error('failed capturing log lines '+start+'-'+end);
-report(chunk+'\n');capturedLog+=chunk+'\n';captured+=end-start+1;
-}
-report('LOG_CAPTURE_CAPTURED_LINES='+captured+'\nLOG_CAPTURE_COMPLETE='+(captured===count?'true':'false')+'\n');
-}catch(e){/* Suppress the obsolete diagnostic warning. */}
-finally{if(saveAfter&&bootComplete){const healthy=capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_OK')&&capturedLog.split(/\\r?\\n/).some(line=>line.trim()==='DHCP_RECOVERY_RC=0');if(!healthy){stateText('Network recovery/test failed or could not be verified; existing server snapshot preserved and autosave remains paused.');statusText('The guest log did not confirm DHCP, DNS and HTTPS success. The existing snapshot was not overwritten.');/* Suppress the obsolete diagnostic warning. */;manualCommandRunning=false;return}report('\\nGUEST_LOG_NETWORK_VERIFICATION=PASS\\nDHCP_RECOVERY_OK and DHCP_RECOVERY_RC=0 confirmed directly in the guest log. DNS and HTTPS checks also passed.\\n');const saved=await saveVmState(false);if(saved){if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);statusText('DHCP recovery, DNS and HTTPS verified from the guest log; restored VM state saved. Autosave enabled.')}else{statusText('Network test passed, but saving the refreshed VM state failed. Existing server snapshot remains available.')}}manualCommandRunning=false}
-})();
-}
-document.getElementById('run-network-test').onclick=function(){if(bootstrapStarted||manualCommandRunning){statusText('Startup already owns the shell; refusing to overlap commands.');return}runDiagnostic('MANUAL NETWORK TEST');statusText('Network test running; waiting for the shell to finish.')};
 document.getElementById('run-bootstrap').onclick=async function(){
 if(!window.emulator||!vmLoaded){statusText('VM is not ready yet. Wait for the VM engine to load.');report('\n*** MANUAL START: VM is not ready. ***\n');return}
 if(bootstrapStarted){statusText('Bootstrap has already started in this page session; check the report.');return}
@@ -531,34 +471,9 @@ return;
 }
 bootComplete=true;
 startOracleBridgeStatus();
-statusText('Saved VM resumed; writing login proof to the guest terminal.');
-// Do not autosave a restored guest until its DHCP/DNS/HTTPS check passes.
+statusText('Saved VM resumed; connecting the Oracle bridge.');
 connectApiAgent();
-// This visible guest-shell line proves the account dashboard loaded its saved snapshot.
-// It deliberately avoids a second headless restore: the dashboard GUI is the recovery check.
-const proofUsername=(sessionStorage.getItem('vm-username')||'unknown').replace(/[^a-z0-9_-]/gi,'').slice(0,32);
-const proofLoginTime=(sessionStorage.getItem('vm-login-time')||new Date().toISOString()).replace(/[^0-9TZ:.-]/g,'').slice(0,40);
-const proofSavedAt=record&&Number.isFinite(record.savedAt)?new Date(record.savedAt).toISOString():'unknown';
-const proofMarker='__SNAPSHOT_LOGIN_PROOF_DONE__';
-const proofCommand="printf '\\nSNAPSHOT_LOGIN_PROOF username="+proofUsername+" login_time="+proofLoginTime+" snapshot_saved_at="+proofSavedAt+"\\n'; echo "+proofMarker;
-await sendVmCommand(proofCommand+'\n');
-const proofDeadline=Date.now()+30000;
-let proofVerified=false;
-while(Date.now()<proofDeadline){
-  const proofScreen=screenText(), proofAt=proofScreen.lastIndexOf(proofMarker);
-  if(proofAt>=0&&shellPrompt(proofScreen.slice(proofAt+proofMarker.length))){proofVerified=true;break;}
-  await new Promise(resolve=>requestAnimationFrame(resolve));
-}
-if(!proofVerified){
-  statusText('Saved snapshot restored, but the guest did not confirm the login proof within 30 seconds. The saved snapshot was preserved.');
-  stateText('Restore needs attention; automatic network test skipped.');
-  report('\\n*** SNAPSHOT LOGIN PROOF TIMEOUT: saved state was restored, but the guest did not return the expected shell marker. Snapshot was not overwritten. ***\\n'+screenText()+'\\n');
-  return;
-}
-report('\n===== SNAPSHOT RECOVERY LOGIN PROOF =====\n'+screenText()+'\n');
-statusText('Saved VM resumed; terminal shows account and login time. Running network check.');
-// A restored snapshot skips package installation; perform a short network check and update the snapshot.
-runDiagnostic('AUTOMATIC NETWORK TEST AFTER SNAPSHOT RESTORE',true);
+return;
 return;
 }
 startBootMonitor();
