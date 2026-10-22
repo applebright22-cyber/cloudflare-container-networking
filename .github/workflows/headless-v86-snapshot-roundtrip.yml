@@ -2,42 +2,9 @@ name: Workerd guest snapshot round-trip
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts"
-      - "cloudflare/src/account-registry.ts"
-      - "cloudflare/src/virtual-network.ts"
-      - "cloudflare/src/wisp-relay.ts"
-      - "cloudflare/src/headless-snapshot-store.ts"
-      - "cloudflare/src/headless-v86-wasm.ts"
-      - "cloudflare/wrangler.headless-v86-roundtrip.toml"
-      - "cloudflare/package.json"
-      - "runner/tinycore/**"
-      - "public/runner/tinycore/**"
-      - "public/boot/**"
-      - "public/vm.html"
-      - "tests/bootstrap-controller.test.mjs"
-      - ".github/workflows/headless-v86-snapshot-roundtrip.yml"
-      - ".github/workflows/build-tinycore-network.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts"
-      - "cloudflare/src/account-registry.ts"
-      - "cloudflare/src/virtual-network.ts"
-      - "cloudflare/src/wisp-relay.ts"
-      - "cloudflare/src/headless-snapshot-store.ts"
-      - "cloudflare/src/headless-v86-wasm.ts"
-      - "cloudflare/wrangler.headless-v86-roundtrip.toml"
-      - "cloudflare/package.json"
-      - "runner/tinycore/**"
-      - "public/runner/tinycore/**"
-      - "public/boot/**"
-      - "public/vm.html"
-      - "tests/bootstrap-controller.test.mjs"
-      - ".github/workflows/headless-v86-snapshot-roundtrip.yml"
-      - ".github/workflows/build-tinycore-network.yml"
+  # This long-running integration test is intentionally manual. Fast regression
+  # tests and the headless-v86 build still run in PR checks.
+  workflow_dispatch:
 
 jobs:
   guest-snapshot-roundtrip:
