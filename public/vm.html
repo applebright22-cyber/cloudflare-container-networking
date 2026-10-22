@@ -160,6 +160,56 @@ function reportStorageKey(){return 'mysterium-network-test-results:'+(window.sna
 let reportSaveTimer=null;
 function save(){if(reportSaveTimer!==null)clearTimeout(reportSaveTimer);reportSaveTimer=setTimeout(()=>{reportSaveTimer=null;try{localStorage.setItem(reportStorageKey(),results.value)}catch(e){}},500)}
 function report(t){results.value+=t;results.scrollTop=results.scrollHeight;save()}
+function drawOracleTerminal(){
+  if(oracleTerminalOutput.length>30000)oracleTerminalOutput=oracleTerminalOutput.slice(-30000);
+  mystLog.textContent=oracleTerminalOutput+(oracleTerminalBusy?'\n[Oracle command running…]':'')+'\n$ '+oracleTerminalInput;
+  mystLog.scrollTop=mystLog.scrollHeight;
+}
+function activateOracleTerminal(){
+  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||oracleTerminalMode)return;
+  oracleTerminalMode=true;
+  document.body.classList.add('oracle-terminal-mode');
+  mystLog.setAttribute('aria-label','Oracle persistent account terminal');
+  mystLog.title='Commands run in the persistent Oracle account session through Cloudflare.';
+  oracleTerminalOutput='Mysterium persistent shell\nRuntime: Oracle host via Cloudflare\nAccount ID: '+window.snapshotIdentity+'\nType a command and press Enter. The browser VM remains running for its network relay.\n\n';
+  oracleTerminalInput='';
+  oracleTerminalHistory=[];
+  oracleTerminalHistoryIndex=0;
+  document.getElementById('run-bootstrap').hidden=true;
+  drawOracleTerminal();
+  mystLog.focus();
+}
+async function runOracleTerminalCommand(raw){
+  if(oracleTerminalBusy)return;
+  const command=String(raw||'').replace(/\r/g,'');
+  if(!command.trim()){drawOracleTerminal();return;}
+  if(command.length>4096){oracleTerminalOutput+='Command exceeds the 4096-character limit.\n';drawOracleTerminal();return;}
+  if(command.trim()==='clear'||command.trim()==='cls'){oracleTerminalOutput='';oracleTerminalInput='';drawOracleTerminal();return;}
+  oracleTerminalOutput+='\n$ '+command+'\n';
+  oracleTerminalInput='';
+  if(oracleTerminalHistory[oracleTerminalHistory.length-1]!==command)oracleTerminalHistory.push(command);
+  oracleTerminalHistoryIndex=oracleTerminalHistory.length;
+  oracleTerminalBusy=true;
+  drawOracleTerminal();
+  try{
+    const response=await fetch('/api/account/exec',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
+      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken,command,timeout_ms:15000})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok){
+      if(data.error==='oracle_account_execution_disabled')oracleTerminalOutput+='Oracle execution is disabled by server policy. '+(data.reason||'Per-account OS/container isolation must be enabled before host shell access.')+'\n';
+      else if(data.error==='unauthorized')oracleTerminalOutput+='Session is no longer authorized. Please log in again.\n';
+      else oracleTerminalOutput+='Oracle execution failed (HTTP '+response.status+'): '+String(data.error||data.reason||'request_failed')+'\n';
+    }else{
+      const stdout=typeof data.stdout==='string'?data.stdout:'';
+      const stderr=typeof data.stderr==='string'?data.stderr:'';
+      if(stdout)oracleTerminalOutput+=stdout+(stdout.endsWith('\n')?'':'\n');
+      if(stderr)oracleTerminalOutput+='[stderr]\n'+stderr+(stderr.endsWith('\n')?'':'\n');
+      if(Number.isInteger(data.exit_code)&&data.exit_code!==0)oracleTerminalOutput+='[exit code: '+data.exit_code+']\n';
+      if(data.timed_out===true)oracleTerminalOutput+='[command timed out; the server may still be processing it]\n';
+    }
+  }catch(error){oracleTerminalOutput+='Could not reach the Cloudflare Oracle execution route: '+(error&&error.message?error.message:String(error))+'\n';}
+  finally{oracleTerminalBusy=false;drawOracleTerminal();}
+}
 try{const s=localStorage.getItem(reportStorageKey());if(s)results.value=s}catch(e){}
 
 document.getElementById('clear-results').onclick=function(){results.value='';save()};
