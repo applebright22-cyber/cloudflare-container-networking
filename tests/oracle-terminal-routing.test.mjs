@@ -16,6 +16,15 @@ test("authenticated account execution validates the session before forwarding it
   assert.ok(route.includes('idFromName("oracle")'), "account commands must use the persistent Oracle transport");
 });
 
+test("account execution capability is authenticated and does not execute commands", () => {
+  const routeAt = index.indexOf('if (url.pathname === "/api/account/exec/status")');
+  assert.notEqual(routeAt, -1);
+  const route = index.slice(routeAt, routeAt + 1800);
+  assert.ok(route.includes('/auth/verify'), "capability probe validates the account session");
+  assert.ok(route.includes('env.ORACLE_ACCOUNT_EXEC_ENABLED === "true"'), "feature availability comes from the explicit deployment gate");
+  assert.ok(!route.includes('coordinator.fetch'), "capability probe must not execute a shell command");
+});
+
 test("Oracle coordinator includes account_id in each execution message", () => {
   assert.ok(coordinator.includes('request.headers.get("x-account-id")'));
   assert.ok(coordinator.includes('account_id: accountId'));
@@ -25,7 +34,9 @@ test("Oracle coordinator includes account_id in each execution message", () => {
 test("the existing terminal surface routes regular-account commands to Oracle without adding another panel", () => {
   assert.ok(dashboard.includes('id="screen_container"'), "the existing TinyCore guest remains available for the relay");
   assert.ok(dashboard.includes('id="myst-log"'), "the existing terminal output surface is reused");
-  assert.ok(dashboard.includes("function activateOracleTerminal()"), "regular accounts switch the existing terminal surface to Oracle");
+  assert.ok(dashboard.includes("function activateOracleTerminal()"), "regular accounts switch the existing terminal surface to Oracle when enabled");
+  assert.ok(dashboard.includes("fetch('/api/account/exec/status'"), "terminal stays in TinyCore until the server reports Oracle execution enabled");
+  assert.ok(dashboard.includes("function checkAccountExecution()"), "regular-account routing is selected from server capability status");
   assert.ok(dashboard.includes("fetch('/api/account/exec'"), "terminal commands go through the authenticated Cloudflare route");
   assert.ok(dashboard.includes("session_token:window.snapshotAuthToken"), "the account session token accompanies each command");
   assert.ok(dashboard.includes("document.body.classList.add('oracle-terminal-mode')"), "regular account mode hides guest-shell input");
