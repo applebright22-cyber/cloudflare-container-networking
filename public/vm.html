@@ -82,6 +82,7 @@ window.startVm=async function(){
 const status=document.getElementById('status'),results=document.getElementById('results'),mystLog=document.getElementById('myst-log'),copyStatus=document.getElementById('copy-status'),stateStatus=document.getElementById('state-status');
 const nodeId='7cbee0e9-da6b-4808-92a7-4a3c2a45a840',apiUrl=window.location.origin;
 let reportTimer=null,bootstrapStarted=false,bootComplete=false;
+let manualCommandRunning=false;
 
 function statusText(t){status.textContent=t}
 let snapshotBusy=false,snapshotLoadFailed=false,vmLoaded=false,restoredSnapshot=false,autosaveTimer=null;
@@ -473,7 +474,6 @@ bootComplete=true;
 startOracleBridgeStatus();
 statusText('Saved VM resumed; connecting the Oracle bridge.');
 connectApiAgent();
-return;
 return;
 }
 startBootMonitor();
