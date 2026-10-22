@@ -166,12 +166,14 @@ function drawOracleTerminal(){
   mystLog.scrollTop=mystLog.scrollHeight;
 }
 function activateOracleTerminal(){
-  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||oracleTerminalMode)return;
+  const isAdmin=window.snapshotIdentity==='admin'&&Boolean(window.snapshotAdminCode);
+  const isAccount=/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))&&Boolean(window.snapshotAuthToken);
+  if((!isAdmin&&!isAccount)||oracleTerminalMode)return;
   oracleTerminalMode=true;
   document.body.classList.add('oracle-terminal-mode');
   mystLog.setAttribute('aria-label','Oracle persistent account terminal');
   mystLog.title='Commands run in the persistent Oracle account session through Cloudflare.';
-  oracleTerminalOutput='Mysterium persistent shell\nRuntime: Oracle host via Cloudflare\nAccount ID: '+window.snapshotIdentity+'\nType a command and press Enter. The browser VM remains running for its network relay.\n\n';
+  oracleTerminalOutput='Mysterium persistent shell\nRuntime: Oracle host via Cloudflare\nSession ID: '+window.snapshotIdentity+'\nType a command and press Enter. The browser VM remains running for its network relay.\n\n';
   oracleTerminalInput='';
   oracleTerminalHistory=[];
   oracleTerminalHistoryIndex=0;
@@ -180,6 +182,21 @@ function activateOracleTerminal(){
   mystLog.focus();
 }
 async function checkAccountExecution(){
+  if(window.snapshotIdentity==='admin'&&window.snapshotAdminCode){
+    try{
+      const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
+      const data=await response.json().catch(()=>({}));
+      if(response.ok&&data.status==='online'){
+        activateOracleTerminal();
+        statusText('Oracle persistent admin terminal enabled.');
+      }else{
+        statusText('Oracle agent is offline; keeping the Tiny Core admin shell active.');
+      }
+    }catch(error){
+      statusText('Could not verify the Oracle agent; keeping the Tiny Core admin shell active.');
+    }
+    return;
+  }
   if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken)return;
   try{
     const response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
@@ -209,8 +226,12 @@ async function runOracleTerminalCommand(raw){
   oracleTerminalBusy=true;
   drawOracleTerminal();
   try{
-    const response=await fetch('/api/account/exec',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
-      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken,command,timeout_ms:15000})});
+    const isAdmin=window.snapshotIdentity==='admin';
+    const headers={'content-type':'application/json'};
+    if(isAdmin)headers['x-admin-code']=window.snapshotAdminCode;
+    const endpoint=isAdmin?'/api/admin/oracle-exec':'/api/account/exec';
+    const payload=isAdmin?{command,timeout_ms:15000}:{account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken,command,timeout_ms:15000};
+    const response=await fetch(endpoint,{method:'POST',headers,cache:'no-store',body:JSON.stringify(payload)});
     const data=await response.json().catch(()=>({}));
     if(!response.ok){
       if(data.error==='oracle_account_execution_disabled')oracleTerminalOutput+='Oracle execution is disabled by server policy. '+(data.reason||'Per-account OS/container isolation must be enabled before host shell access.')+'\n';
@@ -479,7 +500,7 @@ for(let attempt=1;attempt<=3&&!saved;attempt++){
 if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
 const accountTerminal=String(window.snapshotIdentity||'').startsWith('acct-');
 statusText(accountTerminal?'Guest network setup complete; activating the Oracle account terminal.':saved?'DHCP verified; CA certificates included in the saved VM snapshot.':'Automatic snapshot save failed after 3 attempts. The VM will retry on the autosave schedule.');
-if(accountTerminal)void checkAccountExecution();
+if(accountTerminal||window.snapshotIdentity==='admin')void checkAccountExecution();
 connectApiAgent();
 return;
 }
@@ -574,7 +595,7 @@ return;
 }
 bootComplete=true;
 startOracleBridgeStatus();
-if(String(window.snapshotIdentity||'').startsWith('acct-'))void checkAccountExecution();else statusText('Saved VM resumed; connecting the Oracle bridge.');
+if(String(window.snapshotIdentity||'').startsWith('acct-')||window.snapshotIdentity==='admin')void checkAccountExecution();else statusText('Saved VM resumed; connecting the Oracle bridge.');
 connectApiAgent();
 return;
 }
