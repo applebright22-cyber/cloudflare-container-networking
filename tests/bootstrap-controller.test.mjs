@@ -77,7 +77,8 @@ test("VM uses a built ISO asset, a single supported relay configuration, and ret
 
 test("restored snapshots automatically run the network diagnostic and save after it finishes", () => {
   assert.ok(html.includes("runDiagnostic('AUTOMATIC NETWORK TEST AFTER SNAPSHOT RESTORE',true)"), "restored VM should not skip the automatic network test");
-  assert.ok(html.includes("if(saveAfter&&bootComplete){const tail=screenText().slice(-12000)"), "validate diagnostic results before saving");
+  assert.ok(html.includes("if(saveAfter&&bootComplete){const healthy=capturedLog.split"), "validate diagnostic results before saving");
+  assert.ok(html.includes("DHCP_RECOVERY_OK") && html.includes("if(!healthy)"), "preserve the existing snapshot unless guest network recovery is verified");
   assert.ok(html.includes("const saved=await saveVmState(false)"), "save the state after the diagnostic finishes");
   assert.ok(html.includes("requestedIdentity==='user-usera'?['user-usera','regular-user-a']"), "usera should fall back to the documented legacy snapshot key");
   assert.ok(html.includes("requestedIdentity==='user-userb'?['user-userb','regular-user-b']"), "userb should fall back to the documented legacy snapshot key");
