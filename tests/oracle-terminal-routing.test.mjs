@@ -37,7 +37,10 @@ test("the existing terminal surface routes regular-account commands to Oracle wi
   assert.ok(dashboard.includes("function activateOracleTerminal()"), "regular accounts switch the existing terminal surface to Oracle when enabled");
   assert.ok(dashboard.includes("fetch('/api/account/exec/status'"), "terminal stays in TinyCore until the server reports Oracle execution enabled");
   assert.ok(dashboard.includes("function checkAccountExecution()"), "regular-account routing is selected from server capability status");
-  assert.ok(dashboard.includes("fetch('/api/account/exec'"), "terminal commands go through the authenticated Cloudflare route");
+  assert.ok(dashboard.includes("fetch('/api/account/exec'"), "regular terminal commands go through the authenticated Cloudflare route");
+  assert.ok(dashboard.includes("const endpoint=isAdmin?'/api/admin/oracle-exec':'/api/account/exec'"), "admin terminal commands use the existing admin Oracle endpoint");
+  assert.ok(dashboard.includes("headers['x-admin-code']=window.snapshotAdminCode"), "admin commands use the validated admin code");
+  assert.ok(dashboard.includes("window.snapshotIdentity==='admin'&&Boolean(window.snapshotAdminCode)"), "admin terminal switches only with admin credentials");
   assert.ok(dashboard.includes("session_token:window.snapshotAuthToken"), "the account session token accompanies each command");
   assert.ok(dashboard.includes("document.body.classList.add('oracle-terminal-mode')"), "regular account mode hides guest-shell input");
   assert.ok(dashboard.includes("if(oracleTerminalMode)return;"), "TinyCore screen mirroring does not overwrite Oracle output");
