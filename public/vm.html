@@ -25,7 +25,7 @@ body:not(.logged-in) #api-key-panel{display:none}
 body:not(.logged-in) #account-id-panel{display:none}
 #account-id-panel strong{font-size:13px}
 #account-id-value{color:#b8f7c4;overflow-wrap:anywhere;user-select:text}
-#account-id-message{color:#ffc66d;font-size:12px}
+#account-id-message{color:#ffc66d;font-size:12px}body.oracle-terminal-mode #screen_container{display:none}body.oracle-terminal-mode #myst-log{box-sizing:border-box;height:calc(100vh - 285px);min-height:360px;max-height:none;white-space:pre-wrap;overflow:auto;outline:none;cursor:text}body.oracle-terminal-mode #myst-log:focus{outline:1px solid #555}
 </style>
 </head>
 <body>
@@ -74,7 +74,7 @@ body:not(.logged-in) #account-id-panel{display:none}
 <textarea id="results" spellcheck="false" placeholder="Full startup/network report. It is saved locally so you can copy it in sections."></textarea>
 
 
-<pre id="myst-log">Waiting for Tiny Core...</pre>
+<pre id="myst-log" tabindex="0" aria-label="Terminal output">Waiting for Tiny Core...</pre>
 <div id="screen_container"><div></div><canvas></canvas></div>
 <script src="/v86/libv86.js"></script>
 <script>
@@ -83,6 +83,7 @@ const status=document.getElementById('status'),results=document.getElementById('
 const nodeId='7cbee0e9-da6b-4808-92a7-4a3c2a45a840',apiUrl=window.location.origin;
 let reportTimer=null,bootstrapStarted=false,bootComplete=false;
 let manualCommandRunning=false;
+let oracleTerminalMode=false,oracleTerminalOutput='',oracleTerminalInput='',oracleTerminalHistory=[],oracleTerminalHistoryIndex=0,oracleTerminalBusy=false;
 
 function statusText(t){status.textContent=t}
 let snapshotBusy=false,snapshotLoadFailed=false,vmLoaded=false,restoredSnapshot=false,autosaveTimer=null;
