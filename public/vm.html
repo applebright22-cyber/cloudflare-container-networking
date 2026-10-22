@@ -210,6 +210,36 @@ async function runOracleTerminalCommand(raw){
   }catch(error){oracleTerminalOutput+='Could not reach the Cloudflare Oracle execution route: '+(error&&error.message?error.message:String(error))+'\n';}
   finally{oracleTerminalBusy=false;drawOracleTerminal();}
 }
+document.addEventListener('keydown',event=>{
+  if(!oracleTerminalMode)return;
+  if(event.target&&event.target!==mystLog&&event.target!==document.body&&event.target!==document.documentElement)return;
+  const key=event.key;
+  if((event.ctrlKey||event.metaKey)&&event.shiftKey&&key.toLowerCase()==='v'){
+    event.preventDefault();event.stopImmediatePropagation();void pasteIntoVm();return;
+  }
+  if(event.ctrlKey||event.metaKey){
+    if(key.toLowerCase()==='l'){event.preventDefault();event.stopImmediatePropagation();oracleTerminalOutput='';drawOracleTerminal();}
+    else if(key.toLowerCase()==='c'){event.preventDefault();event.stopImmediatePropagation();if(oracleTerminalBusy)oracleTerminalOutput+='\n[The current API command cannot be interrupted from this terminal.]\n';else oracleTerminalInput='';drawOracleTerminal();}
+    return;
+  }
+  if(event.altKey)return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(key==='Enter'){
+    if(event.shiftKey){oracleTerminalInput+='\n';drawOracleTerminal();return;}
+    void runOracleTerminalCommand(oracleTerminalInput);return;
+  }
+  if(key==='Backspace'){oracleTerminalInput=Array.from(oracleTerminalInput).slice(0,-1).join('');drawOracleTerminal();return;}
+  if(key==='ArrowUp'){
+    if(oracleTerminalHistory.length){oracleTerminalHistoryIndex=Math.max(0,oracleTerminalHistoryIndex-1);oracleTerminalInput=oracleTerminalHistory[oracleTerminalHistoryIndex]||'';drawOracleTerminal();}
+    return;
+  }
+  if(key==='ArrowDown'){
+    if(oracleTerminalHistory.length){oracleTerminalHistoryIndex=Math.min(oracleTerminalHistory.length,oracleTerminalHistoryIndex+1);oracleTerminalInput=oracleTerminalHistory[oracleTerminalHistoryIndex]||'';drawOracleTerminal();}
+    return;
+  }
+  if(key==='Escape'){oracleTerminalInput='';drawOracleTerminal();return;}
+  if(key.length===1){oracleTerminalInput=(oracleTerminalInput+key).slice(0,4096);drawOracleTerminal();}
+},true);
 try{const s=localStorage.getItem(reportStorageKey());if(s)results.value=s}catch(e){}
 
 document.getElementById('clear-results').onclick=function(){results.value='';save()};
