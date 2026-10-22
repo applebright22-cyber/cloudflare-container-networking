@@ -1,10 +1,22 @@
 # Root deployment shim for environments that run "npx wrangler deploy" from the repository root.
-# The canonical Worker project remains under cloudflare/.
+# Keep Durable Object bindings aligned with cloudflare/wrangler.toml.
+# The public assets directory remains relative to the repository root.
 
 name = "cloudflare-container-networking"
 main = "cloudflare/src/index.ts"
 compatibility_date = "2026-10-07"
 workers_dev = true
+
+[build]
+command = "npm --prefix cloudflare install --no-audit --no-fund && npm --prefix cloudflare run build:headless-v86"
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["cloudflare/src/generated/v86.wasm"]
+fallthrough = true
+
+[vars]
+VM_BASELINE_ID = "admin"
 
 [[r2_buckets]]
 binding = "VM_SNAPSHOTS"
@@ -26,6 +38,22 @@ class_name = "NodeRegistry"
 name = "NODE_RUNTIME"
 class_name = "NodeRuntime"
 
+[[durable_objects.bindings]]
+name = "VM_EXECUTION"
+class_name = "VmExecution"
+
+[[durable_objects.bindings]]
+name = "ACCOUNT_REGISTRY"
+class_name = "AccountRegistry"
+
+[[durable_objects.bindings]]
+name = "ACCOUNT_PROVISIONER"
+class_name = "AccountProvisioner"
+
+[[durable_objects.bindings]]
+name = "WISP_RELAY"
+class_name = "WispRelay"
+
 [exports.TunnelHub]
 type = "durable-object"
 storage = "sqlite"
@@ -35,5 +63,21 @@ type = "durable-object"
 storage = "sqlite"
 
 [exports.NodeRuntime]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.VmExecution]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.AccountRegistry]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.AccountProvisioner]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.WispRelay]
 type = "durable-object"
 storage = "sqlite"
