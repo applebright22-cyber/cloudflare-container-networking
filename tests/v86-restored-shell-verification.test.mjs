@@ -4,17 +4,17 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const html = fs.readFileSync(new URL("../public/vm.html", import.meta.url), "utf8");
-const inline = html.match(/<script>\\s*([\\s\\S]*?)<\\/script>/);
+const inline = html.match(/<script>\s*([\s\S]*?)<\/script>/);
 assert.ok(inline, "VM page should contain its inline controller script");
 assert.doesNotThrow(() => new vm.Script(inline[1]), "VM page controller should parse as JavaScript");
 
-const helperStart = inline[1].indexOf("function shellPrompt(text){");
-const helperEnd = inline[1].indexOf("\\nfunction startBootMonitor()", helperStart);
+const helperStart = inline[1].indexOf("function shellPrompt(text){", inline[1].indexOf("window.emulator.add_listener('emulator-loaded'"));
+const helperEnd = inline[1].indexOf("\nfunction startBootMonitor()", helperStart);
 assert.ok(helperStart >= 0 && helperEnd > helperStart, "restored shell verification helper should remain discoverable");
 const helperSource =
-  "const PROMPT_STABLE_MS = 5;\\n" +
+  "const PROMPT_STABLE_MS = 5;\n" +
   inline[1].slice(helperStart, helperEnd) +
-  "\\nglobalThis.__verifyRestoredGuestShell = verifyRestoredGuestShell;";
+  "\nglobalThis.__verifyRestoredGuestShell = verifyRestoredGuestShell;";
 
 function createVerifier({ initialScreen, afterCommand, commandError = null }) {
   let currentScreen = initialScreen;
@@ -25,7 +25,7 @@ function createVerifier({ initialScreen, afterCommand, commandError = null }) {
     setTimeout,
     clearTimeout,
     screenText: () => currentScreen,
-    normalizeScreenLines: (raw) => String(raw || "").replace(/\\r/g, "").split("\\n").map(line => line.replace(/[ \\t]+$/g, "")),
+    normalizeScreenLines: (raw) => String(raw || "").replace(/\r/g, "").split("\n").map(line => line.replace(/[ \t]+$/g, "")),
     sendVmCommand: async (command) => {
       commands.push(command);
       if (commandError) throw commandError;
@@ -42,7 +42,8 @@ test("restored guest passes only when the shell echo marker returns and the prom
     afterCommand: (_screen, command) => {
       const match = command.match(/echo (__V86_RESTORE_SHELL_OK_[a-z0-9]+__)/);
       assert.ok(match, "probe must send a unique echo marker");
-      return "tc@box:~$ echo " + match[1] + "\\n" + match[1] + "\\ntc@box:~$";
+      assert.ok(command.endsWith("\n"), "probe must submit the command with Enter");
+      return "tc@box:~$ echo " + match[1] + "\n" + match[1] + "\ntc@box:~$";
     },
   });
   const result = await guest.verify(200, 100);
@@ -65,7 +66,7 @@ test("restored guest fails when the echo marker never returns", async () => {
     afterCommand: (_screen, command) => {
       const match = command.match(/echo (__V86_RESTORE_SHELL_OK_[a-z0-9]+__)/);
       assert.ok(match);
-      return "tc@box:~$ echo " + match[1] + "\\ntc@box:~$";
+      return "tc@box:~$ echo " + match[1] + "\ntc@box:~$";
     },
   });
   const result = await guest.verify(200, 25);
@@ -91,5 +92,5 @@ test("restored VM does not mark boot complete before the command probe passes", 
   assert.ok(listenerStart >= 0 && verificationAt > listenerStart);
   assert.ok(readyAt > verificationAt, "bootComplete must be set only after verification");
   assert.ok(agentAt > verificationAt, "API agent connection must follow verification");
-  assert.match(inline[1].slice(verificationAt, readyAt), /if\(!verification\.ok\)[\\s\\S]*?return;/);
+  assert.match(inline[1].slice(verificationAt, readyAt), /if\(!verification\.ok\)[\s\S]*?return;/);
 });
