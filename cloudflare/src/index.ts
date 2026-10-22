@@ -120,6 +120,94 @@ export default {
       return json({ ok: true, source: "cloudflare-container-networking_AccountRegistry", prefix: "acct-", count: accountIds.length, account_ids: accountIds, accounts });
     }
 
+    // Read-only inventory of account-scoped R2 objects. Does not read object bodies or mutate storage.
+    if (url.pathname === "/api/admin/data-inventory" && request.method === "GET") {
+      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_code_not_configured" }, 503);
+      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_CODE)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const listed = await authRegistry.fetch("https://account-registry.internal/admin/list-accounts", { method: "GET" })
+        .catch(() => new Response("registry_list_failed", { status: 500 }));
+      if (!listed.ok) return json({ error: "account_registry_list_failed", status: listed.status }, 502);
+      const registryResult = await listed.json() as { accounts?: Array<{ account_id?: unknown; username?: unknown }> };
+      const registeredIds = new Set((Array.isArray(registryResult.accounts) ? registryResult.accounts : [])
+        .map((entry) => entry.account_id)
+        .filter((value): value is string => typeof value === "string" && /^acct-[a-f0-9-]{36}$/.test(value)));
+
+      const snapshotObjects: Array<{ key: string; size: number; uploaded: string | null }> = [];
+      const runtimeJobObjects: Array<{ key: string; size: number; uploaded: string | null }> = [];
+      const snapshotIdentities = new Set<string>();
+      const runtimeJobIds = new Set<string>();
+      let snapshotObjectCount = 0;
+      let snapshotBytes = 0;
+      let runtimeJobObjectCount = 0;
+      let runtimeJobBytes = 0;
+      let snapshotOutputTruncated = false;
+      let runtimeJobOutputTruncated = false;
+
+      for (const prefix of ["vm-snapshots/", "runtime-jobs/"]) {
+        let cursor: string | undefined;
+        do {
+          const page = await env.VM_SNAPSHOTS.list({ prefix, limit: 1000, cursor })
+            .catch(() => null);
+          if (!page) return json({ error: "r2_inventory_list_failed", prefix }, 502);
+          for (const object of page.objects) {
+            const item = { key: object.key, size: object.size, uploaded: object.uploaded?.toISOString?.() ?? null };
+            if (prefix === "vm-snapshots/") {
+              snapshotObjectCount += 1;
+              snapshotBytes += object.size;
+              const identity = object.key.slice(prefix.length).split("/")[0];
+              if (identity) snapshotIdentities.add(identity);
+              if (snapshotObjects.length < 1000) snapshotObjects.push(item);
+              else snapshotOutputTruncated = true;
+            } else {
+              runtimeJobObjectCount += 1;
+              runtimeJobBytes += object.size;
+              const match = object.key.match(/^runtime-jobs\/(acct-[a-f0-9-]{36})\.json$/);
+              if (match) runtimeJobIds.add(match[1]);
+              if (runtimeJobObjects.length < 1000) runtimeJobObjects.push(item);
+              else runtimeJobOutputTruncated = true;
+            }
+          }
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+      }
+
+      const candidateIds = new Set<string>([
+        ...Array.from(snapshotIdentities).filter((id) => /^acct-[a-f0-9-]{36}$/.test(id)),
+        ...Array.from(runtimeJobIds),
+      ]);
+      const candidates = Array.from(candidateIds).sort().map((accountId) => ({
+        account_id: accountId,
+        registered: registeredIds.has(accountId),
+        has_snapshot_prefix: snapshotIdentities.has(accountId),
+        has_runtime_job: runtimeJobIds.has(accountId),
+        possible_orphan: !registeredIds.has(accountId),
+      }));
+
+      return json({
+        ok: true,
+        read_only: true,
+        registry: { registered_account_count: registeredIds.size, account_ids: Array.from(registeredIds).sort() },
+        r2: {
+          snapshot_prefix: "vm-snapshots/",
+          snapshot_object_count: snapshotObjectCount,
+          snapshot_total_bytes: snapshotBytes,
+          snapshot_objects: snapshotObjects,
+          snapshot_output_truncated: snapshotOutputTruncated,
+          runtime_jobs_prefix: "runtime-jobs/",
+          runtime_job_object_count: runtimeJobObjectCount,
+          runtime_job_total_bytes: runtimeJobBytes,
+          runtime_job_objects: runtimeJobObjects,
+          runtime_job_output_truncated: runtimeJobOutputTruncated,
+        },
+        account_candidates_from_r2: candidates,
+        note: "possible_orphan means only that an account ID was found in R2 but is absent from the auth registry; it is not proof that deletion is safe. Durable Object instances without matching R2 keys are not enumerable through this Worker binding.",
+      });
+    }
+
     // Permanently clear all user accounts, sessions, per-account snapshots, and queued provisioning jobs.
     // The shared auth registry and Admin baseline snapshot are preserved.
     if (url.pathname === "/api/admin/accounts" && request.method === "DELETE") {
