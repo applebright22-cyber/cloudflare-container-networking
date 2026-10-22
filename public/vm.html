@@ -569,7 +569,7 @@ stateText('Restoring saved VM state into the browser emulator…');
 statusText('Snapshot downloaded. Restoring the saved guest into v86…');
 await window.emulator.restore_state(record.state);
 restoredSnapshot=true;
-stateText('Guest state restored in v86 from '+new Date(record.savedAt).toLocaleString()+'. Verifying guest shell…');
+stateText('Guest state restored in v86 from '+new Date(record.savedAt).toLocaleString()+'. Waiting for guest shell verification…');
 report('\\nSNAPSHOT_BYTES_RESTORED='+record.state.byteLength+'\\nSNAPSHOT_SAVED_AT='+new Date(record.savedAt).toISOString()+'\\n');
 await window.emulator.run();
 }catch(e){
@@ -593,9 +593,21 @@ statusText('New account baseline restored; running one-time VM setup before savi
 startBootMonitor();
 return;
 }
-bootComplete=true;
 startOracleBridgeStatus();
-if(String(window.snapshotIdentity||'').startsWith('acct-')||window.snapshotIdentity==='admin')void checkAccountExecution();else statusText('Saved VM resumed; connecting the Oracle bridge.');
+stateText('Verifying restored Tiny Core shell: waiting for a stable prompt, then running an echo probe (up to 25 seconds)…');
+report('\\n===== RESTORED GUEST SHELL VERIFICATION =====\\nWaiting for a stable Tiny Core prompt and an echo command round-trip.\\n');
+const verification=await verifyRestoredGuestShell();
+if(!verification.ok){
+bootComplete=false;
+stateText('Guest shell verification failed: '+verification.reason+'. Saved snapshot was not changed.');
+statusText('The restored guest did not pass its shell command probe. VM startup is not marked ready; inspect the guest screen or use Wake shell / run bootstrap.');
+report('\\n*** RESTORED GUEST SHELL VERIFICATION FAILED ***\\nreason='+verification.reason+'\\nSaved snapshot was not modified; Oracle guest command execution was not enabled.\\n');
+return;
+}
+bootComplete=true;
+stateText('Guest shell verified: echo command returned successfully.');
+report('RESTORED_GUEST_SHELL_VERIFIED=1\\nprobe='+verification.marker+'\\n');
+if(String(window.snapshotIdentity||'').startsWith('acct-')||window.snapshotIdentity==='admin')void checkAccountExecution();else statusText('Saved VM resumed; guest shell verified; connecting the Oracle bridge.');
 connectApiAgent();
 return;
 }
@@ -611,6 +623,33 @@ for(let i=lines.length-1;i>=Math.max(0,lines.length-6);i--){
 if(promptPattern.test(lines[i]))return lines[i];
 }
 return '';
+}
+async function verifyRestoredGuestShell(promptTimeoutMs=15000,commandTimeoutMs=10000){
+const promptDeadline=Date.now()+promptTimeoutMs;
+let candidate='',candidateSince=0,stablePrompt=false;
+while(Date.now()<promptDeadline){
+const prompt=shellPrompt(screenText());
+if(prompt){
+if(prompt===candidate&&Date.now()-candidateSince>=PROMPT_STABLE_MS){stablePrompt=true;break;}
+if(prompt!==candidate){candidate=prompt;candidateSince=Date.now();}
+}else{candidate='';candidateSince=0;}
+await new Promise(resolve=>setTimeout(resolve,25));
+}
+if(!stablePrompt)return {ok:false,reason:'no stable Tiny Core shell prompt appeared within '+promptTimeoutMs+' ms'};
+const marker='__V86_RESTORE_SHELL_OK_'+Math.random().toString(36).slice(2,10)+'__';
+try{
+await sendVmCommand('echo '+marker+'\n');
+}catch(error){
+return {ok:false,reason:'could not send shell probe: '+(error&&error.message?error.message:String(error))};
+}
+const commandDeadline=Date.now()+commandTimeoutMs;
+while(Date.now()<commandDeadline){
+const text=screenText().replace(/\r/g,'');
+const lines=normalizeScreenLines(text);
+if(lines.some(line=>line.trim()===marker)&&shellPrompt(text))return {ok:true,marker};
+await new Promise(resolve=>setTimeout(resolve,25));
+}
+return {ok:false,reason:'echo probe output or the shell prompt did not return within '+commandTimeoutMs+' ms'};
 }
 function startBootMonitor(){
 statusText('Tiny Core is booting; waiting up to five minutes for a stable shell prompt.');
