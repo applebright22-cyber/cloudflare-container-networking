@@ -187,47 +187,7 @@ n.setUint32(4,b.ntp.root_delay),n.setUint32(8,b.ntp.root_disp),n.setUint32(12,b.
 (b.ipv4.src[0]<<8|b.ipv4.src[1])+(b.ipv4.src[2]<<8|b.ipv4.src[3])+(b.ipv4.dest[0]<<8|b.ipv4.dest[1])+(b.ipv4.dest[2]<<8|b.ipv4.dest[3])+17+m,h,a));g+=m}else b.tcp&&(h=a.ipv4_payload_view,l=0,n=b.tcp,n.fin&&(l|=1),n.syn&&(l|=2),n.rst&&(l|=4),n.psh&&(l|=8),n.ack&&(l|=16),n.urg&&(l|=32),n.ece&&(l|=64),n.cwr&&(l|=128),p=20,n.options&&n.options.mss&&(h.setUint8(p,2),h.setUint8(p+1,4),h.setUint16(p+2,n.options.mss),p+=4),m=4*Math.ceil(p/4),n.options&&0<m-p&&a.eth_frame.fill(0,h.byteOffset+p,h.byteOffset+
 p+(m-p)),h.setUint16(0,n.sport),h.setUint16(2,n.dport),h.setUint32(4,n.seq),h.setUint32(8,n.ackn),h.setUint8(12,m>>2<<4),h.setUint8(13,l),h.setUint16(14,n.winsize),h.setUint16(16,0),h.setUint16(18,n.urgent||0),b.tcp_data&&(m+=Gb(20,b.tcp_data,h,a)),h.setUint16(16,Hb(m,(b.ipv4.src[0]<<8|b.ipv4.src[1])+(b.ipv4.src[2]<<8|b.ipv4.src[3])+(b.ipv4.dest[0]<<8|b.ipv4.dest[1])+(b.ipv4.dest[2]<<8|b.ipv4.dest[3])+6+m,h,a)),g+=m);f.setUint8(0,69);f.setUint8(1,b.ipv4.tos||0);f.setUint16(2,g);f.setUint16(4,b.ipv4.id||
 0);f.setUint8(6,64);f.setUint8(8,b.ipv4.ttl||32);f.setUint8(9,b.ipv4.proto);f.setUint16(10,0);Gb(12,b.ipv4.src,f,a);Gb(16,b.ipv4.dest,f,a);f.setUint16(10,Hb(20,0,f,a));e+=g}return d.call(c,0,e)}
-function Jb(a,b){
-const query=a.udp.data;
-const primary=b.doh_server||"cloudflare-dns.com";
-const resolvers=[primary,primary==="dns.google"?"cloudflare-dns.com":"dns.google"];
-const responsePacket=data=>{
-const packet={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport,data}};
-b.receive(Ib(b.eth_encoder_buf,packet));
-};
-const failurePacket=()=>{
-const packet={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport},dns:{id:a.dns.id,flags:33154,questions:a.dns.questions,answers:[]}};
-b.receive(Ib(b.eth_encoder_buf,packet));
-};
-const resolve=async()=>{
-let lastError=null;
-for(const host of resolvers){
-try{
-const options={method:"POST",headers:[["content-type","application/dns-message"],["accept","application/dns-message"]],body:query};
-if(typeof AbortSignal!=="undefined"&&typeof AbortSignal.timeout==="function")options.signal=AbortSignal.timeout(4000);
-const response=await fetch("https://"+host+"/dns-query",options);
-if(!response.ok)throw new Error("HTTP "+response.status);
-const contentType=(response.headers.get("content-type")||"").toLowerCase();
-if(!contentType.includes("application/dns-message"))throw new Error("unexpected DoH content type");
-const data=new Uint8Array(await response.arrayBuffer());
-if(data.length<12||(data[2]&128)===0)throw new Error("invalid DNS wire response");
-if((data[3]&15)===2&&host!==resolvers[resolvers.length-1]){
-lastError=new Error("resolver returned DNS SERVFAIL");
-continue;
-}
-responsePacket(data);
-return;
-}catch(error){
-lastError=error;
-console.warn("v86 DoH resolver failed ("+host+"):",error instanceof Error?error.message:String(error));
-}
-}
-console.warn("v86 DNS resolution failed; returning SERVFAIL:",lastError instanceof Error?lastError.message:String(lastError));
-failurePacket();
-};
-void resolve();
-return!0
-}
+function Jb(a,b){fetch(`https://${b.doh_server||"cloudflare-dns.com"}/dns-query`,{method:"POST",headers:[["content-type","application/dns-message"]],body:a.udp.data}).then(async c=>{c={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport,data:new Uint8Array(await c.arrayBuffer())}};b.receive(Ib(b.eth_encoder_buf,c))});return!0}
 function Kb(a,b){let c={};c.eth={ethertype:2048,src:b.router_mac,dest:a.eth.src};c.ipv4={proto:17,src:b.router_ip,dest:b.vm_ip};c.udp={sport:67,dport:68};c.dhcp={htype:1,hlen:6,hops:0,xid:a.dhcp.xid,secs:0,flags:0,ciaddr:0,yiaddr:Db(b.vm_ip),siaddr:Db(b.router_ip),giaddr:Db(b.router_ip),chaddr:a.dhcp.chaddr};let d=[],e=a.dhcp.options.find(function(f){return 53===f[0]});e&&3===e[2]&&(a.dhcp.op=3);1===a.dhcp.op&&(c.dhcp.op=2,d.push(new Uint8Array([53,1,2])));3===a.dhcp.op&&(c.dhcp.op=2,d.push(new Uint8Array([53,
 1,5])),d.push(new Uint8Array([51,4,8,0,0,0])));a=[b.router_ip[0],b.router_ip[1],b.router_ip[2],b.router_ip[3]];d.push(new Uint8Array([1,4,255,255,255,0]));b.masquerade&&(d.push(new Uint8Array([3,4].concat(a))),d.push(new Uint8Array([6,4].concat(a))));d.push(new Uint8Array([54,4].concat(a)));d.push(new Uint8Array([60,3].concat(Bb)));d.push(new Uint8Array([255,0]));c.dhcp.options=d;b.receive(Ib(b.eth_encoder_buf,c))}
 function Lb(a,b){let c={};var d=(new DataView(a.buffer,a.byteOffset,a.byteLength)).getUint16(12),e={ethertype:d,dest:a.subarray(0,6),dest_s:Cb(a.subarray(0,6)),src:a.subarray(6,12),src_s:Cb(a.subarray(6,12))};c.eth=e;a=a.subarray(14,a.length);if(2048===d){var f=new DataView(a.buffer,a.byteOffset,a.byteLength),g=a[0]>>4&15;e=a[0]&15;var h=f.getUint8(1),l=f.getUint16(2);let m=f.getUint8(8);d=f.getUint8(9);f=f.getUint16(10);g={version:g,ihl:e,tos:h,len:l,ttl:m,proto:d,ip_checksum:f,src:a.subarray(12,
