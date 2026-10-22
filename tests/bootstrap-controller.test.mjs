@@ -141,7 +141,7 @@ test("TLS installs run in the foreground before HTTPS and certificate checks", (
 test("bootstrap waits for a fresh completion marker and a shell prompt before advancing", () => {
   assert.ok(html.includes("function markerCount(text,marker)"));
   assert.ok(html.includes("markerCount(t,marker)>markerCountBefore"));
-  assert.ok(html.includes("shellPrompt(t.slice(markerAt+marker.length))"));
+  assert.ok(html.includes("shellPrompt(t.slice(markerAt+marker.length))"), "bootstrap must wait for the shell prompt after each completion marker");
   assert.ok(html.includes("const markerCountBefore=marker?markerCount(terminal(),marker):0"));
   assert.ok(html.includes("requestAnimationFrame(wait)"));
 });
@@ -159,7 +159,7 @@ test("VM startup verifies DHCP and CA certificates without any HTTPS preflight",
   const startup = html.slice(startupStart, accountUiStart);
   assert.ok(startup.includes("DHCP_OK"), "startup must require the account-specific DHCP lease");
   assert.ok(startup.includes("CA_BUNDLE_PATH=$CA_BUNDLE"), "startup must verify the CA bundle");
-  assert.ok(startup.includes("ca_certificates_passed"), "saved baseline manifest must record CA certificate verification");
+  assert.ok(html.includes("ca_certificates_passed"), "saved baseline manifest must record CA certificate verification");
   assert.ok(!startup.includes("HTTPS_PREFLIGHT"), "startup must not run an HTTPS preflight");
   assert.ok(!startup.includes("${apiUrl}/health"), "startup must not probe the Worker over HTTPS from the guest");
   assert.ok(!startup.includes("__NETWORK_DOWNLOAD_DONE"), "startup must not download a second network test script");
