@@ -464,7 +464,7 @@ const waitForMarker=async(marker,timeout=10000)=>{
 };
 const sendGuestLine=async(line,timeout=10000)=>{
  const marker='__ORACLE_BOOT_STEP_'+(++oracleStep)+'__';
- await sendVmCommand(line+'; printf "\\\\n'+marker+'\\\\n"\\n');
+ await sendVmCommand(line+'; printf "\\n'+marker+'\\n"\\n');
  if(!await waitForMarker(marker,timeout))throw new Error('Tiny Core did not confirm bootstrap step '+oracleStep+'. The bridge script was not started.');
 };
 stateText('Preparing Oracle terminal bridge in short shell commands…');
