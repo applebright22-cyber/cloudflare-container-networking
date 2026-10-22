@@ -18,6 +18,7 @@ interface ExecResult {
   stderr?: string;
   exit_code: number | null;
   timed_out?: boolean;
+  command_still_running?: boolean;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -176,6 +177,7 @@ export class VmExecution extends DurableObject {
       stderr: typeof body.stderr === "string" ? body.stderr : "",
       exit_code: body.exit_code,
       timed_out: body.timed_out === true,
+      ...(typeof body.command_still_running === "boolean" ? { command_still_running: body.command_still_running } : {}),
       runtime: attachment.identity === "oracle" ? "oracle-host" : "browser-v86",
       notice: attachment.identity === "oracle"
         ? "Command executed by the connected Oracle host executor."
