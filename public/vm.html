@@ -395,7 +395,7 @@ stateText('VM ready, API agent connection failed: '+(error&&error.message?error.
 async function sendVmCommand(cmd){
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('v86 keyboard API unavailable');
 if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
-await window.emulator.keyboard_send_text(cmd,2);
+await window.emulator.keyboard_send_text(cmd,15);
 
 }
 let oracleShellBridgeActive=false;
@@ -471,8 +471,8 @@ stateText('Preparing Oracle terminal bridge in short shell commands…');
 await sendGuestLine("stty -echo 2>/dev/null; if ! command -v curl >/dev/null 2>&1; then tce-load -wi curl >/tmp/oracle-curl-install.log 2>&1; fi");
 await sendGuestLine("command -v curl >/dev/null 2>&1 || { echo ORACLE_CURL_MISSING; exit 1; }");
 await sendGuestLine(": > /tmp/oracle-shell.b64");
-for(let i=0;i<encodedScript.length;i+=100){
- await sendGuestLine("printf '%s' '"+encodedScript.slice(i,i+100)+"' >> /tmp/oracle-shell.b64");
+for(let i=0;i<encodedScript.length;i+=60){
+ await sendGuestLine("printf '%s' '"+encodedScript.slice(i,i+60)+"' >> /tmp/oracle-shell.b64");
 }
 await sendGuestLine("base64 -d /tmp/oracle-shell.b64 > /tmp/oracle-shell.sh && chmod 700 /tmp/oracle-shell.sh && test -s /tmp/oracle-shell.sh");
 await sendGuestLine("export ORACLE_WORKER_URL='"+apiUrl+"'");
