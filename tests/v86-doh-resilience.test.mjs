@@ -104,7 +104,7 @@ test("a rejected DoH fetch retries the alternate resolver", async () => {
     handler(input, networkFor(resolve));
   });
   assert.equal(calls.length, 2);
-  assert.match(calls[1], /dns\\.google/);
+  assert.match(calls[1], /dns\.google/);
   assert.deepEqual(Array.from(output.udp.data), Array.from(answer));
 });
 
