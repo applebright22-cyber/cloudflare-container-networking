@@ -472,6 +472,13 @@ export default {
           baseline.chunks !== Math.ceil((baseline.byteLength as number) / 8388608)) {
         return json({ error: "admin_baseline_manifest_invalid" }, 500);
       }
+      if (baseline.adminReady !== true ||
+          baseline.checks?.guest_booted !== true ||
+          baseline.checks?.shell_command_passed !== true ||
+          baseline.checks?.dhcp_passed !== true ||
+          baseline.checks?.ca_certificates_passed !== true) {
+        return json({ error: "admin_baseline_not_ready", baseline_id: baselineId }, 409);
+      }
       const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
       const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
         method: "POST", headers: { "content-type": "application/json" },
