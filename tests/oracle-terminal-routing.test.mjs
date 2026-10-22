@@ -26,3 +26,11 @@ test("dashboard has a terminal that sends commands through the Oracle API", () =
   assert.ok(dashboard.includes("'/api/admin/oracle-exec'"));
   assert.ok(dashboard.includes("'/api/account/exec'"));
 });
+
+test("long snapshot round-trip workflow is manual-only during Oracle integration", () => {
+  const workflow = fs.readFileSync(new URL("../.github/workflows/headless-v86-snapshot-roundtrip.yml", import.meta.url), "utf8");
+  const triggers = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("\njobs:"));
+  assert.ok(triggers.includes("workflow_dispatch:"));
+  assert.ok(!triggers.includes("\n  push:"));
+  assert.ok(!triggers.includes("\n  pull_request:"));
+});
