@@ -840,6 +840,31 @@ export default {
       return json({ ok: true });
     }
 
+    // Admin-only Oracle smoke-test route used to verify the outbound agent and
+    // terminal UI without granting regular accounts host-shell access.
+    if (url.pathname === "/api/admin/oracle-exec") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      if (!env.ADMIN_ACCESS_CODE || request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      let body: { command?: unknown; timeout_ms?: unknown };
+      try { body = await request.json() as typeof body; }
+      catch { return json({ error: "invalid_json" }, 400); }
+      if (typeof body.command !== "string" || !body.command.trim() || body.command.length > 4096) {
+        return json({ error: "command_must_be_1_to_4096_characters" }, 400);
+      }
+      const timeout = body.timeout_ms === undefined ? 15000 : body.timeout_ms;
+      if (!Number.isInteger(timeout) || (timeout as number) < 1000 || (timeout as number) > 20000) {
+        return json({ error: "timeout_ms_must_be_1000_to_20000" }, 400);
+      }
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
+      return coordinator.fetch(new Request("https://vm-execution.internal/exec", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vm-id": "oracle", "x-account-id": "admin" },
+        body: JSON.stringify({ command: body.command, timeout_ms: timeout }),
+      }));
+    }
+
     // Authenticated account terminal -> Oracle persistent session. This route is
     // deliberately fail-closed until Oracle per-account OS/container isolation is
     // enabled; account-named directories alone do not isolate arbitrary shell code.
