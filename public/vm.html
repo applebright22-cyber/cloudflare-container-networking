@@ -638,7 +638,7 @@ await new Promise(resolve=>setTimeout(resolve,25));
 if(!stablePrompt)return {ok:false,reason:'no stable Tiny Core shell prompt appeared within '+promptTimeoutMs+' ms'};
 const marker='__V86_RESTORE_SHELL_OK_'+Math.random().toString(36).slice(2,10)+'__';
 try{
-await sendVmCommand('echo '+marker+'\\n');
+await sendVmCommand('echo '+marker+'\n');
 }catch(error){
 return {ok:false,reason:'could not send shell probe: '+(error&&error.message?error.message:String(error))};
 }
