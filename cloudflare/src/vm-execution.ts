@@ -32,7 +32,7 @@ function validIdentity(value: string | null): value is string {
 }
 
 export class VmExecution extends DurableObject {
-  private pending = new Map<string, (response: Response) => void>();
+  private pending = new Map<string, { accountId: string; resolve: (response: Response) => void }>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -135,10 +135,13 @@ export class VmExecution extends DurableObject {
           this.pending.delete(id);
           resolve(json({ error: "execution_timeout", id, timeout_ms: timeout }, 504));
         }, timeout + 1500);
-        this.pending.set(id, (response) => {
-          clearTimeout(timer);
-          this.pending.delete(id);
-          resolve(response);
+        this.pending.set(id, {
+          accountId,
+          resolve: (response) => {
+            clearTimeout(timer);
+            this.pending.delete(id);
+            resolve(response);
+          },
         });
       });
     }
@@ -164,8 +167,10 @@ export class VmExecution extends DurableObject {
       socket.close(1008, "invalid result");
       return;
     }
-    this.pending.get(body.id)?.(json({
-      vm_id: attachment.identity,
+    const pending = this.pending.get(body.id);
+    if (!pending) return;
+    pending.resolve(json({
+      vm_id: pending.accountId,
       execution_id: body.id,
       stdout: body.stdout,
       stderr: typeof body.stderr === "string" ? body.stderr : "",
