@@ -26,7 +26,6 @@ body:not(.logged-in) #account-id-panel{display:none}
 #account-id-panel strong{font-size:13px}
 #account-id-value{color:#b8f7c4;overflow-wrap:anywhere;user-select:text}
 #account-id-message{color:#ffc66d;font-size:12px}
-#oracle-terminal-panel{padding:12px;background:#181818;border-bottom:1px solid #333}body:not(.logged-in) #oracle-terminal-panel{display:none}#oracle-terminal-controls{display:flex;gap:8px;flex-wrap:wrap}#oracle-command{flex:1;min-width:240px;background:#080808;color:#ddd;border:1px solid #444;padding:8px;font:13px monospace}#oracle-terminal-output{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#000;color:#b8f7c4;padding:10px;border:1px solid #444}
 </style>
 </head>
 <body>
@@ -72,15 +71,7 @@ body:not(.logged-in) #account-id-panel{display:none}
 <span id="state-status" aria-live="polite">Saved state: checkingâ¦</span>
 </div>
 <textarea id="results" spellcheck="false" placeholder="Full startup/network report. It is saved locally so you can copy it in sections."></textarea>
-<section id="oracle-terminal-panel" aria-label="Oracle persistent terminal">
-  <h2>Oracle persistent terminal</h2>
-  <p>Runs commands through the Cloudflare-to-Oracle outbound connection. Admin can test the connection here. Regular-account execution stays disabled until per-account OS/container isolation is enabled.</p>
-  <div id="oracle-terminal-controls">
-    <input id="oracle-command" type="text" autocomplete="off" maxlength="4096" placeholder="Enter a shell command, e.g. hostname && pwd">
-    <button id="oracle-run-command" type="button">Run on Oracle</button>
-  </div>
-  <pre id="oracle-terminal-output" role="log" aria-live="polite">Oracle terminal not tested yet.</pre>
-</section>
+
 
 <pre id="myst-log">Waiting for Tiny Core...</pre>
 <div id="screen_container"><div></div><canvas></canvas></div>
@@ -614,41 +605,6 @@ const accountIdValue=document.getElementById('account-id-value');
 const accountIdCopy=document.getElementById('account-id-copy');
 const accountIdMessage=document.getElementById('account-id-message');
 function showAccountId(id){accountIdValue.textContent=String(id||'Not signed in');accountIdMessage.textContent='';}
-const oracleCommand=document.getElementById('oracle-command');
-const oracleRun=document.getElementById('oracle-run-command');
-const oracleOutput=document.getElementById('oracle-terminal-output');
-async function runOracleCommand(){
-  const command=oracleCommand.value.trim();
-  if(!command){oracleOutput.textContent='Enter a command first.';return}
-  const identity=window.snapshotIdentity||'';
-  if(identity!=='admin'&& !/^acct-[a-f0-9-]{36}$/.test(identity)){oracleOutput.textContent='Sign in before running Oracle commands.';return}
-  oracleRun.disabled=true;oracleOutput.textContent='Sending command to the Oracle executor…';
-  try{
-    const admin=identity==='admin';
-    const response=await fetch(admin?'/api/admin/oracle-exec':'/api/account/exec',{
-      method:'POST',
-      headers:{'content-type':'application/json',...(admin?{'x-admin-code':window.snapshotAdminCode||''}:{})},
-      cache:'no-store',
-      body:JSON.stringify(admin?{command,timeout_ms:15000}:{account_id:identity,session_token:window.snapshotAuthToken||'',command,timeout_ms:15000})
-    });
-    const data=await response.json().catch(()=>({error:'invalid_json_response'}));
-    if(!response.ok){
-      oracleOutput.textContent='Oracle request failed (HTTP '+response.status+')\n'+JSON.stringify(data,null,2);
-      return;
-    }
-    oracleOutput.textContent=[
-      'runtime: '+(data.runtime||'unknown'),
-      'session: '+(data.vm_id||data.account_id||identity),
-      'exit code: '+(data.exit_code===undefined?'unknown':data.exit_code),
-      '',
-      data.stdout||'',
-      data.stderr?('\nSTDERR:\n'+data.stderr):''
-    ].join('\n');
-  }catch(error){oracleOutput.textContent='Oracle request failed: '+(error&&error.message?error.message:String(error))}
-  finally{oracleRun.disabled=false}
-}
-oracleRun.addEventListener('click',runOracleCommand);
-oracleCommand.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();runOracleCommand()}});
 accountIdCopy.addEventListener('click',async()=>{const id=accountIdValue.textContent;if(!id||id==='Not signed in')return;try{await navigator.clipboard.writeText(id);accountIdMessage.textContent='Account ID copied.';}catch(e){accountIdMessage.textContent='Clipboard blocked; select and copy the ID above.';}});
 function clearDisplayedApiKey(){keyValue.textContent='';keyValue.hidden=true;keyCopy.hidden=true;keyHide.hidden=true;}
 async function loadCurrentApiKey(){
