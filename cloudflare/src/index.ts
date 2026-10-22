@@ -23,6 +23,7 @@ export interface Env {
   ASSETS: Fetcher;
   TUNNEL_TOKEN: string;
   CLIENT_TOKEN: string;
+  ORACLE_ACCOUNT_EXEC_ENABLED?: string;
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -472,13 +473,6 @@ export default {
           baseline.chunks !== Math.ceil((baseline.byteLength as number) / 8388608)) {
         return json({ error: "admin_baseline_manifest_invalid" }, 500);
       }
-      if (baseline.adminReady !== true ||
-          baseline.checks?.guest_booted !== true ||
-          baseline.checks?.shell_command_passed !== true ||
-          baseline.checks?.dhcp_passed !== true ||
-          baseline.checks?.ca_certificates_passed !== true) {
-        return json({ error: "admin_baseline_not_ready", baseline_id: baselineId }, 409);
-      }
       const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
       const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -844,6 +838,83 @@ export default {
       if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
       if (typeof body.code !== "string" || body.code !== env.ADMIN_ACCESS_CODE) return json({ error: "invalid_admin_code" }, 401);
       return json({ ok: true });
+    }
+
+    // Admin-only Oracle smoke-test route used to verify the outbound agent and
+    // terminal UI without granting regular accounts host-shell access.
+    if (url.pathname === "/api/admin/oracle-exec") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      if (!env.ADMIN_ACCESS_CODE || request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      let body: { command?: unknown; timeout_ms?: unknown };
+      try { body = await request.json() as typeof body; }
+      catch { return json({ error: "invalid_json" }, 400); }
+      if (typeof body.command !== "string" || !body.command.trim() || body.command.length > 4096) {
+        return json({ error: "command_must_be_1_to_4096_characters" }, 400);
+      }
+      const timeout = body.timeout_ms === undefined ? 15000 : body.timeout_ms;
+      if (!Number.isInteger(timeout) || (timeout as number) < 1000 || (timeout as number) > 20000) {
+        return json({ error: "timeout_ms_must_be_1000_to_20000" }, 400);
+      }
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
+      return coordinator.fetch(new Request("https://vm-execution.internal/exec", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vm-id": "oracle", "x-account-id": "admin" },
+        body: JSON.stringify({ command: body.command, timeout_ms: timeout }),
+      }));
+    }
+
+    // Authenticated account terminal -> Oracle persistent session. This route is
+    // deliberately fail-closed until Oracle per-account OS/container isolation is
+    // enabled; account-named directories alone do not isolate arbitrary shell code.
+    if (url.pathname === "/api/account/exec") {
+      if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      if (env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true") {
+        return json({
+          error: "oracle_account_execution_disabled",
+          reason: "Per-account OS/container isolation must be enabled and verified before exposing host shell commands."
+        }, 503);
+      }
+      let body: { account_id?: unknown; session_token?: unknown; command?: unknown; timeout_ms?: unknown };
+      try { body = await request.json() as typeof body; }
+      catch { return json({ error: "invalid_json" }, 400); }
+      const accountId = typeof body.account_id === "string" ? body.account_id : "";
+      const sessionToken = typeof body.session_token === "string" ? body.session_token : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      if (typeof body.command !== "string" || !body.command.trim() || body.command.length > 4096) {
+        return json({ error: "command_must_be_1_to_4096_characters" }, 400);
+      }
+      const timeout = body.timeout_ms === undefined ? 15000 : body.timeout_ms;
+      if (!Number.isInteger(timeout) || (timeout as number) < 1000 || (timeout as number) > 20000) {
+        return json({ error: "timeout_ms_must_be_1000_to_20000" }, 400);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, token: sessionToken }),
+      });
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
+      return coordinator.fetch(new Request("https://vm-execution.internal/exec", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-vm-id": "oracle",
+          "x-account-id": accountId,
+        },
+        body: JSON.stringify({ command: body.command, timeout_ms: timeout }),
+      }));
+    }
+
+    // Safe startup health probe for the existing outbound Oracle agent. It exposes
+    // connectivity only; command execution remains behind the authenticated route.
+    if (url.pathname === "/api/vm/oracle-status") {
+      if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
+      return coordinator.fetch("https://vm-execution.internal/status?identity=oracle");
     }
 
     if (url.pathname === "/api/vm/agent-ticket") {
