@@ -32,7 +32,7 @@ function validIdentity(value: string | null): value is string {
 }
 
 export class VmExecution extends DurableObject {
-  private pending = new Map<string, (response: Response) => void>();
+  private pending = new Map<string, { accountId: string; resolve: (response: Response) => void }>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -110,12 +110,23 @@ export class VmExecution extends DurableObject {
       if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 20_000) {
         return json({ error: "timeout_ms_must_be_1000_to_20000" }, 400);
       }
+      // The Oracle connection is a single transport, but each command must name
+      // the authenticated account session that Oracle will execute in.
+      const requestedAccount = request.headers.get("x-account-id");
+      const accountId = identity === "admin" ? "admin" : (requestedAccount ?? "");
+      if (identity === "admin" && accountId !== "admin") return json({ error: "invalid_account_id" }, 400);
+      if (identity === "oracle" && accountId !== "admin" && !/^acct-[a-f0-9-]{36}$/.test(accountId)) {
+        return json({ error: "invalid_or_missing_account_id" }, 400);
+      }
+      if (identity !== "admin" && identity !== "oracle") {
+        return json({ error: "unsupported_execution_transport" }, 400);
+      }
       const socket = this.ctx.getWebSockets(identity).find((candidate) => candidate.readyState === WebSocket.OPEN);
-      if (!socket) return json({ error: "vm_offline", vm_id: identity, hint: "Open the VM dashboard, sign in as admin, and wait for startup or snapshot restore to finish." }, 503);
+      if (!socket) return json({ error: "vm_offline", vm_id: identity, hint: "The Oracle outbound agent must be connected before execution." }, 503);
 
       const id = crypto.randomUUID();
       try {
-        socket.send(JSON.stringify({ type: "exec", id, command: body.command, timeout_ms: timeout }));
+        socket.send(JSON.stringify({ type: "exec", id, account_id: accountId, command: body.command, timeout_ms: timeout }));
       } catch {
         return json({ error: "vm_agent_send_failed" }, 502);
       }
@@ -124,10 +135,13 @@ export class VmExecution extends DurableObject {
           this.pending.delete(id);
           resolve(json({ error: "execution_timeout", id, timeout_ms: timeout }, 504));
         }, timeout + 1500);
-        this.pending.set(id, (response) => {
-          clearTimeout(timer);
-          this.pending.delete(id);
-          resolve(response);
+        this.pending.set(id, {
+          accountId,
+          resolve: (response) => {
+            clearTimeout(timer);
+            this.pending.delete(id);
+            resolve(response);
+          },
         });
       });
     }
@@ -153,8 +167,10 @@ export class VmExecution extends DurableObject {
       socket.close(1008, "invalid result");
       return;
     }
-    this.pending.get(body.id)?.(json({
-      vm_id: attachment.identity,
+    const pending = this.pending.get(body.id);
+    if (!pending) return;
+    pending.resolve(json({
+      vm_id: pending.accountId,
       execution_id: body.id,
       stdout: body.stdout,
       stderr: typeof body.stderr === "string" ? body.stderr : "",
