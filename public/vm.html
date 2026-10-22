@@ -179,6 +179,23 @@ function activateOracleTerminal(){
   drawOracleTerminal();
   mystLog.focus();
 }
+async function checkAccountExecution(){
+  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken)return;
+  try{
+    const response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
+      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
+    if(data.enabled===true){
+      activateOracleTerminal();
+      statusText('Oracle persistent terminal enabled for this account.');
+    }else{
+      statusText('Oracle account execution is disabled until server-side isolation is enabled; Tiny Core terminal remains available.');
+    }
+  }catch(error){
+    statusText('Could not verify Oracle account execution; keeping Tiny Core terminal active.');
+  }
+}
 async function runOracleTerminalCommand(raw){
   if(oracleTerminalBusy)return;
   const command=String(raw||'').replace(/\r/g,'');
@@ -462,7 +479,7 @@ for(let attempt=1;attempt<=3&&!saved;attempt++){
 if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
 const accountTerminal=String(window.snapshotIdentity||'').startsWith('acct-');
 statusText(accountTerminal?'Guest network setup complete; activating the Oracle account terminal.':saved?'DHCP verified; CA certificates included in the saved VM snapshot.':'Automatic snapshot save failed after 3 attempts. The VM will retry on the autosave schedule.');
-if(accountTerminal)activateOracleTerminal();
+if(accountTerminal)void checkAccountExecution();
 connectApiAgent();
 return;
 }
@@ -557,7 +574,7 @@ return;
 }
 bootComplete=true;
 startOracleBridgeStatus();
-if(String(window.snapshotIdentity||'').startsWith('acct-')){activateOracleTerminal();statusText('Saved guest restored. Terminal input is routed through Cloudflare to the persistent Oracle account session; server policy determines whether execution is enabled.')}else statusText('Saved VM resumed; connecting the Oracle bridge.');
+if(String(window.snapshotIdentity||'').startsWith('acct-'))void checkAccountExecution();else statusText('Saved VM resumed; connecting the Oracle bridge.');
 connectApiAgent();
 return;
 }
