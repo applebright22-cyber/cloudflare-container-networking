@@ -81,7 +81,7 @@ export class VmExecution extends DurableObject {
     if (url.pathname === "/status" && request.method === "GET") {
       const identity = url.searchParams.get("identity");
       if (!validIdentity(identity)) return json({ error: "invalid_vm_id" }, 400);
-      const socket = this.ctx.getWebSockets(identity)[0];
+      const socket = this.ctx.getWebSockets(identity).find((candidate) => candidate.readyState === WebSocket.OPEN);
       if (!socket) return json({ vm_id: identity, status: "offline", execution_available: false });
       const attachment = socket.deserializeAttachment() as AgentAttachment;
       return json({
@@ -110,7 +110,7 @@ export class VmExecution extends DurableObject {
       if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 20_000) {
         return json({ error: "timeout_ms_must_be_1000_to_20000" }, 400);
       }
-      const socket = this.ctx.getWebSockets(identity)[0];
+      const socket = this.ctx.getWebSockets(identity).find((candidate) => candidate.readyState === WebSocket.OPEN);
       if (!socket) return json({ error: "vm_offline", vm_id: identity, hint: "Open the VM dashboard, sign in as admin, and wait for startup or snapshot restore to finish." }, 503);
 
       const id = crypto.randomUUID();
