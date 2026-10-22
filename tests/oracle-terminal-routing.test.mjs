@@ -61,3 +61,8 @@ test("TinyCore startup checks Oracle bridge health without adding another termin
   assert.ok(dashboard.includes("startOracleBridgeStatus();"), "bridge check starts on fresh and restored VM startup");
   assert.ok(dashboard.includes('id="oracle-bridge-status"'), "connection state is visible in the existing dashboard");
 });
+
+test("new accounts are directed to their own Tiny Core terminal", () => {
+  assert.ok(dashboard.includes("Oracle host shell is admin-only; your personal Tiny Core terminal remains available."));
+  assert.ok(dashboard.includes("personal Tiny Core terminal remains available"));
+});
