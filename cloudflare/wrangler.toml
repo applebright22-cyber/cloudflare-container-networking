@@ -9,7 +9,7 @@ workers_dev = true
 # Generate the v86 bundle and compiled WASM before Wrangler resolves Worker imports.
 # Required when deploying directly with `wrangler deploy` from Cloudflare's build environment.
 [build]
-command = "npm install --no-audit --no-fund && npm run build:headless-v86 && npm run prepare:tinycore-curl"
+command = "npm install --no-audit --no-fund && npm run build:headless-v86"
 
 [[rules]]
 type = "CompiledWasm"
