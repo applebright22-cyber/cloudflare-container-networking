@@ -7,14 +7,18 @@ on:
     paths:
       - "cloudflare/**"
       - "public/v86/libv86.js"
+      - "public/vm.html"
       - "tests/v86-doh-resilience.test.mjs"
+      - "tests/v86-restored-shell-verification.test.mjs"
       - ".github/workflows/headless-v86-spike.yml"
   push:
     branches: [main, experiment/worker-headless-v86, experiment/worker-compiled-v86-wasm]
     paths:
       - "cloudflare/**"
       - "public/v86/libv86.js"
+      - "public/vm.html"
       - "tests/v86-doh-resilience.test.mjs"
+      - "tests/v86-restored-shell-verification.test.mjs"
       - ".github/workflows/headless-v86-spike.yml"
 
 jobs:
