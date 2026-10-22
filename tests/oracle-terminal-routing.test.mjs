@@ -22,12 +22,11 @@ test("Oracle coordinator includes account_id in each execution message", () => {
   assert.ok(coordinator.includes("vm_id: pending.accountId"), "result must report the selected account session, not the shared transport identity");
 });
 
-test("dashboard has a terminal that sends commands through the Oracle API", () => {
-  assert.ok(dashboard.includes('id="oracle-command"'));
-  assert.ok(dashboard.includes("'/api/admin/oracle-exec'"));
-  assert.ok(dashboard.includes("'/api/account/exec'"));
+test("TinyCore remains the only terminal UI; Oracle execution adds no separate panel", () => {
+  assert.ok(dashboard.includes('id="screen_container"'), "existing TinyCore/v86 terminal remains present");
+  assert.ok(!dashboard.includes("oracle-terminal-panel"), "do not add a second Oracle terminal UI");
+  assert.ok(!dashboard.includes("oracle-command"), "commands must continue to originate in TinyCore");
 });
-
 test("long snapshot round-trip workflow is manual-only during Oracle integration", () => {
   const workflow = fs.readFileSync(new URL("../.github/workflows/headless-v86-snapshot-roundtrip.yml", import.meta.url), "utf8");
   const triggers = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("\njobs:"));
