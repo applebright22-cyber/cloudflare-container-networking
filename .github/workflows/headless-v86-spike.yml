@@ -6,14 +6,30 @@ on:
     branches: [main]
     paths:
       - "cloudflare/**"
+      - "public/v86/libv86.js"
+      - "tests/v86-doh-resilience.test.mjs"
       - ".github/workflows/headless-v86-spike.yml"
   push:
     branches: [main, experiment/worker-headless-v86, experiment/worker-compiled-v86-wasm]
     paths:
       - "cloudflare/**"
+      - "public/v86/libv86.js"
+      - "tests/v86-doh-resilience.test.mjs"
       - ".github/workflows/headless-v86-spike.yml"
 
 jobs:
+  browser-doh-resilience:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check browser v86 bundle syntax
+        run: node --check public/v86/libv86.js
+      - name: Test DNS resolver failover and error responses
+        run: node --test tests/v86-doh-resilience.test.mjs
+
   loader-tests-and-worker-bundle:
     runs-on: ubuntu-latest
     defaults:
