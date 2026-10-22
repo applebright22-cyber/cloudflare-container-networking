@@ -7,6 +7,17 @@ main = "cloudflare/src/index.ts"
 compatibility_date = "2026-10-07"
 workers_dev = true
 
+[build]
+command = "npm --prefix cloudflare install --no-audit --no-fund && npm --prefix cloudflare run build:headless-v86"
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["cloudflare/src/generated/v86.wasm"]
+fallthrough = true
+
+[vars]
+VM_BASELINE_ID = "admin"
+
 [[r2_buckets]]
 binding = "VM_SNAPSHOTS"
 bucket_name = "cloudflare-container-vm-snapshots"
