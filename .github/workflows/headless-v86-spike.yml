@@ -31,8 +31,8 @@ jobs:
           node-version: 22
       - name: Check browser v86 bundle syntax
         run: node --check public/v86/libv86.js
-      - name: Test DNS resolver failover and error responses
-        run: node --test tests/v86-doh-resilience.test.mjs
+      - name: Test DNS resolver failover and restored guest-shell verification
+        run: node --test tests/v86-doh-resilience.test.mjs tests/v86-restored-shell-verification.test.mjs
 
   loader-tests-and-worker-bundle:
     runs-on: ubuntu-latest
