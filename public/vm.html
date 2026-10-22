@@ -396,7 +396,16 @@ async function sendVmCommand(cmd){
 if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('v86 keyboard API unavailable');
 if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
 window.emulator.keyboard_send_text(cmd);
-
+}
+async function sendVmCommandReliable(cmd,chunkSize=8){
+if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('v86 keyboard API unavailable');
+if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
+// v86 can drop characters when long commands are injected in one keyboard event batch.
+// Feed small chunks over separate frames so shell commands and marker suffixes arrive intact.
+for(let i=0;i<cmd.length;i+=chunkSize){
+  window.emulator.keyboard_send_text(cmd.slice(i,i+chunkSize));
+  await new Promise(resolve=>requestAnimationFrame(resolve));
+}
 }
 let oracleShellBridgeActive=false;
 async function installOracleShellBridge(){
@@ -465,7 +474,7 @@ const waitForMarker=async(marker,timeout=10000)=>{
 };
 const sendGuestLine=async(line,timeout=10000)=>{
  const marker='__ORACLE_BOOT_'+bootstrapRunId+'_STEP_'+(++oracleStep)+'__';
- await sendVmCommand(line+'; printf "%s\\n" "'+marker+'"\n');
+ await sendVmCommandReliable(line+'; printf "%s\\n" "'+marker+'"\n');
  if(!await waitForMarker(marker,timeout))throw new Error('Tiny Core did not confirm bootstrap step '+oracleStep+'. The bridge script was not started.');
 };
 stateText('Preparing Oracle terminal bridge in short shell commands…');
