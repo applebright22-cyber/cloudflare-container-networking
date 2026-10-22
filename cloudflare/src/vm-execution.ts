@@ -90,8 +90,10 @@ export class VmExecution extends DurableObject {
         execution_available: true,
         connected_at: new Date(attachment.connectedAt).toISOString(),
         last_seen_at: new Date(attachment.lastSeenAt).toISOString(),
-        runtime: "browser-v86",
-        limitation: "The browser tab must remain open for command execution.",
+        runtime: attachment.identity === "oracle" ? "oracle-host" : "browser-v86",
+        limitation: attachment.identity === "oracle"
+          ? "Commands execute on the connected persistent Oracle host."
+          : "The browser tab must remain open for browser-v86 command execution.",
       });
     }
 
@@ -158,8 +160,10 @@ export class VmExecution extends DurableObject {
       stderr: typeof body.stderr === "string" ? body.stderr : "",
       exit_code: body.exit_code,
       timed_out: body.timed_out === true,
-      runtime: "browser-v86",
-      notice: "Command executed in the connected browser VM; this is not a server-side persistent runtime.",
+      runtime: attachment.identity === "oracle" ? "oracle-host" : "browser-v86",
+      notice: attachment.identity === "oracle"
+        ? "Command executed by the connected Oracle host executor."
+        : "Command executed in the connected browser v86 agent.",
     }));
   }
 
