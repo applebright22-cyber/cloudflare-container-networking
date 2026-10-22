@@ -1,0 +1,31 @@
+name: Cloudflare Worker checks
+
+on:
+  push:
+    branches: [main, "feat/**"]
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/cloudflare-checks.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/cloudflare-checks.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Worker dry-run build
+        run: npm run check
+      - name: Headless tests
+        run: npm run test:headless
