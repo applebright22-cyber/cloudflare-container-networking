@@ -909,6 +909,14 @@ export default {
       }));
     }
 
+    // Safe startup health probe for the existing outbound Oracle agent. It exposes
+    // connectivity only; command execution remains behind the authenticated route.
+    if (url.pathname === "/api/vm/oracle-status") {
+      if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
+      return coordinator.fetch("https://vm-execution.internal/status?identity=oracle");
+    }
+
     if (url.pathname === "/api/vm/agent-ticket") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
       if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
