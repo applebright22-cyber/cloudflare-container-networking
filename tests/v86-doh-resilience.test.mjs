@@ -89,6 +89,25 @@ test("DoH response must be a successful DNS wire-format response", async () => {
   assert.ok(!output.udp.data, "do not pass an HTTP error body off as a DNS response");
 });
 
+test("a rejected DoH fetch retries the alternate resolver", async () => {
+  const calls = [];
+  const input = queryPacket();
+  const answer = Uint8Array.from(input.udp.data);
+  answer[2] = 0x81;
+  answer[3] = 0x80;
+  const handler = loadHandler(async (url) => {
+    calls.push(String(url));
+    if (calls.length === 1) throw new TypeError("network request failed");
+    return response(200, answer);
+  });
+  const output = await new Promise((resolve) => {
+    handler(input, networkFor(resolve));
+  });
+  assert.equal(calls.length, 2);
+  assert.match(calls[1], /dns\\.google/);
+  assert.deepEqual(Array.from(output.udp.data), Array.from(answer));
+});
+
 test("a DoH SERVFAIL from the primary resolver triggers failover", async () => {
   const calls = [];
   const input = queryPacket();
