@@ -843,7 +843,11 @@ export default {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
       if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
       if (request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
-      const vmId = "admin";
+      const requestedIdentity = request.headers.get("x-agent-identity") ?? "admin";
+      if (requestedIdentity !== "admin" && requestedIdentity !== "oracle") {
+        return json({ error: "unknown_agent_identity", supported_identities: ["admin", "oracle"] }, 400);
+      }
+      const vmId = requestedIdentity;
       const ticket = crypto.randomUUID();
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(vmId));
       const ticketResponse = await coordinator.fetch("https://vm-execution.internal/ticket", {
@@ -860,8 +864,11 @@ export default {
       if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
         return json({ error: "websocket_upgrade_required" }, 426);
       }
-      const ticket = url.searchParams.get("ticket") ?? "";
-      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("admin"));
+      const identity = url.searchParams.get("identity") ?? "admin";
+      if (identity !== "admin" && identity !== "oracle") {
+        return json({ error: "unknown_agent_identity" }, 400);
+      }
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(identity));
       return coordinator.fetch(request);
     }
 
@@ -869,12 +876,14 @@ export default {
       const vmApiToken = await getVmApiToken(env);
       if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);
       if (!authorized(request.headers.get("authorization"), vmApiToken)) return json({ error: "unauthorized" }, 401);
-      const vmId = request.headers.get("x-vm-id") ?? "admin";
-      if (vmId !== "admin") return json({ error: "unknown_vm_id", supported_vm_ids: ["admin"] }, 404);
+      const vmId = request.headers.get("x-vm-id") ?? "oracle";
+      if (vmId !== "admin" && vmId !== "oracle") {
+        return json({ error: "unknown_vm_id", supported_vm_ids: ["admin", "oracle"] }, 404);
+      }
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(vmId));
       if (url.pathname.endsWith("/status")) {
         if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
-        return coordinator.fetch("https://vm-execution.internal/status?identity=admin");
+        return coordinator.fetch("https://vm-execution.internal/status?identity=" + encodeURIComponent(vmId));
       }
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
       const raw = await request.text();
