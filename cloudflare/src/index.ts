@@ -872,6 +872,41 @@ export default {
       return coordinator.fetch(request);
     }
 
+    // Account-session terminal API. Users authenticate with their existing dashboard session;
+    // the private VM API token remains server-side and is never exposed to the browser.
+    if (url.pathname === "/api/account/exec" && request.method === "POST") {
+      let body: { account_id?: unknown; session_token?: unknown; command?: unknown; timeout_ms?: unknown };
+      try { body = await request.json() as typeof body; }
+      catch { return json({ error: "invalid_json" }, 400); }
+      const accountId = typeof body.account_id === "string" ? body.account_id : "";
+      const sessionToken = typeof body.session_token === "string" ? body.session_token : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, token: sessionToken }),
+      }).catch(() => new Response("session_verification_failed", { status: 500 }));
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      if (typeof body.command !== "string" || !body.command.trim() || body.command.length > 4096) {
+        return json({ error: "command_must_be_1_to_4096_characters" }, 400);
+      }
+      const timeout = body.timeout_ms === undefined ? 15000 : body.timeout_ms;
+      if (!Number.isInteger(timeout) || (timeout as number) < 1000 || (timeout as number) > 20000) {
+        return json({ error: "timeout_ms_must_be_1000_to_20000" }, 400);
+      }
+      const vmApiToken = await getVmApiToken(env);
+      if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);
+      const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
+      const raw = JSON.stringify({ account_id: accountId, command: body.command, timeout_ms: timeout });
+      return coordinator.fetch(new Request("https://vm-execution.internal/exec", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vm-id": "oracle" },
+        body: raw,
+      }));
+    }
+
     if (url.pathname === "/v1/vm/status" || url.pathname === "/v1/vm/exec") {
       const vmApiToken = await getVmApiToken(env);
       if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);
