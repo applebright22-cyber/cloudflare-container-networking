@@ -207,10 +207,10 @@ async function checkAccountExecution(){
       activateOracleTerminal();
       statusText('Oracle persistent terminal enabled for this account.');
     }else{
-      statusText('Oracle account execution is disabled until server-side isolation is enabled; Tiny Core terminal remains available.');
+      statusText('Oracle host shell is admin-only; your personal Tiny Core terminal remains available.');
     }
   }catch(error){
-    statusText('Could not verify Oracle account execution; keeping Tiny Core terminal active.');
+    statusText('Could not verify Oracle host shell; your personal Tiny Core terminal remains available.');
   }
 }
 async function runOracleTerminalCommand(raw){
