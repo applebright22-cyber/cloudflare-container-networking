@@ -803,6 +803,7 @@ function beginAccountSession(data,launchVm=true){
   window.snapshotNeedsInitialSave=data.snapshot_initialization_required===true;
   try{if(window.snapshotNeedsInitialSave)sessionStorage.setItem('vm-initial-snapshot-pending',data.account_id);else window.snapshotNeedsInitialSave=sessionStorage.getItem('vm-initial-snapshot-pending')===data.account_id}catch(e){}
   try{sessionStorage.setItem('vm-account-id',data.account_id);sessionStorage.setItem('vm-session-token',data.session_token)}catch(e){}
+  if(launchVm&&String(window.snapshotIdentity||'').startsWith('acct-')&&new URLSearchParams(location.search).get('workspace')!=='1'){location.replace('/studio.html');return;}
   if(launchVm){panel.hidden=true;document.body.classList.add('logged-in');loadCurrentApiKey();window.startVm();}
 }
 const progressLabels={
