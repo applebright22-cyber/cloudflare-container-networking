@@ -155,7 +155,8 @@ test("bootstrap waits for a fresh completion marker before advancing", () => {
   assert.ok(startup.includes("CA_BUNDLE_PATH=$CA_BUNDLE"), "startup must verify the CA bundle");
   assert.ok(html.includes("ca_certificates_passed"), "saved baseline manifest must record CA certificate verification");
   assert.ok(startup.includes("nslookup google.com"), "startup must require a successful DNS lookup");
-  assert.ok(startup.includes("https://${apiUrl}/health"), "startup must require a successful HTTPS request");
+  assert.ok(startup.includes("wget -T 30 -t 2 -S -O /dev/null ${apiUrl}/health"), "startup must request the Worker health endpoint using the already-qualified origin");
+  assert.ok(!startup.includes("https://${apiUrl}"), "do not prepend a second HTTPS scheme to window.location.origin");
   assert.ok(startup.includes("__EGRESS_PREFLIGHT_DONE:"), "startup must wait for the DNS/HTTPS completion marker");
   assert.ok(!startup.includes("__NETWORK_DOWNLOAD_DONE"), "startup must not download a second network test script");
   assert.ok(!/udhcpc[^\\n]*\\s-t\\s*[0-9]/.test(html), "DHCP should not use a fixed udhcpc attempt-count option");
