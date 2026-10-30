@@ -5,12 +5,14 @@ import fs from "node:fs";
 const read = (path) => fs.readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const vmPage = read("public/vm.html");
 const runtime = read("public/v86/libv86.js");
+const dohPatcher = read("scripts/patch-v86-doh.js");
 const studio = read("public/studio.js");
 const workspace = read("public/workspace.js");
 
 test("VM page resolves the browser-exported v86 constructor explicitly", () => {
   assert.ok(vmPage.includes('<script src="/v86/libv86.js"></script>'), "the browser runtime loads before the VM bootstrap");
   assert.ok(runtime.includes('window.V86=Q'), "the checked-in runtime exports its constructor on window");
+  assert.ok(dohPatcher.includes('"return!0}",'), "the automatic DNS patch must close its replacement function");
   assert.ok(vmPage.includes("const V86Constructor=window.V86"), "startup reads the actual browser global");
   assert.ok(vmPage.includes("typeof V86Constructor!=='function'"), "a missing runtime gets a clear loading error");
   assert.ok(vmPage.includes("new V86Constructor("), "the emulator is created from the verified constructor");
