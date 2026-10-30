@@ -143,7 +143,7 @@ test("bootstrap waits for a fresh completion marker before advancing", () => {
   assert.ok(html.includes("requestAnimationFrame(wait)"));
 });test("VM snapshot save is attempted after the required DHCP and CA checks", () => {
   assert.ok(html.includes("saved=await saveVmState(false)"));
-  assert.ok(html.includes("DHCP and CA certificate checks complete. Saving the Admin baseline snapshot."));
+  assert.ok(html.includes("DHCP, CA, DNS, and HTTPS checks complete. Saving the Admin baseline snapshot."));
   assert.ok(html.includes("Automatic snapshot save failed after 3 attempts."));
   assert.ok(html.includes("setInterval(()=>saveVmState(false),5*60*1000)"));
 });test("VM startup verifies DHCP, CA certificates, DNS, and HTTPS before marking the baseline ready", () => {
