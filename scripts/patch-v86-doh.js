@@ -41,6 +41,6 @@ const handler = [
 "b.receive(Ib(encoder,failure));",
 "})();",
 "return!0}",
-"].join("\\n");
+].join("\n");
 fs.writeFileSync(path, source.slice(0, start) + handler + source.slice(end));
 console.log("Restored Cloudflare-to-Google DoH failover in " + path);
