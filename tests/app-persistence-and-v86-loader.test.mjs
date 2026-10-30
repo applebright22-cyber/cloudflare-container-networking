@@ -26,7 +26,7 @@ test("account session remains shared across Studio, workspace, and VM navigation
   assert.ok(vmPage.includes("fetch('/api/auth/session'"), "returning to the VM validates the existing session with the server");
   assert.ok(studio.includes("fetch('/api/auth/session'"), "Studio validates the same server-side session");
   assert.ok(workspace.includes("authorization':'Bearer '+token"), "workspace API calls use the same account session");
-  assert.doesNotMatch(vmPage + studio + workspace, /localStorage\\.(?:setItem|getItem)\\([^)]*(?:password|session-token)/i,
+  assert.doesNotMatch(vmPage + studio + workspace, /localStorage[.](?:setItem|getItem)[(][^)]*(?:password|session-token)/i,
     "passwords and session tokens must not be persisted in localStorage");
 });
 
