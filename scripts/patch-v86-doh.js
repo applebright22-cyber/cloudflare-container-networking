@@ -31,7 +31,7 @@ const handler = [
 "const failure={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport},dns:{id:a.dns.id,flags:33154,questions:a.dns.questions,answers:[]}};",
 "b.receive(Ib(b.eth_encoder_buf,failure));",
 "})();",
-"return!0",
+"return!0}",
 ].join("\n");
 fs.writeFileSync(path, source.slice(0, start) + handler + source.slice(end));
 console.log("Restored Cloudflare-to-Google DoH failover in " + path);
