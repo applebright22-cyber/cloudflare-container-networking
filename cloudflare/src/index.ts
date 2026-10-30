@@ -24,7 +24,6 @@ export interface Env {
   TUNNEL_TOKEN: string;
   CLIENT_TOKEN: string;
   ORACLE_ACCOUNT_EXEC_ENABLED?: string;
-  ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID?: string;
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -883,14 +882,12 @@ export default {
         body: JSON.stringify({ account_id: accountId, token: sessionToken }),
       });
       if (!verified.ok) return json({ error: "unauthorized" }, 401);
-      const enabled = env.ORACLE_ACCOUNT_EXEC_ENABLED === "true" &&
-        typeof env.ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID === "string" &&
-        env.ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID === accountId;
+      const enabled = env.ORACLE_ACCOUNT_EXEC_ENABLED === "true";
       return json({
         enabled,
         runtime: "oracle-host",
         ...(enabled ? {} : {
-          reason: "Per-account OS/container isolation must be enabled and verified before exposing host shell commands."
+          reason: "Oracle account execution is disabled in the Worker configuration."
         })
       });
     }
@@ -921,11 +918,10 @@ export default {
         body: JSON.stringify({ account_id: accountId, token: sessionToken }),
       });
       if (!verified.ok) return json({ error: "unauthorized" }, 401);
-      if (env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true" ||
-          env.ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID !== accountId) {
+      if (env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true") {
         return json({
           error: "oracle_account_execution_disabled",
-          reason: "Regular-account execution is restricted to the configured test account until end-to-end isolation checks pass."
+          reason: "Oracle account execution is disabled in the Worker configuration."
         }, 503);
       }
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
