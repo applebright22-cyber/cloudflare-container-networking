@@ -93,7 +93,7 @@ test("GUI startup handles optional Syslinux boot prompt and bounded shell proof 
   assert.ok(html.includes("BOOT TIMEOUT after "));
   assert.ok(html.includes("promptDeadline=Date.now()+promptTimeoutMs"));
   assert.ok(html.includes("commandDeadline=Date.now()+commandTimeoutMs"));
-});test("startup completion markers cover DHCP and CA verification without an HTTPS preflight", () => {
+});test("startup completion markers require DHCP, CA verification, DNS, and HTTPS before snapshot save", () => {
   const normalized = html.replace(/"\s*"/g, "");
   for (const marker of [
     "DHCP_DONE",
@@ -101,11 +101,13 @@ test("GUI startup handles optional Syslinux boot prompt and bounded shell proof 
     "__TLS_DOWNLOAD_DONE:",
     "__OPENSSL_INSTALL_DONE:",
     "__CA_CERTIFICATES_INSTALL_DONE:",
+    "__EGRESS_PREFLIGHT_DONE:",
   ]) {
     assert.ok(normalized.includes(marker), "expected startup marker: " + marker);
   }
-  assert.ok(!normalized.includes("__EGRESS_PREFLIGHT_DONE:"), "HTTPS preflight must not block the Admin snapshot");
-  assert.ok(!normalized.includes("HTTPS_PREFLIGHT_RETRYING"), "do not retry HTTPS during snapshot preparation");
+  assert.ok(normalized.includes("nslookup google.com"), "startup must verify DNS resolution");
+  assert.ok(normalized.includes("wget -T 30 -t 2 -S -O /dev/null https://"), "startup must verify HTTPS with bounded request retries");
+  assert.ok(normalized.includes("DNS or HTTPS preflight failed; baseline snapshot will not be saved"), "a failed network preflight must block baseline snapshot creation");
 });
 
 test("TLS installs run in the foreground before HTTPS and certificate checks", () => {
@@ -130,7 +132,8 @@ test("TLS installs run in the foreground before HTTPS and certificate checks", (
   const commandList = html.slice(commandListStart, commandListEnd);
   assert.ok(commandList.indexOf("tce-load -i openssl-1.1.1") < commandList.indexOf("tce-load -i ca-certificates"));
   assert.ok(commandList.indexOf("tce-load -i ca-certificates") >= 0, "CA installation must run before snapshot save");
-  assert.ok(!commandList.includes("${apiUrl}/health"), "no guest-side HTTPS health probe is part of snapshot preparation");
+  assert.ok(commandList.includes("${apiUrl}/health"), "guest HTTPS preflight must run before snapshot preparation completes");
+  assert.ok(commandList.indexOf("__CA_CERTIFICATES_INSTALL_DONE:") < commandList.indexOf("__EGRESS_PREFLIGHT_DONE:"), "DNS/HTTPS checks must run after CA installation");
 });
 
 test("bootstrap waits for a fresh completion marker before advancing", () => {
@@ -140,10 +143,10 @@ test("bootstrap waits for a fresh completion marker before advancing", () => {
   assert.ok(html.includes("requestAnimationFrame(wait)"));
 });test("VM snapshot save is attempted after the required DHCP and CA checks", () => {
   assert.ok(html.includes("saved=await saveVmState(false)"));
-  assert.ok(html.includes("DHCP and CA certificate checks complete. Saving the Admin baseline snapshot."));
+  assert.ok(html.includes("DHCP, CA, DNS, and HTTPS checks complete. Saving the Admin baseline snapshot."));
   assert.ok(html.includes("Automatic snapshot save failed after 3 attempts."));
   assert.ok(html.includes("setInterval(()=>saveVmState(false),5*60*1000)"));
-});test("VM startup verifies DHCP and CA certificates without any HTTPS preflight", () => {
+});test("VM startup verifies DHCP, CA certificates, DNS, and HTTPS before marking the baseline ready", () => {
   const startupStart = html.indexOf("async function startBootstrap()");
   const accountUiStart = html.indexOf("function beginAccountSession");
   assert.ok(startupStart >= 0 && accountUiStart > startupStart, "startup and account UI sections should be identifiable");
@@ -151,8 +154,9 @@ test("bootstrap waits for a fresh completion marker before advancing", () => {
   assert.ok(startup.includes("DHCP_OK"), "startup must require the account-specific DHCP lease");
   assert.ok(startup.includes("CA_BUNDLE_PATH=$CA_BUNDLE"), "startup must verify the CA bundle");
   assert.ok(html.includes("ca_certificates_passed"), "saved baseline manifest must record CA certificate verification");
-  assert.ok(!startup.includes("HTTPS_PREFLIGHT"), "startup must not run an HTTPS preflight");
-  assert.ok(!startup.includes("${apiUrl}/health"), "startup must not probe the Worker over HTTPS from the guest");
+  assert.ok(startup.includes("nslookup google.com"), "startup must require a successful DNS lookup");
+  assert.ok(startup.includes("https://${apiUrl}/health"), "startup must require a successful HTTPS request");
+  assert.ok(startup.includes("__EGRESS_PREFLIGHT_DONE:"), "startup must wait for the DNS/HTTPS completion marker");
   assert.ok(!startup.includes("__NETWORK_DOWNLOAD_DONE"), "startup must not download a second network test script");
   assert.ok(!/udhcpc[^\\n]*\\s-t\\s*[0-9]/.test(html), "DHCP should not use a fixed udhcpc attempt-count option");
   assert.ok(!html.includes("browser-bootstrap.sh"), "paused Mysterium bootstrap must not be launched by VM startup");
