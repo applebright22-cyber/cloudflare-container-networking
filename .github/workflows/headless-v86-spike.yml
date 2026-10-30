@@ -10,6 +10,7 @@ on:
       - "public/vm.html"
       - "tests/v86-doh-resilience.test.mjs"
       - "tests/v86-restored-shell-verification.test.mjs"
+      - "tests/app-persistence-and-v86-loader.test.mjs"
       - ".github/workflows/headless-v86-spike.yml"
   push:
     branches: [main, experiment/worker-headless-v86, experiment/worker-compiled-v86-wasm]
@@ -32,7 +33,7 @@ jobs:
       - name: Check browser v86 bundle syntax
         run: node --check public/v86/libv86.js
       - name: Test DNS resolver failover and restored guest-shell verification
-        run: node --test tests/v86-doh-resilience.test.mjs tests/v86-restored-shell-verification.test.mjs
+        run: node --test tests/v86-doh-resilience.test.mjs tests/v86-restored-shell-verification.test.mjs tests/app-persistence-and-v86-loader.test.mjs
 
   loader-tests-and-worker-bundle:
     runs-on: ubuntu-latest
