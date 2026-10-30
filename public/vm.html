@@ -121,7 +121,7 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
   <div class="action-group"><span class="action-label">SHELL</span><div class="action-buttons"><button id="run-bootstrap" type="button">Wake shell</button><button id="paste-terminal" type="button">Paste into VM</button></div></div>
   <div class="action-group"><span class="action-label">RESULTS</span><div class="action-buttons"><button id="copy-results" type="button">Copy results</button><button id="clear-results" type="button">Clear results</button></div></div>
  </div>
- <div class="toolbar-status"><span id="state-status" aria-live="polite">Saved state: checking…</span><span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span><span id="copy-status"></span></div>
+ <div class="toolbar-status"><span id="state-status" aria-live="polite">Saved state: checking…</span><span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span><button id="oracle-terminal-toggle" type="button" hidden>Open Oracle terminal</button><span id="copy-status"></span></div>
 </section>
 <textarea id="results" spellcheck="false" aria-hidden="true" tabindex="-1" placeholder="Diagnostic results"></textarea>
 <section class="console-card" aria-labelledby="console-title">
@@ -136,7 +136,7 @@ const status=document.getElementById('status'),results=document.getElementById('
 const nodeId='7cbee0e9-da6b-4808-92a7-4a3c2a45a840',apiUrl=window.location.origin;
 let reportTimer=null,bootstrapStarted=false,bootComplete=false;
 let manualCommandRunning=false;
-let oracleTerminalMode=false,oracleTerminalOutput='',oracleTerminalInput='',oracleTerminalHistory=[],oracleTerminalHistoryIndex=0,oracleTerminalBusy=false;
+let oracleTerminalMode=false,oracleExecutionAvailable=false,oracleTerminalOutput='',oracleTerminalInput='',oracleTerminalHistory=[],oracleTerminalHistoryIndex=0,oracleTerminalBusy=false;
 
 function statusText(t){status.textContent=t}
 let snapshotBusy=false,snapshotLoadFailed=false,vmLoaded=false,restoredSnapshot=false,autosaveTimer=null;
@@ -232,22 +232,27 @@ function activateOracleTerminal(){
   oracleTerminalHistory=[];
   oracleTerminalHistoryIndex=0;
   document.getElementById('run-bootstrap').hidden=true;
+  document.getElementById('oracle-terminal-toggle').textContent='Return to Tiny Core shell';
   drawOracleTerminal();
   mystLog.focus();
 }
 async function checkAccountExecution(){
+  const toggle=document.getElementById('oracle-terminal-toggle');
+  oracleExecutionAvailable=false;
+  toggle.hidden=true;
   if(window.snapshotIdentity==='admin'&&window.snapshotAdminCode){
     try{
       const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
       const data=await response.json().catch(()=>({}));
       if(response.ok&&data.status==='online'){
-        activateOracleTerminal();
-        statusText('Oracle persistent admin terminal enabled.');
+        oracleExecutionAvailable=true;
+        toggle.hidden=false;
+        statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
       }else{
-        statusText('Oracle agent is offline; keeping the Tiny Core admin shell active.');
+        statusText('Oracle agent is offline; Tiny Core remains active.');
       }
     }catch(error){
-      statusText('Could not verify the Oracle agent; keeping the Tiny Core admin shell active.');
+      statusText('Could not verify Oracle availability; Tiny Core remains active.');
     }
     return;
   }
@@ -258,15 +263,29 @@ async function checkAccountExecution(){
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
     if(data.enabled===true){
-      activateOracleTerminal();
-      statusText('Oracle persistent terminal enabled for this account.');
+      oracleExecutionAvailable=true;
+      toggle.hidden=false;
+      statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
     }else{
-      statusText('Oracle account execution is disabled until server-side isolation is enabled; Tiny Core terminal remains available.');
+      statusText('Oracle account execution is disabled; Tiny Core remains active.');
     }
   }catch(error){
-    statusText('Could not verify Oracle account execution; keeping Tiny Core terminal active.');
+    statusText('Could not verify Oracle availability; Tiny Core remains active.');
   }
 }
+function deactivateOracleTerminal(){
+  oracleTerminalMode=false;
+  document.body.classList.remove('oracle-terminal-mode');
+  mystLog.setAttribute('aria-label','Tiny Core terminal output');
+  mystLog.removeAttribute('title');
+  document.getElementById('run-bootstrap').hidden=false;
+  document.getElementById('oracle-terminal-toggle').textContent='Open Oracle terminal';
+  mystLog.textContent=terminal();
+}
+document.getElementById('oracle-terminal-toggle').addEventListener('click',function(){
+  if(oracleTerminalMode){deactivateOracleTerminal();return;}
+  if(oracleExecutionAvailable)activateOracleTerminal();
+});
 async function runOracleTerminalCommand(raw){
   if(oracleTerminalBusy)return;
   const command=String(raw||'').replace(/\r/g,'');

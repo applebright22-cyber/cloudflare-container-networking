@@ -34,9 +34,15 @@ test("Oracle coordinator includes account_id in each execution message", () => {
 test("the existing terminal surface routes regular-account commands to Oracle without adding another panel", () => {
   assert.ok(dashboard.includes('id="screen_container"'), "the existing TinyCore guest remains available for the relay");
   assert.ok(dashboard.includes('id="myst-log"'), "the existing terminal output surface is reused");
-  assert.ok(dashboard.includes("function activateOracleTerminal()"), "regular accounts switch the existing terminal surface to Oracle when enabled");
-  assert.ok(dashboard.includes("fetch('/api/account/exec/status'"), "terminal stays in TinyCore until the server reports Oracle execution enabled");
-  assert.ok(dashboard.includes("function checkAccountExecution()"), "regular-account routing is selected from server capability status");
+  assert.ok(dashboard.includes("function activateOracleTerminal()"), "the existing terminal surface can explicitly switch to Oracle");
+  assert.ok(dashboard.includes("fetch('/api/account/exec/status'"), "Oracle availability is checked using the authenticated account session");
+  assert.ok(dashboard.includes("function checkAccountExecution()"), "regular-account Oracle availability is selected from server capability status");
+  assert.ok(dashboard.includes("oracleExecutionAvailable=true;"), "the Oracle terminal is offered only when the server reports it enabled");
+  assert.ok(dashboard.includes("toggle.hidden=false;"), "the Oracle terminal control appears only when Oracle is available");
+  assert.ok(dashboard.includes("function deactivateOracleTerminal()"), "the user can return to the Tiny Core shell");
+  assert.ok(dashboard.includes("document.getElementById('oracle-terminal-toggle').addEventListener('click'"), "Oracle mode requires an explicit user click");
+  assert.ok(!dashboard.includes("if(response.ok&&data.status==='online'){\n        activateOracleTerminal();"), "an online Oracle agent must not automatically replace the Tiny Core shell");
+  assert.ok(!dashboard.includes("if(data.enabled===true){\n      activateOracleTerminal();"), "an enabled account must not automatically replace the Tiny Core shell");
   assert.ok(dashboard.includes(":'/api/account/exec'"), "regular terminal commands use the authenticated Cloudflare endpoint");
   assert.ok(dashboard.includes("const endpoint=isAdmin?'/api/admin/oracle-exec':'/api/account/exec'"), "admin terminal commands use the existing admin Oracle endpoint");
   assert.ok(dashboard.includes("headers['x-admin-code']=window.snapshotAdminCode"), "admin commands use the validated admin code");
