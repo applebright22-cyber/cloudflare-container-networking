@@ -90,7 +90,7 @@ sessionStorage.setItem('vm-username',session.username);
 sessionStorage.setItem('vm-login-time',session.login_time);
 sessionStorage.removeItem('vm-initial-snapshot-pending');
 await new Promise(resolve=>setTimeout(resolve,900));
-location.assign('/vm.html?dashboard=1');return;
+location.assign('/studio.html');return;
 }
 if(progress.status==='error')throw new Error('Guest setup failed at '+stepName(progress.step)+': '+(progress.error||progress.boot_error||'check the job diagnostics'));
 await new Promise(resolve=>setTimeout(resolve,2200));
