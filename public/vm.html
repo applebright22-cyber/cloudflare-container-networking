@@ -418,7 +418,7 @@ try{
  }
  const ok=results.length===steps.length&&results.every(result=>result.ok&&!result.interrupted);
  const complete=results.length===steps.length&&results.every(result=>!result.interrupted);
- const output=results.map((result,index)=>'===== '+(index+1)+'. '+result.label+' =====\\n'+(result.interrupted?'[INCOMPLETE] ':result.ok?'[PASS] ':'[CHECK] ')+(result.output||'No guest output captured.')).join('\n\n');
+ const output=results.map((result,index)=>'===== '+(index+1)+'. '+result.label+' =====\n'+(result.interrupted?'[INCOMPLETE] ':result.ok?'[PASS] ':'[CHECK] ')+(result.output||'No guest output captured.')).join('\n\n');
  return {ok,complete,results,output};
 }finally{window.vampireSquidRunNetworkCheck.busy=false;}
 };
