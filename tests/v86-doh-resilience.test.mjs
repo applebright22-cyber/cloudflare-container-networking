@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { execFileSync } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 
 const source = fs.readFileSync(new URL("../public/v86/libv86.js", import.meta.url), "utf8");
 const start = source.indexOf("function Jb(a,b){");
@@ -155,4 +158,24 @@ test("async DoH lookup keeps the original guest DNS packet when v86 reuses its p
   assert.equal(output.eth.dest, "guest-mac");
   assert.deepEqual(output.ipv4.dest, [10, 240, 0, 2]);
   assert.equal(output.udp.dport, 53000);
+});
+
+
+test("v86 DNS patch script finds a real newline and is idempotent", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "v86-doh-patch-"));
+  try {
+    const runtimePath = path.join(directory, "public", "v86", "libv86.js");
+    fs.mkdirSync(path.dirname(runtimePath), { recursive: true });
+    fs.writeFileSync(runtimePath, "prefix\\nfunction Jb(a,b){return!0}\\nfunction Kb(a,b){return!0}\\nsuffix\\n");
+    const patchScript = new URL("../scripts/patch-v86-doh.js", import.meta.url);
+    execFileSync(process.execPath, [patchScript.pathname], { cwd: directory, stdio: "pipe" });
+    const patched = fs.readFileSync(runtimePath, "utf8");
+    assert.match(patched, /dns\\.google/);
+    assert.match(patched, /\\nfunction Kb/);
+    assert.ok(patched.endsWith("suffix\\n"), "the following v86 function and remaining bundle must be preserved");
+    execFileSync(process.execPath, [patchScript.pathname], { cwd: directory, stdio: "pipe" });
+    assert.equal(fs.readFileSync(runtimePath, "utf8"), patched, "reapplying the patch must be stable");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
