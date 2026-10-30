@@ -31,6 +31,21 @@ $('#new-file').addEventListener('click',()=>{const name=prompt('New file name (e
 $('#refresh-preview').addEventListener('click',()=>{renderPreview();toast('Preview refreshed.')});
 $$('.network-run').forEach(b=>b.addEventListener('click',()=>runNetworkCheck(b.dataset.check)));
 $('#clear-network').addEventListener('click',()=>{$('#network-output').textContent='Select a diagnostic to run it in the Tiny Core guest.';$('#network-status').textContent='Guest not checked'});
+$('#send-api').addEventListener('click',async()=>{
+const url=$('#api-url').value.trim(),method=$('#api-method').value,body=$('#api-body').value;
+const output=$('#api-output'),button=$('#send-api');
+let parsed;try{parsed=new URL(url)}catch(e){output.textContent='Enter a valid HTTP or HTTPS URL.';return}
+if(!['http:','https:'].includes(parsed.protocol)){output.textContent='Only HTTP and HTTPS URLs are supported.';return}
+button.disabled=true;output.textContent='Sending request…';
+const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+try{
+const headers={};const options={method,headers,mode:'cors',credentials:'omit',redirect:'error',signal:controller.signal};
+if(['POST','PUT','PATCH'].includes(method)&&body.trim()){headers['content-type']='application/json';options.body=body}
+const response=await fetch(parsed.href,options),text=await response.text();
+output.textContent='HTTP '+response.status+' '+response.statusText+'\nContent-Type: '+(response.headers.get('content-type')||'unknown')+'\n\n'+text.slice(0,12000);
+}catch(e){output.textContent=e.name==='AbortError'?'Request timed out after 10 seconds.':('Request failed: '+e.message+'\nThe target may reject browser CORS requests. Try the Tiny Core HTTPS diagnostic for basic guest connectivity.')}
+finally{clearTimeout(timer);button.disabled=false}
+});
 $('#validate-html').addEventListener('click',()=>{persistEditor();const html=files['index.html']||'';const doc=new DOMParser().parseFromString(html,'text/html');const errors=Array.from(doc.querySelectorAll('parsererror'));$('#editor-message').textContent=errors.length?'HTML validation found parsing errors.':'HTML parsed successfully by the browser.';toast(errors.length?'HTML needs attention.':'HTML parse check passed.')});
 $('#format-json').addEventListener('click',()=>{try{const parsed=JSON.parse($('#code-editor').value);$('#code-editor').value=JSON.stringify(parsed,null,2);persistEditor();toast('JSON formatted.')}catch(e){toast('This file is not valid JSON: '+e.message)}});
 loadProjects();
