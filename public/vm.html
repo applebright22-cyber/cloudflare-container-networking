@@ -368,18 +368,18 @@ return(s&&s.textContent)||'';
 }
 window.vampireSquidRunNetworkCheck=async function(checkId){
 const checks={
- ip:[{label:'Interface / IP configuration',command:'ip addr show 2>/dev/null || ifconfig -a',timeout:10000}],
- routes:[{label:'Routing table',command:'ip route show 2>/dev/null || route -n',timeout:10000}],
- dns:[{label:'DNS resolver configuration',command:'cat /etc/resolv.conf',timeout:8000},{label:'DNS lookup',command:'nslookup example.com',timeout:12000}],
- ping:[{label:'Internet IP reachability',command:'ping -c 3 -W 2 1.1.1.1',timeout:12000}],
- https:[{label:'HTTPS request',command:'wget -S -O /dev/null -T 8 https://example.com 2>&1',timeout:15000}],
+ ip:[{label:'Interface / DHCP address',command:'ip addr show 2>/dev/null || ifconfig -a'}],
+ routes:[{label:'Routing table',command:'ip route show 2>/dev/null || route -n'}],
+ dns:[{label:'DNS resolver configuration',command:'cat /etc/resolv.conf'},{label:'DNS lookup',command:'nslookup example.com'}],
+ ping:[{label:'Internet IP reachability',command:'ping -c 3 -W 2 1.1.1.1'}],
+ https:[{label:'HTTPS request',command:'wget -S -O /dev/null https://example.com 2>&1'}],
  health:[
-  {label:'Interface / DHCP address',command:'ip addr show 2>/dev/null || ifconfig -a',timeout:10000},
-  {label:'Routing / gateway',command:'ip route show 2>/dev/null || route -n',timeout:10000},
-  {label:'DNS resolver configuration',command:'cat /etc/resolv.conf',timeout:8000},
-  {label:'DNS lookup',command:'nslookup example.com',timeout:12000},
-  {label:'Internet ping',command:'ping -c 3 -W 2 1.1.1.1',timeout:12000},
-  {label:'HTTPS test',command:'wget -S -O /dev/null -T 8 https://example.com 2>&1',timeout:15000}
+  {label:'Interface / DHCP address',command:'ip addr show 2>/dev/null || ifconfig -a'},
+  {label:'Routing / gateway',command:'ip route show 2>/dev/null || route -n'},
+  {label:'DNS resolver configuration',command:'cat /etc/resolv.conf'},
+  {label:'DNS lookup',command:'nslookup example.com'},
+  {label:'Internet ping',command:'ping -c 3 -W 2 1.1.1.1'},
+  {label:'HTTPS test',command:'wget -S -O /dev/null https://example.com 2>&1'}
  ]
 };
 const steps=checks[checkId];
@@ -389,36 +389,37 @@ if(window.vampireSquidRunNetworkCheck.busy)throw new Error('A guest diagnostic i
 window.vampireSquidRunNetworkCheck.busy=true;
 const results=[];
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const deadline=Date.now()+60000;
 try{
  for(let index=0;index<steps.length;index++){
   const step=steps[index],nonce=Math.random().toString(36).slice(2,10),marker='__VS_DIAG_'+nonce+':DONE:';
-  const before=screenText();
   const wrapped=step.command+'; __vs_diag_rc=$?; printf "\\n__VS_DIAG_"; printf "%s" "'+nonce+'"; printf ":DONE:%s\\n" "$__vs_diag_rc"';
   try{
    if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
-   await window.emulator.keyboard_send_text(wrapped+'\n',2);
+   await window.emulator.keyboard_send_text(wrapped+'\\n',2);
   }catch(error){
    results.push({label:step.label,ok:false,interrupted:true,output:'Input delivery failed: '+(error&&error.message?error.message:String(error))});
-   continue;
+   break;
   }
-  const started=Date.now();let last=before,completion='';
-  while(Date.now()-started<step.timeout){
-   await pause(250);
+  let last=screenText(),completion='';
+  while(Date.now()<deadline){
+   await pause(200);
    last=screenText();
    const at=last.lastIndexOf(marker);
-   if(at>=0){completion=last.slice(at+marker.length).split(/\r?\n/,1)[0].trim();break;}
+   if(at>=0){completion=last.slice(at+marker.length).split(/\\r?\\n/,1)[0].trim();break;}
   }
   if(!completion){
-   results.push({label:step.label,ok:false,interrupted:true,output:'Diagnostic interrupted: the guest completion marker was not received within '+Math.round(step.timeout/1000)+' seconds. Earlier test results are preserved.',screen:last});
+   results.push({label:step.label,ok:false,interrupted:true,output:'Diagnostic interrupted: the overall 60-second diagnostic limit expired before the guest completion marker arrived. Earlier results are preserved.',screen:last});
    break;
   }
   const rc=Number(completion);
   const commandFailed=Number.isFinite(rc)&&rc!==0;
   results.push({label:step.label,ok:!commandFailed,interrupted:false,exitCode:Number.isFinite(rc)?rc:null,output:last});
  }
- const ok=results.length>0&&results.every(result=>result.ok&&!result.interrupted);
- const output=results.map((result,index)=>'===== '+(index+1)+'. '+result.label+' =====\n'+(result.interrupted?'[INCOMPLETE] ':result.ok?'[PASS] ':'[CHECK] ')+(result.output||'No guest output captured.')).join('\n\n');
- return {ok,complete:results.every(result=>!result.interrupted),results,output};
+ const ok=results.length===steps.length&&results.every(result=>result.ok&&!result.interrupted);
+ const complete=results.length===steps.length&&results.every(result=>!result.interrupted);
+ const output=results.map((result,index)=>'===== '+(index+1)+'. '+result.label+' =====\\n'+(result.interrupted?'[INCOMPLETE] ':result.ok?'[PASS] ':'[CHECK] ')+(result.output||'No guest output captured.')).join('\\n\\n');
+ return {ok,complete,results,output};
 }finally{window.vampireSquidRunNetworkCheck.busy=false;}
 };
 let lastMirrorLines=[];
