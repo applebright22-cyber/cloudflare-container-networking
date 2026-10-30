@@ -62,7 +62,6 @@ storage = "sqlite"
 [vars]
 VM_BASELINE_ID = "admin"
 ORACLE_ACCOUNT_EXEC_ENABLED = "true"
-ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID = "acct-5577b472-f753-4669-96af-56d42fdda2cd"
 
 [exports.AccountRegistry]
 type = "durable-object"
