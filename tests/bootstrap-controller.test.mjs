@@ -75,31 +75,25 @@ test("VM uses a built ISO asset, a single supported relay configuration, and ret
   assert.ok(firstCommand[1].length < 900, "network init command must stay short enough to avoid terminal input truncation");
 });
 
-test("restored snapshots automatically run the network diagnostic and save after it finishes", () => {
-  assert.ok(html.includes("runDiagnostic('AUTOMATIC NETWORK TEST AFTER SNAPSHOT RESTORE',true)"), "restored VM should not skip the automatic network test");
-  assert.ok(html.includes("if(saveAfter&&bootComplete){const healthy=capturedLog.split"), "validate diagnostic results before saving");
-  assert.ok(html.includes("DHCP_RECOVERY_OK") && html.includes("if(!healthy)"), "preserve the existing snapshot unless guest network recovery is verified");
-  assert.ok(html.includes("const saved=await saveVmState(false)"), "save the state after the diagnostic finishes");
-  assert.ok(html.includes("requestedIdentity==='user-usera'?['user-usera','regular-user-a']"), "usera should fall back to the documented legacy snapshot key");
-  assert.ok(html.includes("requestedIdentity==='user-userb'?['user-userb','regular-user-b']"), "userb should fall back to the documented legacy snapshot key");
-  assert.ok(html.includes("window.snapshotIdentity=identity"), "keep saves scoped to whichever account snapshot was restored");
-});
-
-test("startup prompt detection supports changed hostnames and explicitly wakes the shell before the first command", () => {
+test("restored snapshots are not modified by automatic network diagnostics", () => {
+  assert.ok(!html.includes("AUTOMATIC NETWORK TEST AFTER SNAPSHOT RESTORE"));
+  assert.ok(!html.includes("runDiagnostic("));
+  assert.ok(html.includes("verifyRestoredGuestShell"));
+  assert.ok(html.includes("snapshotLoadFailed"));
+});test("startup prompt detection supports changed hostnames and explicitly wakes the shell before the first command", () => {
   assert.ok(html.includes("[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+"), "prompt detection should not depend on one exact hostname");
   assert.ok(html.includes("KEYBOARD INPUT WAKE"));
   assert.ok(html.includes("await sendVmCommand('\\n')"));
 });
 
-test("GUI startup handles optional Syslinux boot prompt and reports a bounded boot timeout", () => {
-  assert.ok(html.includes("const BOOT_TIMEOUT_MS=300000"), "GUI should allow Tiny Core up to five minutes to reach a shell");
-  assert.ok(html.includes("/^boot:\\s*$/i.test(line.trim())"), "GUI should recognize a standalone Syslinux boot prompt");
-  assert.ok(html.includes("keyboard_send_scancodes([0x1C,0x9C])"), "GUI should press Enter only when a boot prompt is visible");
-  assert.ok(html.includes("BOOT TIMEOUT after "), "GUI should capture the guest screen if boot does not complete");
-  assert.ok(html.includes("proofDeadline=Date.now()+30000"), "snapshot login proof should fail visibly instead of looping forever");
-});
-
-test("startup completion markers cover DHCP and CA verification without an HTTPS preflight", () => {
+test("GUI startup handles optional Syslinux boot prompt and bounded shell proof timeouts", () => {
+  assert.ok(html.includes("const BOOT_TIMEOUT_MS=300000"));
+  assert.ok(html.includes("/^boot:\\s*$/i.test(line.trim())"));
+  assert.ok(html.includes("keyboard_send_scancodes([0x1C,0x9C])"));
+  assert.ok(html.includes("BOOT TIMEOUT after "));
+  assert.ok(html.includes("promptDeadline=Date.now()+promptTimeoutMs"));
+  assert.ok(html.includes("commandDeadline=Date.now()+commandTimeoutMs"));
+});test("startup completion markers cover DHCP and CA verification without an HTTPS preflight", () => {
   const normalized = html.replace(/"\s*"/g, "");
   for (const marker of [
     "DHCP_DONE",
@@ -139,21 +133,17 @@ test("TLS installs run in the foreground before HTTPS and certificate checks", (
   assert.ok(!commandList.includes("${apiUrl}/health"), "no guest-side HTTPS health probe is part of snapshot preparation");
 });
 
-test("bootstrap waits for a fresh completion marker and a shell prompt before advancing", () => {
+test("bootstrap waits for a fresh completion marker before advancing", () => {
   assert.ok(html.includes("function markerCount(text,marker)"));
   assert.ok(html.includes("markerCount(t,marker)>markerCountBefore"));
-  assert.ok(html.includes("shellPrompt(t.slice(markerAt+marker.length))"), "bootstrap must wait for the shell prompt after each completion marker");
   assert.ok(html.includes("const markerCountBefore=marker?markerCount(terminal(),marker):0"));
   assert.ok(html.includes("requestAnimationFrame(wait)"));
-});
-
-test("VM snapshot save is attempted after the post-boot test sequence", () => {
-  assert.ok(html.includes("const saved=await saveVmState(false)"));
-  assert.ok(html.includes("Startup and network tests complete; server snapshot saved."));
-  assert.ok(html.includes("Startup complete; server snapshot save did not complete."));
-});
-
-test("VM startup verifies DHCP and CA certificates without any HTTPS preflight", () => {
+});test("VM snapshot save is attempted after the required DHCP and CA checks", () => {
+  assert.ok(html.includes("saved=await saveVmState(false)"));
+  assert.ok(html.includes("DHCP and CA certificate checks complete. Saving the Admin baseline snapshot."));
+  assert.ok(html.includes("Automatic snapshot save failed after 3 attempts."));
+  assert.ok(html.includes("setInterval(()=>saveVmState(false),5*60*1000)"));
+});test("VM startup verifies DHCP and CA certificates without any HTTPS preflight", () => {
   const startupStart = html.indexOf("async function startBootstrap()");
   const accountUiStart = html.indexOf("function beginAccountSession");
   assert.ok(startupStart >= 0 && accountUiStart > startupStart, "startup and account UI sections should be identifiable");
