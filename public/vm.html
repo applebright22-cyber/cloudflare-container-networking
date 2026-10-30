@@ -409,7 +409,7 @@ try{
    if(at>=0){completion=last.slice(at+marker.length).split(/\r?\n/,1)[0].trim();break;}
   }
   if(!completion){
-   results.push({label:step.label,ok:false,interrupted:true,output:'Diagnostic interrupted: the overall 60-second diagnostic limit expired before the guest completion marker arrived. Earlier results are preserved.',screen:last});
+   results.push({label:step.label,ok:false,interrupted:true,output:'Diagnostic interrupted: the overall 3-minute diagnostic limit expired before the guest completion marker arrived. Earlier results are preserved.',screen:last});
    break;
   }
   const rc=Number(completion);
