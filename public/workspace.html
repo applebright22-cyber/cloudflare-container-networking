@@ -53,6 +53,12 @@
         <article class="tool-card"><div class="tool-icon">↗</div><h3>Internet reachability</h3><p>Send a small ICMP test to a public resolver.</p><button class="button ghost network-run" data-check="ping">Test internet</button></article>
         <article class="tool-card"><div class="tool-icon">◇</div><h3>HTTPS connection</h3><p>Test outbound HTTPS from the guest if wget and CA certificates are available.</p><button class="button ghost network-run" data-check="https">Test HTTPS</button></article>
       </div>
+      <div class="api-tester">
+        <div class="pane-head"><b>HTTP API TESTER</b><span>Browser-based · CORS applies</span></div>
+        <div class="api-controls"><select id="api-method" aria-label="HTTP method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select><input id="api-url" type="url" placeholder="https://api.example.com/health" aria-label="API URL"><button class="button primary" id="send-api">Send request</button></div>
+        <textarea id="api-body" rows="3" placeholder='Optional JSON request body'></textarea>
+        <pre id="api-output">Enter an endpoint and send a request. Browser cross-origin rules may prevent access to some APIs.</pre>
+      </div>
       <div class="result-panel"><div class="pane-head"><b>DIAGNOSTIC OUTPUT</b><button id="clear-network">Clear</button></div><pre id="network-output">Select a diagnostic to run it in the Tiny Core guest. The browser VM must be logged in and fully booted.</pre></div>
       <p class="safety-note">Diagnostics are limited to fixed, low-impact checks. This is not an open proxy or a general-purpose port scanner. Results are only reported after the guest command returns.</p>
     </section>
