@@ -14,6 +14,7 @@ export interface AccountRecord {
   created_at: string;
   updated_at: string;
   error: string | null;
+  oracle_execution_enabled?: boolean;
 }
 
 interface StoredAccount extends AccountRecord {
@@ -334,7 +335,8 @@ export class AccountRegistry extends DurableObject {
       } | null;
       if (typeof body?.account_id !== "string" || !validAccountId(body.account_id) ||
           typeof body.virtual_ip !== "string" || !isVirtualPrivateIp(body.virtual_ip) ||
-          typeof body.virtual_mac !== "string" || !/^02(?::[0-9a-f]{2}){5}$/.test(body.virtual_mac)) {
+          typeof body.virtual_mac !== "string" || !/^02(?::[0-9a-f]{2}){5}$/.test(body.virtual_mac) ||
+          (body.oracle_execution_enabled !== undefined && typeof body.oracle_execution_enabled !== "boolean")) {
         return json({ error: "invalid_network_identity" }, 400);
       }
       const key = "account:" + body.account_id;
@@ -355,6 +357,7 @@ export class AccountRegistry extends DurableObject {
       const body = await request.json().catch(() => null) as {
         account_id?: unknown; name?: unknown; baseline_id?: unknown;
         snapshot_identity?: unknown; api_key_sha256?: unknown; api_key?: unknown; virtual_ip?: unknown; virtual_mac?: unknown;
+        oracle_execution_enabled?: unknown;
       } | null;
       if (!body || typeof body.account_id !== "string" || !validAccountId(body.account_id) ||
           typeof body.name !== "string" || body.name.length < 1 || body.name.length > 80 ||
@@ -363,7 +366,8 @@ export class AccountRegistry extends DurableObject {
           typeof body.api_key_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(body.api_key_sha256) ||
           typeof body.api_key !== "string" || !/^acct_[a-f0-9]{64}$/.test(body.api_key) ||
           typeof body.virtual_ip !== "string" || !/^10\.240\.(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.(?:[2-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])$/.test(body.virtual_ip) ||
-          typeof body.virtual_mac !== "string" || !/^02(?::[0-9a-f]{2}){5}$/.test(body.virtual_mac)) {
+          typeof body.virtual_mac !== "string" || !/^02(?::[0-9a-f]{2}){5}$/.test(body.virtual_mac) ||
+          (body.oracle_execution_enabled !== undefined && typeof body.oracle_execution_enabled !== "boolean")) {
         return json({ error: "invalid_account_record" }, 400);
       }
       const key = "account:" + body.account_id;
@@ -380,11 +384,22 @@ export class AccountRegistry extends DurableObject {
         created_at: now,
         updated_at: now,
         error: null,
+        ...(body.oracle_execution_enabled === true ? { oracle_execution_enabled: true } : {}),
         api_key_sha256: body.api_key_sha256,
         api_key: body.api_key,
       };
       await this.ctx.storage.put(key, record);
       return json({ account: this.publicRecord(record) }, 201);
+    }
+
+    // Internal Worker-only capability lookup. Missing flags remain disabled for legacy accounts.
+    const oracleExecutionMatch = url.pathname.match(/^\/account\/([^/]+)\/oracle-execution$/);
+    if (oracleExecutionMatch && request.method === "GET") {
+      const accountId = decodeURIComponent(oracleExecutionMatch[1]);
+      if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
+      const record = await this.ctx.storage.get<StoredAccount>("account:" + accountId);
+      if (!record) return json({ error: "account_not_found" }, 404);
+      return json({ account_id: accountId, enabled: record.oracle_execution_enabled === true });
     }
 
     // Internal Worker-only route: replace the active API-key hash for one account.
