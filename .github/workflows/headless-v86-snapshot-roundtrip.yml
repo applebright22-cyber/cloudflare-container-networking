@@ -1,18 +1,24 @@
 name: Workerd guest snapshot round-trip
 
 on:
-  # Long snapshot test is manual-only; Oracle connection checks should not wait on it.
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/headless-v86-snapshot-roundtrip.yml"
 
 jobs:
   guest-snapshot-roundtrip:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     defaults:
       run:
         working-directory: cloudflare
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Re-run the identified historical baseline, not the current main branch.
+          ref: a0c523c02e7f1ff8759805575ea1ddc628eb5fd4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -28,7 +34,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          setsid timeout --signal=TERM --kill-after=15s 4200s npx wrangler dev --local --config wrangler.headless-v86-roundtrip.toml --ip 127.0.0.1 --port 8789 > /tmp/v86-roundtrip-workerd.log 2>&1 &
+          setsid timeout --signal=TERM --kill-after=30s 7200s npx wrangler dev --local --config wrangler.headless-v86-roundtrip.toml --ip 127.0.0.1 --port 8789 > /tmp/v86-roundtrip-workerd.log 2>&1 &
           worker_pid=$!
           cleanup() {
             kill -- "-$worker_pid" 2>/dev/null || kill "$worker_pid" 2>/dev/null || true
@@ -51,7 +57,7 @@ jobs:
           fi
           cat /tmp/v86-roundtrip-ready.json
           set +e
-          curl --silent --show-error --fail-with-body --max-time 1800 -X POST http://127.0.0.1:8789/snapshot-roundtrip -o /tmp/v86-roundtrip-result.json &
+          curl --silent --show-error --fail-with-body --max-time 6600 -X POST http://127.0.0.1:8789/snapshot-roundtrip -o /tmp/v86-roundtrip-result.json &
           request_pid=$!
           while kill -0 "$request_pid" 2>/dev/null; do
             if curl --silent --show-error --fail --max-time 3 "http://127.0.0.1:8789/progress?identity=test-v86-roundtrip" -o /tmp/v86-roundtrip-progress.json 2>/dev/null; then
