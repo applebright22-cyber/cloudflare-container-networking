@@ -28,6 +28,9 @@ jobs:
           curl -fL --retry 3 -o public/v86/libv86.js https://github.com/TheEvalon/v86_x64/releases/download/latest/libv86.js
           curl -fL --retry 3 -o public/v86/v86.wasm https://github.com/TheEvalon/v86_x64/releases/download/latest/v86.wasm
 
+      - name: Restore validated DNS-over-HTTPS failover in downloaded runtime
+        run: node scripts/patch-v86-doh.js
+
       - name: Verify downloaded artifacts
         run: |
           test -s public/v86/libv86.js
