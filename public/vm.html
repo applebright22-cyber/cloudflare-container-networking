@@ -389,7 +389,7 @@ if(window.vampireSquidRunNetworkCheck.busy)throw new Error('A guest diagnostic i
 window.vampireSquidRunNetworkCheck.busy=true;
 const results=[];
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const deadline=Date.now()+60000;
+const deadline=Date.now()+180000;
 try{
  for(let index=0;index<steps.length;index++){
   const step=steps[index],nonce=Math.random().toString(36).slice(2,10),marker='__VS_DIAG_'+nonce+':DONE:';
