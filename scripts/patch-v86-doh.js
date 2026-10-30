@@ -7,14 +7,14 @@ if (start < 0 || end <= start) throw new Error("Could not locate the v86 DNS-ove
 const handler = [
 "function Jb(a,b){",
 "(async function(){",
-"const primary=b.doh_server||\u0027cloudflare-dns.com\u0027;",
-"const resolvers=[primary,\u0027dns.google\u0027].filter((host,index,list)=>host&&list.indexOf(host)===index);",
+"const primary=b.doh_server||'cloudflare-dns.com';",
+"const resolvers=[primary,'dns.google'].filter((host,index,list)=>host&&list.indexOf(host)===index);",
 "for(const resolver of resolvers){",
 "try{",
-"const response=await fetch(\u0027https://\u0027+resolver+\u0027/dns-query\u0027,{method:\u0027POST\u0027,headers:{\u0027content-type\u0027:\u0027application/dns-message\u0027,\u0027accept\u0027:\u0027application/dns-message\u0027},body:a.udp.data});",
+"const response=await fetch('https://'+resolver+'/dns-query',{method:'POST',headers:{'content-type':'application/dns-message','accept':'application/dns-message'},body:a.udp.data});",
 "if(!response||!response.ok)continue;",
-"const contentType=response.headers&&response.headers.get?response.headers.get(\u0027content-type\u0027)||\u0027\u0027:\u0027\u0027;",
-"if(!/^application\\\\/dns-message(?:\\\\s*;|\\\\s*$)/i.test(contentType))continue;",
+"const contentType=response.headers&&response.headers.get?response.headers.get('content-type')||'':'';",
+"if(!/^application\\/dns-message(?:\\s*;|\\s*$)/i.test(contentType))continue;",
 "const bytes=new Uint8Array(await response.arrayBuffer());",
 "if(bytes.length<12)continue;",
 "const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);",
@@ -30,8 +30,8 @@ const handler = [
 "}",
 "const failure={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport},dns:{id:a.dns.id,flags:33154,questions:a.dns.questions,answers:[]}};",
 "b.receive(Ib(b.eth_encoder_buf,failure));",
-""})();",
+"})();",
 "return!0",
-"].join("\n");
+].join("\n");
 fs.writeFileSync(path, source.slice(0, start) + handler + source.slice(end));
 console.log("Restored Cloudflare-to-Google DoH failover in " + path);
