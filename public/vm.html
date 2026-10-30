@@ -336,6 +336,37 @@ return window.emulator.screen_adapter.get_text_screen().join('\n');
 const s=document.querySelector('#screen_container > div');
 return(s&&s.textContent)||'';
 }
+window.vampireSquidRunNetworkCheck=async function(checkId){
+const commands={
+ ip:'ip addr show 2>/dev/null || ifconfig -a',
+ routes:'ip route show 2>/dev/null || route -n',
+ dns:'echo "Resolver configuration"; cat /etc/resolv.conf; echo; echo "DNS lookup: example.com"; nslookup example.com',
+ ping:'ping -c 3 -W 2 1.1.1.1',
+ https:'wget -S -O /dev/null -T 8 https://example.com 2>&1',
+ health:'echo "=== INTERFACE / DHCP ADDRESS ==="; ip addr show 2>/dev/null || ifconfig -a; echo; echo "=== ROUTING / GATEWAY ==="; ip route show 2>/dev/null || route -n; echo; echo "=== DNS CONFIGURATION ==="; cat /etc/resolv.conf; echo; echo "=== DNS LOOKUP ==="; nslookup example.com; echo; echo "=== INTERNET PING ==="; ping -c 3 -W 2 1.1.1.1; echo; echo "=== HTTPS TEST ==="; wget -S -O /dev/null -T 8 https://example.com 2>&1'
+};
+const command=commands[checkId];
+if(!command)throw new Error('Unknown diagnostic.');
+if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('Tiny Core guest is not ready yet. Wait for the Linux shell prompt and retry.');
+const before=screenText();
+window.emulator.keyboard_send_text(command);
+window.emulator.keyboard_send_text('\n');
+const started=Date.now();
+let seenCommand=false,last=before;
+const timeout=checkId==='health'?55000:25000;
+while(Date.now()-started<timeout){
+await new Promise(resolve=>setTimeout(resolve,350));
+last=screenText();
+if(last.includes(command.slice(0,Math.min(command.length,36))))seenCommand=true;
+const rows=normalizeScreenLines(last);
+const prompt=rows.length?shellPrompt(rows[rows.length-1]):'';
+if(seenCommand&&Date.now()-started>900&&prompt){
+const output=last.slice(Math.max(0,last.lastIndexOf(command.slice(0,Math.min(command.length,36)))));
+return {ok:!/(bad address|not found|network is unreachable|100% packet loss|timed out|unable to resolve)/i.test(output),output:output||last};
+}
+}
+return {ok:false,output:last+'\n[Diagnostic timed out waiting for the Tiny Core shell prompt.]'};
+};
 let lastMirrorLines=[];
 let lastMirrorRaw='';
 let terminalHistory='';
