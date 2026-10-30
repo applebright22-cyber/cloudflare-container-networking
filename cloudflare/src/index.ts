@@ -891,7 +891,9 @@ export default {
         enabled,
         runtime: "oracle-host",
         ...(enabled ? {} : {
-          reason: "Oracle account execution is disabled in the Worker configuration."
+          reason: env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true"
+            ? "Oracle account execution is disabled in the Worker configuration."
+            : "Oracle execution is not enabled for this account."
         })
       });
     }
