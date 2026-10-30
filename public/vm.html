@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mysterium Browser VM</title>
+<title>Developer Workspace · VampireSquid</title>
 <style>
 body{margin:0;background:#111;color:#ddd;font-family:monospace}#login-panel{padding:12px;background:#181818;border-bottom:1px solid #333}#login-panel h2{font-size:16px;margin:0 0 8px}#login-panel p{font-size:12px;line-height:1.5}#login-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}#login-form input,#login-form select{font:inherit;padding:7px;max-width:100%}#login-message{color:#ffc66d}body:not(.logged-in) #status,body:not(.logged-in) #toolbar,body:not(.logged-in) #results,body:not(.logged-in) #myst-log,body:not(.logged-in) #screen_container{display:none}
 #status{padding:8px}
@@ -27,11 +27,33 @@ body:not(.logged-in) #account-id-panel{display:none}
 #account-id-value{color:#b8f7c4;overflow-wrap:anywhere;user-select:text}
 #account-id-message{color:#ffc66d;font-size:12px}body.oracle-terminal-mode #screen_container{display:none}body.oracle-terminal-mode #myst-log{box-sizing:border-box;height:calc(100vh - 285px);min-height:360px;max-height:none;white-space:pre-wrap;overflow:auto;outline:none;cursor:text}body.oracle-terminal-mode #myst-log:focus{outline:1px solid #555}
 </style>
+<style>
+body{background:#080b1a;color:#eef2ff;font:13px/1.6 Montserrat,system-ui,sans-serif}
+#login-panel,#api-key-panel,#account-id-panel{background:linear-gradient(145deg,#111b32,#0b1224);border-color:#2a395c;padding:20px 24px}
+#login-panel h2{font:800 20px Montserrat,system-ui,sans-serif;letter-spacing:-.5px;color:#fff}
+#login-panel p,#api-key-panel p{font:12px/1.7 Montserrat,system-ui,sans-serif;color:#9eacc8}
+a{color:#63dfff}
+#login-form{gap:10px}
+#login-form input,#login-form select{background:#080f20;color:#f4f6ff;border:1px solid #3b4b6d;border-radius:8px;padding:10px}
+button{font:700 11px Montserrat,system-ui,sans-serif;border:1px solid #39496d;border-radius:8px;background:#17213a;color:#edf2ff;padding:10px 13px}
+button:hover,.studio-return:hover{filter:brightness(1.2)}
+#open-vm,#create-account{background:linear-gradient(100deg,#792de5,#a52be9 55%,#187be8);border:0}
+#status{padding:12px 20px;color:#b5c5e5;background:#0d1529}
+#toolbar{padding:12px 20px;background:#0d1529;border-block:1px solid #233251;align-items:center}
+.studio-return{display:inline-flex;align-items:center;padding:9px 12px;border-radius:8px;background:#211344;border:1px solid #55358a;color:#d9c4ff;font:700 10px Montserrat,system-ui,sans-serif;text-decoration:none}
+#results{background:#050a14;color:#b9d9ff;border:1px solid #2b395b;border-radius:8px;margin:12px;width:calc(100% - 24px);min-height:180px}
+#myst-log{background:#030711;color:#76f0ca;border:1px solid #253656;margin:12px;border-radius:8px;padding:14px}
+#screen_container{background:#030711;border:1px solid #263757;border-radius:10px;margin:12px;width:calc(100% - 24px);overflow:hidden}
+#api-key-value{background:#050a14;color:#7ef0d2;border-color:#344466;border-radius:8px}
+#account-id-value{color:#8ee9ff}
+#copy-status,#api-key-message,#account-id-message{color:#6ce8d1}
+@media(max-width:650px){#login-form{align-items:stretch}#login-form>*{width:100%}#results{margin:8px;width:calc(100% - 16px)}}
+</style>
 </head>
 <body>
 <section id="login-panel">
-  <h2>Open your VM</h2>
-  <p>Regular accounts are stored server-side and each account gets its own persistent VM snapshot. Passwords are never stored in browser localStorage. Admin access still uses the five-digit admin code. <a href="/signup.html">Use the signup page with snapshot progress</a>.</p>
+  <h2>🦑 VampireSquid · Developer Workspace</h2>
+  <p>Your optional Linux development environment. Your account and saved guest remain managed by the existing Cloudflare service. <a href="/studio.html">← Back to VampireSquid Studio</a> · <a href="/signup.html">Create an account</a></p>
   <form id="login-form">
     <label for="access-type">Account</label>
     <select id="access-type"><option value="regular">Regular user</option><option value="admin">Admin</option></select>
@@ -60,6 +82,7 @@ body:not(.logged-in) #account-id-panel{display:none}
 <pre id="api-key-value" hidden></pre>
 </section>
 <div id="toolbar">
+<a class="studio-return" href="/studio.html">← VampireSquid Studio</a>
 <button id="save-vm-state" type="button">Save VM state</button>
 <button id="clear-vm-state" type="button">Delete saved state</button>
 

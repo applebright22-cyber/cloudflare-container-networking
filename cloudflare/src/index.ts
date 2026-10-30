@@ -7,6 +7,7 @@ import { AccountRegistry } from "./account-registry";
 import { readCommittedGuestSnapshot } from "./headless-snapshot-store";
 import { AccountProvisioner } from "./account-provisioner";
 import { WispRelay } from "./wisp-relay";
+import { handleProjectStorageRequest } from "./project-storage";
 export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay };
 
 export interface Env {
@@ -20,6 +21,7 @@ export interface Env {
   VM_BASELINE_ID?: string;
   ADMIN_ACCESS_CODE?: string;
   VM_SNAPSHOTS: R2Bucket;
+  PROJECT_STORAGE: R2Bucket;
   ASSETS: Fetcher;
   TUNNEL_TOKEN: string;
   CLIENT_TOKEN: string;
@@ -1112,6 +1114,10 @@ export default {
       } while (cursor);
       return json({ ok: true });
     }
+
+
+    const projectStorageResponse = await handleProjectStorageRequest(request, env);
+    if (projectStorageResponse) return projectStorageResponse;
 
     if (url.pathname === "/health") {
       if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);

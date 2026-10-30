@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const registry = readFileSync(new URL("../cloudflare/src/account-registry.ts", import.meta.url), "utf8");
+const provisioner = readFileSync(new URL("../cloudflare/src/account-provisioner.ts", import.meta.url), "utf8");
 const wispRelay = readFileSync(new URL("../cloudflare/src/wisp-relay.ts", import.meta.url), "utf8");
 const virtualNetwork = readFileSync(new URL("../cloudflare/src/virtual-network.ts", import.meta.url), "utf8");
 const headlessRoundtrip = readFileSync(new URL("../cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts", import.meta.url), "utf8");
@@ -40,7 +41,7 @@ test("sessions expire and are bound to the account ID for every snapshot operati
 
 test("signup allocates a persistent virtual IP and queues cloning from a ready Admin baseline", () => {
   assert.match(worker, /const baselineId = env\.VM_BASELINE_ID \?\? "admin"/);
-  assert.match(worker, /admin_baseline_not_ready/);
+  assert.match(provisioner, /admin_baseline_not_ready/);
   const signup = worker.slice(worker.indexOf('if (url.pathname === "\/api\/auth\/signup"'), worker.indexOf('if (url.pathname === "\/api\/auth\/login"'));
   assert.match(signup, /baseline_id: baselineId/);
   assert.match(signup, /snapshot_cloned: false/);
@@ -51,7 +52,7 @@ test("signup allocates a persistent virtual IP and queues cloning from a ready A
   assert.match(registry, /network-next-host/);
   assert.match(registry, /virtual_ipv4_pool_exhausted/);
   assert.match(dashboard, /vm-initial-snapshot-pending/);
-  assert.match(dashboard, /if\(saveAfter&&bootComplete\)/);
+  assert.match(dashboard, /snapshotNeedsInitialSave/);
   assert.match(dashboard, /window\.snapshotNeedsInitialSave=false/);
 });
 
@@ -72,13 +73,12 @@ test("public auth routes are rate-limited and browser credentials are not persis
   assert.match(dashboard, /mysterium-network-test-results:\x27\+\(window\.snapshotIdentity\|\|\x27admin\x27\)/);
 });
 
-test("restored VMs automatically test the network and save after the test returns to a prompt", () => {
-  assert.match(dashboard, /runDiagnostic\('AUTOMATIC NETWORK TEST AFTER SNAPSHOT RESTORE',true\)/);
-  assert.match(dashboard, /if\(saveAfter&&bootComplete\)/);
-  assert.match(dashboard, /const saved=await saveVmState\(false\)/);
-});
-
-test("account network identity feeds a stable synthetic DHCP lease through the authenticated Cloudflare WISP relay", () => {
+test("restored VMs prove shell responsiveness without running extra network diagnostics", () => {
+  assert.doesNotMatch(dashboard, /runDiagnostic\(/, "restore must not execute unsolicited diagnostic commands");
+  assert.doesNotMatch(dashboard, /AUTOMATIC NETWORK TEST AFTER SNAPSHOT RESTORE/);
+  assert.match(dashboard, /verifyRestoredGuestShell/);
+  assert.match(dashboard, /snapshotLoadFailed=true/);
+});test("account network identity feeds a stable synthetic DHCP lease through the authenticated Cloudflare WISP relay", () => {
   assert.ok(virtualNetwork.includes("first_allocatable_ordinal: 1"));
   assert.ok(virtualNetwork.includes("last_allocatable_ordinal: 64767"));
   assert.ok(virtualNetwork.includes("virtualIpForOrdinal"));
