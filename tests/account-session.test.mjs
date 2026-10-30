@@ -52,7 +52,7 @@ test("signup allocates a persistent virtual IP and queues cloning from a ready A
   assert.match(registry, /network-next-host/);
   assert.match(registry, /virtual_ipv4_pool_exhausted/);
   assert.match(dashboard, /vm-initial-snapshot-pending/);
-  assert.match(dashboard, /if\(saveAfter&&bootComplete\)/);
+  assert.match(dashboard, /snapshotNeedsInitialSave/);
   assert.match(dashboard, /window\.snapshotNeedsInitialSave=false/);
 });
 
