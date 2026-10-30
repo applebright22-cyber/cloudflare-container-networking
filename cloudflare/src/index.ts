@@ -24,6 +24,7 @@ export interface Env {
   TUNNEL_TOKEN: string;
   CLIENT_TOKEN: string;
   ORACLE_ACCOUNT_EXEC_ENABLED?: string;
+  ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID?: string;
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -882,7 +883,9 @@ export default {
         body: JSON.stringify({ account_id: accountId, token: sessionToken }),
       });
       if (!verified.ok) return json({ error: "unauthorized" }, 401);
-      const enabled = env.ORACLE_ACCOUNT_EXEC_ENABLED === "true";
+      const enabled = env.ORACLE_ACCOUNT_EXEC_ENABLED === "true" &&
+        typeof env.ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID === "string" &&
+        env.ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID === accountId;
       return json({
         enabled,
         runtime: "oracle-host",
@@ -897,12 +900,6 @@ export default {
     // enabled; account-named directories alone do not isolate arbitrary shell code.
     if (url.pathname === "/api/account/exec") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      if (env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true") {
-        return json({
-          error: "oracle_account_execution_disabled",
-          reason: "Per-account OS/container isolation must be enabled and verified before exposing host shell commands."
-        }, 503);
-      }
       let body: { account_id?: unknown; session_token?: unknown; command?: unknown; timeout_ms?: unknown };
       try { body = await request.json() as typeof body; }
       catch { return json({ error: "invalid_json" }, 400); }
@@ -924,6 +921,13 @@ export default {
         body: JSON.stringify({ account_id: accountId, token: sessionToken }),
       });
       if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      if (env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true" ||
+          env.ORACLE_ACCOUNT_EXEC_TEST_ACCOUNT_ID !== accountId) {
+        return json({
+          error: "oracle_account_execution_disabled",
+          reason: "Regular-account execution is restricted to the configured test account until end-to-end isolation checks pass."
+        }, 503);
+      }
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
       return coordinator.fetch(new Request("https://vm-execution.internal/exec", {
         method: "POST",
