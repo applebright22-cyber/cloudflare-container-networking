@@ -656,7 +656,7 @@ try{
 }catch(e){statusText('Could not authorize the account network relay: '+(e&&e.message?e.message:String(e)));report('\n*** NETWORK RELAY TICKET FAILED; VM startup stopped. ***\n');return}
 const relayUrl='wisps://'+window.location.host+'/api/network/wisp/?account_id='+encodeURIComponent(networkIdentity)+'&ticket='+encodeURIComponent(networkTicket);
 try{
-window.emulator=new V86({
+const V86Constructor=window.V86;if(typeof V86Constructor!=='function')throw new Error('The v86 browser runtime did not load (window.V86 is unavailable). Check /v86/libv86.js.');window.emulator=new V86Constructor({
 wasm_path:'/v86/v86.wasm',memory_size:128*1024*1024,vga_memory_size:8*1024*1024,
 screen_container:document.getElementById('screen_container'),
 bios:{url:'/bios/seabios.bin'},vga_bios:{url:'/bios/vgabios.bin'},
