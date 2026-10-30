@@ -61,3 +61,12 @@ test("TinyCore startup checks Oracle bridge health without adding another termin
   assert.ok(dashboard.includes("startOracleBridgeStatus();"), "bridge check starts on fresh and restored VM startup");
   assert.ok(dashboard.includes('id="oracle-bridge-status"'), "connection state is visible in the existing dashboard");
 });
+
+test("Oracle coordinator registers pending work before sending and leaves delivery margin", () => {
+  const registerAt = coordinator.indexOf("this.pending.set(id, {");
+  const sendAt = coordinator.indexOf("socket.send(JSON.stringify({ type: \"exec\"");
+  assert.notEqual(registerAt, -1);
+  assert.notEqual(sendAt, -1);
+  assert.ok(registerAt < sendAt, "fast Oracle responses must have a registered pending request");
+  assert.ok(coordinator.includes("}, timeout + 5000);"), "coordinator leaves time for Oracle to return a timeout result");
+});

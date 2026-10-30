@@ -125,16 +125,13 @@ export class VmExecution extends DurableObject {
       if (!socket) return json({ error: "vm_offline", vm_id: identity, hint: "The Oracle outbound agent must be connected before execution." }, 503);
 
       const id = crypto.randomUUID();
-      try {
-        socket.send(JSON.stringify({ type: "exec", id, account_id: accountId, command: body.command, timeout_ms: timeout }));
-      } catch {
-        return json({ error: "vm_agent_send_failed" }, 502);
-      }
       return await new Promise<Response>((resolve) => {
         const timer = setTimeout(() => {
           this.pending.delete(id);
           resolve(json({ error: "execution_timeout", id, timeout_ms: timeout }, 504));
-        }, timeout + 1500);
+        }, timeout + 5000);
+        // Register the response handler before sending. This prevents a fast
+        // Oracle result from arriving before the coordinator knows the request.
         this.pending.set(id, {
           accountId,
           resolve: (response) => {
@@ -143,6 +140,13 @@ export class VmExecution extends DurableObject {
             resolve(response);
           },
         });
+        try {
+          socket.send(JSON.stringify({ type: "exec", id, account_id: accountId, command: body.command, timeout_ms: timeout }));
+        } catch {
+          clearTimeout(timer);
+          this.pending.delete(id);
+          resolve(json({ error: "vm_agent_send_failed" }, 502));
+        }
       });
     }
 
