@@ -127,3 +127,32 @@ test("a DoH SERVFAIL from the primary resolver triggers failover", async () => {
   assert.equal(calls.length, 2);
   assert.deepEqual(Array.from(output.udp.data), Array.from(answer));
 });
+
+
+test("async DoH lookup keeps the original guest DNS packet when v86 reuses its packet buffer", async () => {
+  const input = queryPacket();
+  const originalQuery = Array.from(input.udp.data);
+  const originalAnswer = Uint8Array.from(input.udp.data);
+  originalAnswer[2] = 0x81;
+  originalAnswer[3] = 0x80;
+  const handler = loadHandler(async (_url, init) => {
+    await Promise.resolve();
+    assert.deepEqual(Array.from(init.body), originalQuery, "fetch must receive a private copy of the DNS query");
+    return response(200, originalAnswer);
+  });
+  const result = new Promise((resolve) => handler(input, networkFor(resolve)));
+
+  // Simulate v86 recycling/mutating its decoded packet as soon as the handler returns.
+  input.udp.data.fill(0);
+  input.dns.id = 0xffff;
+  input.dns.questions[0].name = "reused-buffer.invalid";
+  input.eth.src = "reused-mac";
+  input.ipv4.src = [10, 240, 0, 99];
+  input.udp.sport = 54000;
+
+  const output = await result;
+  assert.deepEqual(Array.from(output.udp.data), Array.from(originalAnswer));
+  assert.equal(output.eth.dest, "guest-mac");
+  assert.deepEqual(output.ipv4.dest, [10, 240, 0, 2]);
+  assert.equal(output.udp.dport, 53000);
+});
