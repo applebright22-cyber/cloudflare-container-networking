@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const registry = readFileSync(new URL("../cloudflare/src/account-registry.ts", import.meta.url), "utf8");
+const provisioner = readFileSync(new URL("../cloudflare/src/account-provisioner.ts", import.meta.url), "utf8");
 const wispRelay = readFileSync(new URL("../cloudflare/src/wisp-relay.ts", import.meta.url), "utf8");
 const virtualNetwork = readFileSync(new URL("../cloudflare/src/virtual-network.ts", import.meta.url), "utf8");
 const headlessRoundtrip = readFileSync(new URL("../cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts", import.meta.url), "utf8");
@@ -40,7 +41,7 @@ test("sessions expire and are bound to the account ID for every snapshot operati
 
 test("signup allocates a persistent virtual IP and queues cloning from a ready Admin baseline", () => {
   assert.match(worker, /const baselineId = env\.VM_BASELINE_ID \?\? "admin"/);
-  assert.match(worker, /admin_baseline_not_ready/);
+  assert.match(provisioner, /admin_baseline_not_ready/);
   const signup = worker.slice(worker.indexOf('if (url.pathname === "\/api\/auth\/signup"'), worker.indexOf('if (url.pathname === "\/api\/auth\/login"'));
   assert.match(signup, /baseline_id: baselineId/);
   assert.match(signup, /snapshot_cloned: false/);
