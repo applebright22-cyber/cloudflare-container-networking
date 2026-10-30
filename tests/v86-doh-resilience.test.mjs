@@ -166,13 +166,13 @@ test("v86 DNS patch script finds a real newline and is idempotent", () => {
   try {
     const runtimePath = path.join(directory, "public", "v86", "libv86.js");
     fs.mkdirSync(path.dirname(runtimePath), { recursive: true });
-    fs.writeFileSync(runtimePath, "prefix\\nfunction Jb(a,b){return!0}\\nfunction Kb(a,b){return!0}\\nsuffix\\n");
+    fs.writeFileSync(runtimePath, "prefix\nfunction Jb(a,b){return!0}\nfunction Kb(a,b){return!0}\nsuffix\n");
     const patchScript = new URL("../scripts/patch-v86-doh.js", import.meta.url);
     execFileSync(process.execPath, [patchScript.pathname], { cwd: directory, stdio: "pipe" });
     const patched = fs.readFileSync(runtimePath, "utf8");
-    assert.match(patched, /dns\\.google/);
-    assert.match(patched, /\\nfunction Kb/);
-    assert.ok(patched.endsWith("suffix\\n"), "the following v86 function and remaining bundle must be preserved");
+    assert.match(patched, /dns\.google/);
+    assert.match(patched, /\nfunction Kb/);
+    assert.ok(patched.endsWith("suffix\n"), "the following v86 function and remaining bundle must be preserved");
     execFileSync(process.execPath, [patchScript.pathname], { cwd: directory, stdio: "pipe" });
     assert.equal(fs.readFileSync(runtimePath, "utf8"), patched, "reapplying the patch must be stable");
   } finally {
