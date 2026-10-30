@@ -63,42 +63,34 @@ button:hover,.studio-return:hover{filter:brightness(1.2)}
     <button id="open-vm" type="submit">Log in</button><button id="create-account" type="button">Create regular account</button><span id="login-message" role="status" aria-live="polite"></span>
   </form>
 </section>
-<div id="status">Starting Linux VM...</div>
-<section id="account-id-panel" aria-label="Account ID">
-  <strong>Account ID:</strong>
-  <code id="account-id-value">Not signed in</code>
-  <button id="account-id-copy" type="button">Copy account ID</button>
-  <span id="account-id-message" role="status" aria-live="polite"></span>
+<div id="status" class="runtime-status">Starting Linux VM...</div>
+<details id="account-settings" class="account-settings">
+ <summary><span><strong>Account &amp; API settings</strong><small>Account ID and API key</small></span><span class="settings-chevron">⌄</span></summary>
+ <div class="account-settings-content">
+  <section id="account-id-panel" aria-label="Account ID"><div class="account-id-copy"><strong>Account ID</strong><code id="account-id-value">Not signed in</code></div><button id="account-id-copy" type="button">Copy account ID</button><span id="account-id-message" role="status" aria-live="polite"></span></section>
+  <section id="api-key-panel" aria-labelledby="api-key-title">
+   <h2 id="api-key-title">Account API key</h2>
+   <p id="api-key-warning">Your current API key appears here after you sign in. Keys created before dashboard key display was enabled cannot be recovered from their stored hashes; this page will not change those keys automatically. Replacing a key invalidates the previous one.</p>
+   <div id="api-key-actions"><button id="api-key-generate" type="button">Replace API key</button><button id="api-key-copy" type="button" hidden>Copy key</button><button id="api-key-hide" type="button" hidden>Hide key</button><span id="api-key-message" role="status" aria-live="polite"></span></div>
+   <pre id="api-key-value" hidden></pre>
+  </section>
+ </div>
+</details>
+<section id="toolbar" aria-label="Terminal actions">
+ <div class="toolbar-heading"><div><strong>Workspace controls</strong><span>Manage your VM session</span></div><a class="studio-return" href="/studio.html">← Studio</a></div>
+ <div class="toolbar-groups">
+  <div class="action-group"><span class="action-label">VM STATE</span><div class="action-buttons"><button id="save-vm-state" type="button">Save VM state</button><button id="clear-vm-state" class="danger-action" type="button">Delete saved state</button></div></div>
+  <div class="action-group"><span class="action-label">SHELL</span><div class="action-buttons"><button id="run-bootstrap" type="button">Wake shell</button><button id="paste-terminal" type="button">Paste into VM</button></div></div>
+  <div class="action-group"><span class="action-label">RESULTS</span><div class="action-buttons"><button id="copy-results" type="button">Copy results</button><button id="clear-results" type="button">Clear results</button></div></div>
+ </div>
+ <div class="toolbar-status"><span id="state-status" aria-live="polite">Saved state: checking…</span><span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span><span id="copy-status"></span></div>
 </section>
-<section id="api-key-panel" aria-labelledby="api-key-title">
-<h2 id="api-key-title">Account API key</h2>
-<p id="api-key-warning">Your current API key appears here after you sign in. Keys created before dashboard key display was enabled cannot be recovered from their stored hashes; this page will not change those keys automatically. Replacing a key invalidates the previous one.</p>
-<div id="api-key-actions">
-<button id="api-key-generate" type="button">Replace API key</button>
-<button id="api-key-copy" type="button" hidden>Copy key</button>
-<button id="api-key-hide" type="button" hidden>Hide key</button>
-<span id="api-key-message" role="status" aria-live="polite"></span>
-</div>
-<pre id="api-key-value" hidden></pre>
+<textarea id="results" spellcheck="false" aria-hidden="true" tabindex="-1" placeholder="Diagnostic results"></textarea>
+<section class="console-card" aria-labelledby="console-title">
+ <div class="console-heading"><div><strong id="console-title">VAMPIRESQUID TERMINAL</strong><span>Persistent shell · Select and copy terminal output</span></div><span class="console-live">● LIVE CONSOLE</span></div>
+ <pre id="myst-log" tabindex="0" aria-label="Terminal output">Waiting for Tiny Core...</pre>
 </section>
-<div id="toolbar">
-<a class="studio-return" href="/studio.html">← VampireSquid Studio</a>
-<button id="save-vm-state" type="button">Save VM state</button>
-<button id="clear-vm-state" type="button">Delete saved state</button>
-
-<button id="run-bootstrap" type="button">Wake shell / run bootstrap</button>
-<button id="copy-results" type="button">Copy test results</button>
-<button id="paste-terminal" type="button">Paste into VM</button>
-<button id="clear-results" type="button">Clear results</button>
-<span id="copy-status"></span>
-<span id="state-status" aria-live="polite">Saved state: checkingâ¦</span>
-<span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span>
-</div>
-<textarea id="results" spellcheck="false" placeholder="Full startup/network report. It is saved locally so you can copy it in sections."></textarea>
-
-
-<pre id="myst-log" tabindex="0" aria-label="Terminal output">Waiting for Tiny Core...</pre>
-<div id="screen_container"><div></div><canvas></canvas></div>
+<div id="screen_container" aria-hidden="true"><div></div><canvas></canvas></div>
 <script src="/v86/libv86.js"></script>
 <script>
 window.startVm=async function(){
@@ -933,3 +925,41 @@ updateFields();
 </script>
 </body>
 </html>
+
+<style>
+body{background:#080b1a;color:#eaf0ff;font-family:Montserrat,system-ui,sans-serif}
+.runtime-status{margin:14px 20px;padding:10px 14px;border:1px solid #263653;border-radius:8px;background:#0d172b;color:#aebfdd;font-size:11px}
+.account-settings{margin:0 20px 14px;border:1px solid #2b3a5a;border-radius:9px;background:#0d1529;overflow:hidden}
+.account-settings summary{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;cursor:pointer;list-style:none}
+.account-settings summary::-webkit-details-marker{display:none}
+.account-settings summary strong,.toolbar-heading strong,.console-heading strong{display:block;font-size:11px;color:#edf2ff}
+.account-settings summary small,.toolbar-heading span,.console-heading span{display:block;margin-top:4px;color:#8495b6;font-size:10px}
+.settings-chevron{color:#aebddd}.account-settings-content{padding:0 16px 12px;border-top:1px solid #253554}
+#account-id-panel,#api-key-panel{padding:13px 0;background:none;border:0}
+.account-id-copy{display:grid;gap:5px;min-width:0;flex:1}
+.account-id-copy strong{font-size:10px;color:#9eacc8}
+#account-id-value{font:11px ui-monospace,monospace;color:#8ee9ff}
+#api-key-panel{border-top:1px solid #253554}
+#api-key-panel h2{font-size:12px;margin:0 0 6px}
+#api-key-panel p{font-size:10px;line-height:1.6}
+#api-key-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#api-key-value{max-width:none}
+#toolbar{display:block;margin:0 20px 14px;padding:14px;border:1px solid #2b3a5a;border-radius:9px;background:#0d1529}
+.toolbar-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.toolbar-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.action-group{padding:10px;border:1px solid #253554;border-radius:8px;background:#101b31}
+.action-label{display:block;margin-bottom:8px;color:#8394b5;font-size:8px;font-weight:800;letter-spacing:1px}
+.action-buttons{display:flex;flex-wrap:wrap;gap:7px}
+.action-buttons button{font-size:9px;padding:8px 10px}
+.action-buttons .danger-action{background:#281a2a;border-color:#62404d;color:#ffc1cb}
+.toolbar-status{display:flex;flex-wrap:wrap;gap:8px 18px;padding-top:11px;margin-top:11px;border-top:1px solid #253554;color:#91a3c5;font-size:9px}
+.console-card{margin:0 20px 20px;border:1px solid #2b3a5a;border-radius:10px;overflow:hidden;background:#030711}
+.console-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid #253554;background:#101a30}
+.console-heading strong{font-size:9px;letter-spacing:1px}
+.console-heading span{font-size:9px}
+.console-heading .console-live{color:#6ce8d1;font-size:8px;white-space:nowrap;letter-spacing:.7px}
+#myst-log{box-sizing:border-box;margin:0;width:100%;height:calc(100vh - 310px);min-height:300px;max-height:650px;padding:16px;border:0;border-radius:0;background:#030711;color:#76f0ca;font:12px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow:auto;outline:none}
+body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;max-height:650px}
+#results,#screen_container{display:none!important}
+@media(max-width:760px){.runtime-status,.account-settings,#toolbar,.console-card{margin-left:8px;margin-right:8px}.toolbar-groups{grid-template-columns:1fr}.toolbar-status{flex-direction:column;gap:6px}#myst-log,body.oracle-terminal-mode #myst-log{height:60vh;min-height:260px}}
+</style>
