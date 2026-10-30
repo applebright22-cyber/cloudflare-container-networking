@@ -17,6 +17,7 @@ fallthrough = true
 
 [vars]
 VM_BASELINE_ID = "admin"
+ORACLE_ACCOUNT_EXEC_ENABLED = "true"
 
 [[r2_buckets]]
 binding = "VM_SNAPSHOTS"
