@@ -511,7 +511,8 @@ export default {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ account_id: accountId, name: username, baseline_id: baselineId,
           snapshot_identity: accountId, api_key_sha256: apiKeyHash, api_key: accountApiKey,
-          virtual_ip: allocation.virtual_ip, virtual_mac: allocation.virtual_mac }),
+          virtual_ip: allocation.virtual_ip, virtual_mac: allocation.virtual_mac,
+          oracle_execution_enabled: true }),
       });
       if (!created.ok) {
         await authRegistry.fetch("https://account-registry.internal/auth/status", {
@@ -882,7 +883,10 @@ export default {
         body: JSON.stringify({ account_id: accountId, token: sessionToken }),
       });
       if (!verified.ok) return json({ error: "unauthorized" }, 401);
-      const enabled = env.ORACLE_ACCOUNT_EXEC_ENABLED === "true";
+      const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      const capability = await accountRegistry.fetch("https://account-registry.internal/account/" + accountId + "/oracle-execution");
+      const capabilityData = capability.ok ? await capability.json() as { enabled?: unknown } : {};
+      const enabled = env.ORACLE_ACCOUNT_EXEC_ENABLED === "true" && capabilityData.enabled === true;
       return json({
         enabled,
         runtime: "oracle-host",
@@ -918,10 +922,13 @@ export default {
         body: JSON.stringify({ account_id: accountId, token: sessionToken }),
       });
       if (!verified.ok) return json({ error: "unauthorized" }, 401);
-      if (env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true") {
+      const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      const capability = await accountRegistry.fetch("https://account-registry.internal/account/" + accountId + "/oracle-execution");
+      const capabilityData = capability.ok ? await capability.json() as { enabled?: unknown } : {};
+      if (env.ORACLE_ACCOUNT_EXEC_ENABLED !== "true" || capabilityData.enabled !== true) {
         return json({
           error: "oracle_account_execution_disabled",
-          reason: "Oracle account execution is disabled in the Worker configuration."
+          reason: "Oracle execution is not enabled for this account."
         }, 503);
       }
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName("oracle"));
