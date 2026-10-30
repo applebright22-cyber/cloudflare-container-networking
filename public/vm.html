@@ -396,7 +396,7 @@ try{
   const wrapped=step.command+'; __vs_diag_rc=$?; printf "\\n__VS_DIAG_"; printf "%s" "'+nonce+'"; printf ":DONE:%s\\n" "$__vs_diag_rc"';
   try{
    if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
-   await window.emulator.keyboard_send_text(wrapped+'\\n',2);
+   await window.emulator.keyboard_send_text(wrapped+'\n',2);
   }catch(error){
    results.push({label:step.label,ok:false,interrupted:true,output:'Input delivery failed: '+(error&&error.message?error.message:String(error))});
    break;
@@ -406,7 +406,7 @@ try{
    await pause(200);
    last=screenText();
    const at=last.lastIndexOf(marker);
-   if(at>=0){completion=last.slice(at+marker.length).split(/\\r?\\n/,1)[0].trim();break;}
+   if(at>=0){completion=last.slice(at+marker.length).split(/\r?\n/,1)[0].trim();break;}
   }
   if(!completion){
    results.push({label:step.label,ok:false,interrupted:true,output:'Diagnostic interrupted: the overall 60-second diagnostic limit expired before the guest completion marker arrived. Earlier results are preserved.',screen:last});
@@ -418,7 +418,7 @@ try{
  }
  const ok=results.length===steps.length&&results.every(result=>result.ok&&!result.interrupted);
  const complete=results.length===steps.length&&results.every(result=>!result.interrupted);
- const output=results.map((result,index)=>'===== '+(index+1)+'. '+result.label+' =====\\n'+(result.interrupted?'[INCOMPLETE] ':result.ok?'[PASS] ':'[CHECK] ')+(result.output||'No guest output captured.')).join('\\n\\n');
+ const output=results.map((result,index)=>'===== '+(index+1)+'. '+result.label+' =====\\n'+(result.interrupted?'[INCOMPLETE] ':result.ok?'[PASS] ':'[CHECK] ')+(result.output||'No guest output captured.')).join('\n\n');
  return {ok,complete,results,output};
 }finally{window.vampireSquidRunNetworkCheck.busy=false;}
 };
