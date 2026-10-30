@@ -213,8 +213,7 @@ return;
 const failure={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport},dns:{id:a.dns.id,flags:33154,questions:a.dns.questions,answers:[]}};
 b.receive(Ib(b.eth_encoder_buf,failure));
 })();
-return!0
-}
+return!0}
 function Kb(a,b){let c={};c.eth={ethertype:2048,src:b.router_mac,dest:a.eth.src};c.ipv4={proto:17,src:b.router_ip,dest:b.vm_ip};c.udp={sport:67,dport:68};c.dhcp={htype:1,hlen:6,hops:0,xid:a.dhcp.xid,secs:0,flags:0,ciaddr:0,yiaddr:Db(b.vm_ip),siaddr:Db(b.router_ip),giaddr:Db(b.router_ip),chaddr:a.dhcp.chaddr};let d=[],e=a.dhcp.options.find(function(f){return 53===f[0]});e&&3===e[2]&&(a.dhcp.op=3);1===a.dhcp.op&&(c.dhcp.op=2,d.push(new Uint8Array([53,1,2])));3===a.dhcp.op&&(c.dhcp.op=2,d.push(new Uint8Array([53,
 1,5])),d.push(new Uint8Array([51,4,8,0,0,0])));a=[b.router_ip[0],b.router_ip[1],b.router_ip[2],b.router_ip[3]];d.push(new Uint8Array([1,4,255,255,255,0]));b.masquerade&&(d.push(new Uint8Array([3,4].concat(a))),d.push(new Uint8Array([6,4].concat(a))));d.push(new Uint8Array([54,4].concat(a)));d.push(new Uint8Array([60,3].concat(Bb)));d.push(new Uint8Array([255,0]));c.dhcp.options=d;b.receive(Ib(b.eth_encoder_buf,c))}
 function Lb(a,b){let c={};var d=(new DataView(a.buffer,a.byteOffset,a.byteLength)).getUint16(12),e={ethertype:d,dest:a.subarray(0,6),dest_s:Cb(a.subarray(0,6)),src:a.subarray(6,12),src_s:Cb(a.subarray(6,12))};c.eth=e;a=a.subarray(14,a.length);if(2048===d){var f=new DataView(a.buffer,a.byteOffset,a.byteLength),g=a[0]>>4&15;e=a[0]&15;var h=f.getUint8(1),l=f.getUint16(2);let m=f.getUint8(8);d=f.getUint8(9);f=f.getUint16(10);g={version:g,ihl:e,tos:h,len:l,ttl:m,proto:d,ip_checksum:f,src:a.subarray(12,
