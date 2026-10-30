@@ -188,30 +188,39 @@ n.setUint32(4,b.ntp.root_delay),n.setUint32(8,b.ntp.root_disp),n.setUint32(12,b.
 p+(m-p)),h.setUint16(0,n.sport),h.setUint16(2,n.dport),h.setUint32(4,n.seq),h.setUint32(8,n.ackn),h.setUint8(12,m>>2<<4),h.setUint8(13,l),h.setUint16(14,n.winsize),h.setUint16(16,0),h.setUint16(18,n.urgent||0),b.tcp_data&&(m+=Gb(20,b.tcp_data,h,a)),h.setUint16(16,Hb(m,(b.ipv4.src[0]<<8|b.ipv4.src[1])+(b.ipv4.src[2]<<8|b.ipv4.src[3])+(b.ipv4.dest[0]<<8|b.ipv4.dest[1])+(b.ipv4.dest[2]<<8|b.ipv4.dest[3])+6+m,h,a)),g+=m);f.setUint8(0,69);f.setUint8(1,b.ipv4.tos||0);f.setUint16(2,g);f.setUint16(4,b.ipv4.id||
 0);f.setUint8(6,64);f.setUint8(8,b.ipv4.ttl||32);f.setUint8(9,b.ipv4.proto);f.setUint16(10,0);Gb(12,b.ipv4.src,f,a);Gb(16,b.ipv4.dest,f,a);f.setUint16(10,Hb(20,0,f,a));e+=g}return d.call(c,0,e)}
 function Jb(a,b){
+const query=new Uint8Array(a.udp.data);
+const queryId=a.dns.id;
+const questions=a.dns.questions.map(question=>({...question}));
+const guestMac=a.eth.src;
+const guestIp=a.ipv4.src;
+const guestPort=a.udp.sport;
+const routerMac=b.router_mac;
+const routerIp=b.router_ip;
+const encoder=b.eth_encoder_buf;
 (async function(){
 const primary=b.doh_server||'cloudflare-dns.com';
 const resolvers=[primary,'dns.google'].filter((host,index,list)=>host&&list.indexOf(host)===index);
 for(const resolver of resolvers){
 try{
-const response=await fetch('https://'+resolver+'/dns-query',{method:'POST',headers:{'content-type':'application/dns-message','accept':'application/dns-message'},body:a.udp.data});
+const response=await fetch('https://'+resolver+'/dns-query',{method:'POST',headers:{'content-type':'application/dns-message','accept':'application/dns-message'},body:query});
 if(!response||!response.ok)continue;
 const contentType=response.headers&&response.headers.get?response.headers.get('content-type')||'':'';
 if(!/^application\/dns-message(?:\s*;|\s*$)/i.test(contentType))continue;
 const bytes=new Uint8Array(await response.arrayBuffer());
 if(bytes.length<12)continue;
 const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
-if(view.getUint16(0)!==a.dns.id)continue;
+if(view.getUint16(0)!==queryId)continue;
 const flags=view.getUint16(2);
 if(!(flags&32768))continue;
-if(view.getUint16(4)!==a.dns.questions.length)continue;
+if(view.getUint16(4)!==questions.length)continue;
 if((flags&15)===2)continue;
-const packet={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport,data:bytes}};
-b.receive(Ib(b.eth_encoder_buf,packet));
+const packet={eth:{ethertype:2048,src:routerMac,dest:guestMac},ipv4:{proto:17,src:routerIp,dest:guestIp},udp:{sport:53,dport:guestPort,data:bytes}};
+b.receive(Ib(encoder,packet));
 return;
 }catch(error){}
 }
-const failure={eth:{ethertype:2048,src:b.router_mac,dest:a.eth.src},ipv4:{proto:17,src:b.router_ip,dest:a.ipv4.src},udp:{sport:53,dport:a.udp.sport},dns:{id:a.dns.id,flags:33154,questions:a.dns.questions,answers:[]}};
-b.receive(Ib(b.eth_encoder_buf,failure));
+const failure={eth:{ethertype:2048,src:routerMac,dest:guestMac},ipv4:{proto:17,src:routerIp,dest:guestIp},udp:{sport:53,dport:guestPort},dns:{id:queryId,flags:33154,questions,answers:[]}};
+b.receive(Ib(encoder,failure));
 })();
 return!0}
 function Kb(a,b){let c={};c.eth={ethertype:2048,src:b.router_mac,dest:a.eth.src};c.ipv4={proto:17,src:b.router_ip,dest:b.vm_ip};c.udp={sport:67,dport:68};c.dhcp={htype:1,hlen:6,hops:0,xid:a.dhcp.xid,secs:0,flags:0,ciaddr:0,yiaddr:Db(b.vm_ip),siaddr:Db(b.router_ip),giaddr:Db(b.router_ip),chaddr:a.dhcp.chaddr};let d=[],e=a.dhcp.options.find(function(f){return 53===f[0]});e&&3===e[2]&&(a.dhcp.op=3);1===a.dhcp.op&&(c.dhcp.op=2,d.push(new Uint8Array([53,1,2])));3===a.dhcp.op&&(c.dhcp.op=2,d.push(new Uint8Array([53,
