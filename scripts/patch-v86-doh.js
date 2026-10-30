@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = "public/v86/libv86.js";
 const source = fs.readFileSync(path, "utf8");
 const start = source.indexOf("function Jb(a,b){");
-const end = source.indexOf("\\nfunction Kb", start);
+const end = source.indexOf("\nfunction Kb", start);
 if (start < 0 || end <= start) throw new Error("Could not locate the v86 DNS-over-HTTPS handler; refusing to publish an unpatched runtime.");
 const handler = [
 "function Jb(a,b){",
