@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080b1a"><title>Developer Workspace · VampireSquid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/workspace.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/studio.html"><span class="mark">🐙</span>Vampire<span>Squid</span></a>
+  <div class="top-actions"><span id="session-status" class="status-pill">Checking session…</span><a class="button ghost" href="/studio.html">← Studio</a><button class="button primary" id="save-project">Save project</button></div>
+</header>
+<main class="shell">
+  <aside class="rail">
+    <div class="rail-label">DEVELOPMENT</div>
+    <button class="rail-button active" data-panel="code">⌘ <span>Code editor</span></button>
+    <button class="rail-button" data-panel="preview">▣ <span>Live preview</span></button>
+    <button class="rail-button" data-panel="network">⌁ <span>Network Center</span></button>
+    <button class="rail-button" data-panel="terminal">›_ <span>Linux terminal</span></button>
+    <div class="rail-label">PROJECT</div>
+    <label class="project-label" for="project-select">Current project</label>
+    <select id="project-select"><option>Loading projects…</option></select>
+    <div class="rail-note">Your project files are saved inside your private VampireSquid project record.</div>
+  </aside>
+  <section class="main">
+    <section class="panel active" id="panel-code">
+      <div class="heading"><div><div class="eyebrow">BUILD YOUR APPLICATION</div><h1>Code workspace</h1><p>Edit your site files and preview changes without leaving VampireSquid.</p></div><button class="button ghost" id="starter-files">＋ Add starter files</button></div>
+      <div class="editor-grid">
+        <aside class="file-pane">
+          <div class="pane-head"><b>PROJECT FILES</b><button id="new-file" title="New file">＋</button></div>
+          <div id="file-list" class="file-list"></div>
+        </aside>
+        <div class="code-pane">
+          <div class="tabbar"><span id="active-file">index.html</span><div class="tab-actions"><button id="validate-html">Validate HTML</button><button id="format-json">Format JSON</button></div></div>
+          <textarea id="code-editor" spellcheck="false" aria-label="Code editor" autocapitalize="off" autocomplete="off"></textarea>
+          <div class="editor-foot"><span id="editor-message">Changes are local until you save.</span><span id="char-count">0 characters</span></div>
+        </div>
+      </div>
+    </section>
+    <section class="panel" id="panel-preview">
+      <div class="heading"><div><div class="eyebrow">INSTANT FEEDBACK</div><h1>Live preview</h1><p>Render the current HTML, CSS, and JavaScript in an isolated preview frame.</p></div><button class="button primary" id="refresh-preview">↻ Refresh preview</button></div>
+      <div class="preview-shell"><div class="preview-toolbar"><span><i></i> LOCAL PROJECT PREVIEW</span><span>Sandboxed frame</span></div><iframe id="preview-frame" title="Project live preview" sandbox="allow-scripts allow-forms"></iframe></div>
+    </section>
+    <section class="panel" id="panel-network">
+      <div class="heading"><div><div class="eyebrow">TINY CORE NETWORKING</div><h1>Network Center</h1><p>Run diagnostics inside the Tiny Core guest environment when it is booted and ready.</p></div><span class="status-pill" id="network-status">Guest not checked</span></div>
+      <div class="network-grid">
+        <article class="tool-card"><div class="tool-icon">⌁</div><h3>Network health</h3><p>Check interface addresses, routes, DNS, and external connectivity.</p><button class="button primary network-run" data-check="health">Run full check</button></article>
+        <article class="tool-card"><div class="tool-icon">▦</div><h3>IP & DHCP</h3><p>Inspect the guest interface and assigned IP configuration.</p><button class="button ghost network-run" data-check="ip">Check IP configuration</button></article>
+        <article class="tool-card"><div class="tool-icon">◎</div><h3>Gateway & routes</h3><p>Inspect the default gateway and routing table.</p><button class="button ghost network-run" data-check="routes">Inspect routes</button></article>
+        <article class="tool-card"><div class="tool-icon">⌕</div><h3>DNS resolution</h3><p>Read resolver settings and resolve a test hostname.</p><button class="button ghost network-run" data-check="dns">Test DNS</button></article>
+        <article class="tool-card"><div class="tool-icon">↗</div><h3>Internet reachability</h3><p>Send a small ICMP test to a public resolver.</p><button class="button ghost network-run" data-check="ping">Test internet</button></article>
+        <article class="tool-card"><div class="tool-icon">◇</div><h3>HTTPS connection</h3><p>Test outbound HTTPS from the guest if wget and CA certificates are available.</p><button class="button ghost network-run" data-check="https">Test HTTPS</button></article>
+      </div>
+      <div class="result-panel"><div class="pane-head"><b>DIAGNOSTIC OUTPUT</b><button id="clear-network">Clear</button></div><pre id="network-output">Select a diagnostic to run it in the Tiny Core guest. The browser VM must be logged in and fully booted.</pre></div>
+      <p class="safety-note">Diagnostics are limited to fixed, low-impact checks. This is not an open proxy or a general-purpose port scanner. Results are only reported after the guest command returns.</p>
+    </section>
+    <section class="panel" id="panel-terminal">
+      <div class="heading"><div><div class="eyebrow">PERSISTENT DEVELOPMENT ENVIRONMENT</div><h1>VampireSquid terminal</h1><p>Open the existing authenticated VM workspace alongside your project tools.</p></div><a class="button ghost" href="/vm.html?workspace=1" target="_blank" rel="noopener">Open in new tab ↗</a></div>
+      <div class="terminal-frame"><iframe id="terminal-frame" title="VampireSquid persistent terminal" src="/vm.html?workspace=1"></iframe></div>
+      <p class="safety-note">The terminal uses the existing account session and execution policy. This workspace does not enable remote execution or change VM permissions.</p>
+    </section>
+    <div class="global-foot">VampireSquid · Studio and developer tools · Changes sync to your account when saved.</div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/workspace.js" defer></script>
+</body></html>
