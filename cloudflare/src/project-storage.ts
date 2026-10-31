@@ -12,6 +12,42 @@ function json(data: unknown, status = 200): Response {
 /** Handles account-scoped project document requests. Returns null for unrelated paths. */
 export async function handleProjectStorageRequest(request: Request, env: ProjectStorageEnv): Promise<Response | null> {
   const url = new URL(request.url);
+  const publicSiteMatch = url.pathname.match(/^\/sites\/([a-f0-9]{32})\/?$/);
+  if (publicSiteMatch && request.method === "GET") {
+    const mapping = await env.PROJECT_STORAGE.get("published-sites/index/" + publicSiteMatch[1] + ".json");
+    if (!mapping) return json({ error: "site_not_found" }, 404);
+    const object = await env.PROJECT_STORAGE.get("published-sites/" + publicSiteMatch[1] + "/index.html");
+    if (!object) return json({ error: "published_file_missing" }, 404);
+    return new Response(object.body, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60", "x-content-type-options": "nosniff" } });
+  }
+  const publishMatch = url.pathname === "/api/studio/publish";
+  if (publishMatch) {
+    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+    const accountId = url.searchParams.get("account_id") ?? "";
+    const sessionToken = request.headers.get("authorization")?.startsWith("Bearer ") ? request.headers.get("authorization")!.slice(7) : "";
+    if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) return json({ error: "unauthorized" }, 401);
+    const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+    const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account_id: accountId, token: sessionToken }) });
+    if (!verified.ok) return json({ error: "unauthorized" }, 401);
+    const body = await request.json().catch(() => null) as { project_id?: unknown; html?: unknown } | null;
+    if (typeof body?.project_id !== "string" || !/^[a-z0-9-]{3,80}$/.test(body.project_id) || typeof body.html !== "string") return json({ error: "invalid_publish_request" }, 400);
+    const htmlBytes = new TextEncoder().encode(body.html);
+    if (htmlBytes.byteLength < 30 || htmlBytes.byteLength > 1024 * 1024) return json({ error: "published_site_size_invalid", max_bytes: 1048576 }, 413);
+    const projectKey = "accounts/" + accountId + "/projects/" + body.project_id + ".json";
+    const projectObject = await env.PROJECT_STORAGE.get(projectKey);
+    if (!projectObject) return json({ error: "project_not_found" }, 404);
+    let project: Record<string, unknown>;
+    try { project = await projectObject.json() as Record<string, unknown>; } catch { return json({ error: "project_record_invalid" }, 500); }
+    if (project.id !== body.project_id) return json({ error: "project_owner_mismatch" }, 403);
+    const slug = typeof project.publishSlug === "string" && /^[a-f0-9]{32}$/.test(project.publishSlug) ? project.publishSlug : crypto.randomUUID().replace(/-/g, "");
+    project.publishSlug = slug;
+    project.publishedAt = new Date().toISOString();
+    await env.PROJECT_STORAGE.put(projectKey, JSON.stringify(project), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
+    await env.PROJECT_STORAGE.put("published-sites/" + slug + "/index.html", htmlBytes, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
+    await env.PROJECT_STORAGE.put("published-sites/index/" + slug + ".json", JSON.stringify({ account_id: accountId, project_id: body.project_id, published_at: project.publishedAt }), { httpMetadata: { contentType: "application/json" } });
+    return json({ ok: true, project_id: body.project_id, published_at: project.publishedAt, url: new URL("/sites/" + slug + "/", request.url).toString() });
+  }
+
   if (url.pathname !== "/api/studio/projects" && !/^\/api\/studio\/projects\/[a-z0-9-]{3,80}$/.test(url.pathname)) return null;
   if (request.method !== "GET" && request.method !== "PUT" && request.method !== "DELETE") return json({ error: "method_not_allowed" }, 405);
   const accountId = url.searchParams.get("account_id") ?? "";
