@@ -31,8 +31,24 @@ Studio's Publishing view uploads the generated page HTML to account-authenticate
 
 Custom-domain mapping, multi-file static asset publishing, and an automated TinyCore-to-publish build handoff are not part of this first publishing increment yet.
 
-## Current payment scope
+## Published Store checkout (PayPal)
 
-PayPal supports a merchant-owned REST app, SDK approval UI, server-side order creation, server-side capture, and capture amount/status verification. The current product is not PayPal partner onboarding; that still requires PayPal approval.
+The Store template renders a real cart and sends product IDs and quantities to the public checkout endpoint on the published site. The Worker reads the published page's product catalog, validates product IDs and quantities, calculates the total server-side, creates an account-scoped checkout record, and returns the hosted checkout URL. Customers are redirected to `/checkout.html`, where the official PayPal JavaScript SDK approves the order. The Worker creates and captures the PayPal order with the merchant's own REST credentials and confirms the completed USD capture amount before marking the checkout paid.
 
-Crypto remains the existing Base USDC wallet/manual transaction-hash flow. Store product catalogs, trusted server-side price lookup, embedded cart/checkout in generated Store templates, order-management screens, webhook reconciliation, and platform fees still need implementation before describing the full commerce platform as complete.
+The browser-provided cart total is never used as the amount charged. Product prices are read from the published catalog. Store checkout is PayPal-only at this stage; the Store template does not claim to accept crypto.
+
+To test:
+1. Configure `PAYMENTS_ENCRYPTION_KEY` as a Worker secret.
+2. Connect a merchant PayPal Sandbox REST app in Studio → Settings → Merchant payment connections.
+3. Enable PayPal payment settings.
+4. Create a Store project and publish it.
+5. Open the published site, add products to the bag, and complete a Sandbox checkout using PayPal Sandbox buyer credentials.
+6. Verify the checkout status is `paid` only after the server confirms a completed capture.
+
+## Payment boundaries and remaining production work
+
+PayPal supports a merchant-owned REST app, SDK approval UI, server-side order creation, server-side capture, and capture amount/status verification. This is not PayPal partner onboarding; marketplace/partner onboarding, platform fees, and split payouts require separate PayPal approval and integration.
+
+The current Store catalog is sourced from the published HTML. A production catalog editor and normalized server-side product/order database are still needed before large catalogs, stock reservations, tax/shipping, refunds, subscriptions, or multi-currency commerce. Checkout records are stored in R2; the platform does not yet provide a complete merchant order-management screen, PayPal webhook reconciliation, or refund controls.
+
+Crypto remains the separate Base USDC wallet/manual transaction-hash flow. The published Store template currently enables PayPal checkout only.
