@@ -103,7 +103,7 @@ test("restored VM does not mark boot complete before the command probe passes", 
 });
 test("restored guest network recovery reapplies its MAC, renews DHCP, and verifies DNS/HTTP/HTTPS", () => {
   const start = inline[1].indexOf("async function initializeRestoredGuestNetwork(){");
-  const end = inline[1].indexOf("\\nfunction startBootMonitor(){", start);
+  const end = inline[1].indexOf("\nfunction startBootMonitor(){", start);
   assert.ok(start >= 0 && end > start, "restored network recovery helper should exist");
   const network = inline[1].slice(start, end);
   assert.ok(network.includes("/sbin/ifconfig eth0 hw ether "), "reapply the assigned MAC after restoring the adapter");
