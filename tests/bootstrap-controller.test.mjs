@@ -106,8 +106,10 @@ test("GUI startup handles optional Syslinux boot prompt and bounded shell proof 
     assert.ok(normalized.includes(marker), "expected startup marker: " + marker);
   }
   assert.ok(normalized.includes("nslookup google.com"), "startup must verify DNS resolution");
-  assert.ok(normalized.includes("wget -T 30 -t 2 -S -O /dev/null https://"), "startup must verify HTTPS with bounded request retries");
-  assert.ok(normalized.includes("DNS or HTTPS preflight failed; baseline snapshot will not be saved"), "a failed network preflight must block baseline snapshot creation");
+  assert.ok(normalized.includes("wget -T 30 -t 2 -S -O /dev/null http://neverssl.com/"), "startup must verify external plain HTTP over TCP");
+  assert.ok(normalized.includes("wget -T 30 -t 2 -S -O /dev/null https://www.google.com/generate_204"), "startup must verify external HTTPS over TCP");
+  assert.ok(normalized.includes("egress.length!==3"), "startup must require DNS, HTTP, and HTTPS checks to pass");
+  assert.ok(normalized.includes("DNS, HTTP, or HTTPS preflight failed; baseline snapshot will not be saved"), "a failed network preflight must block baseline snapshot creation");
 });
 
 test("TLS installs run in the foreground before HTTPS and certificate checks", () => {
