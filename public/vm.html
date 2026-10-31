@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/vampiresquid-mark.svg">
 <title>Developer Workspace · VampireSquid</title>
 <style>
 body{margin:0;background:#111;color:#ddd;font-family:monospace}#login-panel{padding:12px;background:#181818;border-bottom:1px solid #333}#login-panel h2{font-size:16px;margin:0 0 8px}#login-panel p{font-size:12px;line-height:1.5}#login-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}#login-form input,#login-form select{font:inherit;padding:7px;max-width:100%}#login-message{color:#ffc66d}body:not(.logged-in) #status,body:not(.logged-in) #toolbar,body:not(.logged-in) #results,body:not(.logged-in) #myst-log,body:not(.logged-in) #screen_container{display:none}
@@ -91,7 +92,7 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
 </head>
 <body>
 <section id="login-panel">
-  <h2>🦑 VampireSquid · Developer Workspace</h2>
+  <h2 style="display:flex;align-items:center;gap:10px"><img src="/vampiresquid-mark.svg" alt="" width="36" height="36"> VampireSquid · Developer Workspace</h2>
   <p>Your optional Linux development environment. Your account and saved guest remain managed by the existing Cloudflare service. <a href="/studio.html">← Back to VampireSquid Studio</a> · <a href="/signup.html">Create an account</a></p>
   <form id="login-form">
     <label for="access-type">Account</label>
