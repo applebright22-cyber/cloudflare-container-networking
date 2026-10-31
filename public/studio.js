@@ -84,10 +84,12 @@ busybox httpd -p 8080 -h "$ROOT"
 `}
 };
 async function ensureCockpitStarterProject(){
- if(accountId!=='acct-0330bf66-258b-43b5-ae56-06959b936655'||!sessionToken||projects.some(p=>p.id==='vs-vampiresquid-cockpit-lab'))return;
+ if(accountId!=='acct-0330bf66-258b-43b5-ae56-06959b936655'||!sessionToken)return;
+ const existing=projects.find(p=>p.id==='vs-vampiresquid-cockpit-lab');
+ if(existing){let changed=false;existing.files=existing.files&&typeof existing.files==='object'?existing.files:{};existing.plugins=Array.isArray(existing.plugins)?existing.plugins:[];for(const pluginId of Object.keys(VS_PLUGIN_PACKS)){const pack=VS_PLUGIN_PACKS[pluginId];if(!existing.plugins.includes(pluginId)||existing.files[pack.file]!==pack.source){existing.files[pack.file]=pack.source;existing.files['plugins/'+pluginId+'.plugin.json']=JSON.stringify({id:pluginId,name:pack.name,version:pack.version,runtime:pluginId==='android-companion'?'android-termux':'TinyCore Linux',entrypoint:pack.entrypoint,description:pack.description},null,2);if(!existing.plugins.includes(pluginId))existing.plugins.push(pluginId);changed=true}}if(changed){existing.updated=new Date().toISOString();persist();await syncProject(existing);renderProjects();toast('Cockpit plugins updated, including Android Companion and Google DNS fallback.')}return}
  const now=new Date().toISOString();
  const p={id:'vs-vampiresquid-cockpit-lab',name:'VampireSquid Cockpit Lab',kind:'Developer environment · TinyCore',created:now,updated:now,title:'VampireSquid Cockpit Lab',description:'A TinyCore developer environment with exclusive VampireSquid plugins.',button:'Open Cockpit',accent:'#00d5ff',bg:'#10152b',files:businessTemplateFiles('Cockpit'),plugins:[],cloudSaved:false};
- for(const pluginId of Object.keys(VS_PLUGIN_PACKS)){const pack=VS_PLUGIN_PACKS[pluginId];p.files[pack.file]=pack.source;p.files['plugins/'+pluginId+'.plugin.json']=JSON.stringify({id:pluginId,name:pack.name,version:pack.version,runtime:'TinyCore Linux',entrypoint:pack.entrypoint,description:pack.description},null,2);p.plugins.push(pluginId)}
+ for(const pluginId of Object.keys(VS_PLUGIN_PACKS)){const pack=VS_PLUGIN_PACKS[pluginId];p.files[pack.file]=pack.source;p.files['plugins/'+pluginId+'.plugin.json']=JSON.stringify({id:pluginId,name:pack.name,version:pack.version,runtime:pluginId==='android-companion'?'android-termux':'TinyCore Linux',entrypoint:pack.entrypoint,description:pack.description},null,2);p.plugins.push(pluginId)}
  projects.unshift(p);persist();renderProjects();await syncProject(p);renderProjects();toast('VampireSquid Cockpit Lab added with three TinyCore plugins.');
 }
 function renderCockpit(){
