@@ -1,4 +1,0 @@
-# This 28 MiB reference ISO is kept in the repository for diagnostics but is not used by the deployed v86 runtime.
-# Exclude it from Worker static assets because it exceeds the 25 MiB per-asset limit.
-/boot/TinyCore_Pure64-11.0.iso
-/boot/TinyCore_Pure64-11.0.iso.sha256

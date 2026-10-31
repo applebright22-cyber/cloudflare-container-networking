@@ -1,9 +1,0 @@
-name = "headless-v86-workerd-smoke"
-main = "src/headless-v86-smoke-worker.ts"
-compatibility_date = "2026-10-07"
-workers_dev = false
-
-[[rules]]
-type = "CompiledWasm"
-globs = ["src/generated/v86.wasm"]
-fallthrough = true

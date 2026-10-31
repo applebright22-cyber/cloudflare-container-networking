@@ -707,6 +707,23 @@ export default {
       return json({ ok: true, deleted: true, account_id: accountId });
     }
 
+    if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+      let body: { account_id?: unknown; session_token?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const accountId = typeof body.account_id === "string" ? body.account_id : "";
+      const sessionToken = typeof body.session_token === "string" ? body.session_token : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const revoked = await authRegistry.fetch("https://account-registry.internal/auth/logout", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, token: sessionToken }),
+      });
+      if (!revoked.ok) return json({ error: "logout_failed" }, 502);
+      return json({ ok: true });
+    }
+
     if (url.pathname === "/api/auth/session" && request.method === "POST") {
       let body: { account_id?: unknown; session_token?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }

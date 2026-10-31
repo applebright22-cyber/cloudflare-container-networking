@@ -289,6 +289,20 @@ export class AccountRegistry extends DurableObject {
       return json({ ok: true, account_id: session.account_id });
     }
 
+    if (url.pathname === "/auth/logout" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { account_id?: unknown; token?: unknown } | null;
+      if (typeof body?.account_id !== "string" || !validAccountId(body.account_id) ||
+          typeof body?.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const tokenHash = await this.sha256(body.token);
+      const key = "auth-session:" + tokenHash;
+      const session = await this.ctx.storage.get<{ account_id: string; expires_at: number }>(key);
+      if (!session || session.account_id !== body.account_id) return json({ ok: true, revoked: false });
+      await this.ctx.storage.delete(key);
+      return json({ ok: true, revoked: true });
+    }
+
     // Serialized Durable Object allocation makes signup retries idempotent and
     // prevents concurrent accounts from receiving the same virtual IPv4 address.
     if (url.pathname === "/network/allocate" && request.method === "POST") {
