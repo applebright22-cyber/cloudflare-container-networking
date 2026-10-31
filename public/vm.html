@@ -795,24 +795,42 @@ async function initializeRestoredGuestNetwork(){
 const ip=String(window.snapshotVirtualIp||'');
 const mac=String(window.snapshotVirtualMac||'').toLowerCase();
 const gateway=String(window.snapshotRouterIp||'');
-if(!/^10\\.240\\.\\d{1,3}\\.(?:[2-9]|[1-9]\\d|1\\d\\d|2[0-4]\\d|25[0-4])$/.test(ip))return {ok:false,reason:'invalid restored guest IPv4 identity'};
+if(!/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(ip))return {ok:false,reason:'invalid restored guest IPv4 identity'};
 if(!/^02(?::[0-9a-f]{2}){5}$/.test(mac)||mac==='02:ff:ff:ff:ff:ff')return {ok:false,reason:'invalid restored guest MAC address'};
-if(!/^10\\.240\\.\\d{1,3}\\.1$/.test(gateway))return {ok:false,reason:'invalid restored guest gateway'};
+if(!/^10\.240\.\d{1,3}\.1$/.test(gateway))return {ok:false,reason:'invalid restored guest gateway'};
 statusText('Restoring the guest network interface and requesting its account-specific DHCP lease…');
 const dhcpMarker='__V86_RESTORE_DHCP_DONE__';
-const rootCommand=String.raw\`set +e; /sbin/modprobe 8390 2>/dev/null; /sbin/modprobe ne2k-pci 2>/dev/null; /sbin/ifconfig eth0 down 2>/dev/null; /sbin/ifconfig eth0 hw ether __MAC__ || exit 21; /sbin/ifconfig eth0 up || exit 22; actual_mac=$(/sbin/ifconfig eth0 | sed -n "s/.*HWaddr \\\\([^ ]*\\\\).*/\\\\1/p" | tr A-F a-f); [ "$actual_mac" = "__MAC__" ] || { echo RESTORE_MAC_FAILED:$actual_mac; exit 23; }; n=1; while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; actual_ip=$(/sbin/ifconfig eth0 | sed -n "s/.*inet addr:\\\\([^ ]*\\\\).*/\\\\1/p"); actual_gateway=$(/sbin/route -n | while read destination gateway mask flags metric ref use iface; do [ "$destination" = "0.0.0.0" ] && { echo "$gateway"; break; }; done); if [ "$actual_ip" = "__IP__" ] && [ "$actual_gateway" = "__GATEWAY__" ]; then echo RESTORE_DHCP_OK; exit 0; fi; n=$((n+1)); sleep 1; done; echo RESTORE_DHCP_FAILED; cat /tmp/vs-restore-dhcp.log; /sbin/ifconfig eth0; /sbin/route -n; exit 24\`
-.replaceAll('__MAC__',mac).replaceAll('__IP__',ip).replaceAll('__GATEWAY__',gateway);
+const rootCommand=[
+'set +e',
+'/sbin/modprobe 8390 2>/dev/null',
+'/sbin/modprobe ne2k-pci 2>/dev/null',
+'/sbin/ifconfig eth0 down 2>/dev/null',
+'/sbin/ifconfig eth0 hw ether '+mac+' || exit 21',
+'/sbin/ifconfig eth0 up || exit 22',
+'actual_mac=$(/sbin/ifconfig eth0 | sed -n "s/.*HWaddr \\([^ ]*\\).*/\\1/p" | tr A-F a-f)',
+'[ "$actual_mac" = "'+mac+'" ] || { echo RESTORE_MAC_FAILED:$actual_mac; exit 23; }',
+'n=1',
+'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; actual_ip=$(/sbin/ifconfig eth0 | sed -n "s/.*inet addr:\\([^ ]*\\).*/\\1/p"); actual_gateway=$(/sbin/route -n | while read destination gateway mask flags metric ref use iface; do [ "$destination" = "0.0.0.0" ] && { echo "$gateway"; break; }; done); if [ "$actual_ip" = "'+ip+'" ] && [ "$actual_gateway" = "'+gateway+'" ]; then echo RESTORE_DHCP_OK; exit 0; fi; n=$((n+1)); sleep 1; done',
+'echo RESTORE_DHCP_FAILED',
+'cat /tmp/vs-restore-dhcp.log',
+'/sbin/ifconfig eth0',
+'/sbin/route -n',
+'exit 24'
+].join('; ');
 const dhcpCommand="sudo -n sh -c '"+rootCommand+"'; rc=$?; echo "+dhcpMarker+":$rc";
 report('\\n===== RESTORED GUEST NETWORK INITIALIZATION =====\\nApplying the account MAC, renewing DHCP, and verifying the expected IP and gateway.\\n');
 try{await sendVmCommand(dhcpCommand+'\\n');}catch(error){return {ok:false,reason:'could not start restored guest DHCP: '+(error&&error.message?error.message:String(error))};}
-const dhcpDeadline=Date.now()+180000;
-let dhcpResult=null;
-while(Date.now()<dhcpDeadline){
-const output=screenText().replace(/\\r/g,'');
-const line=output.split('\\n').find(item=>item.includes(dhcpMarker));
-if(line){dhcpResult=line.slice(line.indexOf(dhcpMarker)+dhcpMarker.length).trim().replace(/^:/,'');break;}
+async function waitForMarker(marker,timeoutMs){
+const deadline=Date.now()+timeoutMs;
+while(Date.now()<deadline){
+const output=screenText().replace(/\r/g,'');
+const line=output.split('\n').find(item=>item.includes(marker));
+if(line)return line.slice(line.indexOf(marker)+marker.length).trim().replace(/^:/,'');
 await new Promise(resolve=>setTimeout(resolve,50));
 }
+return null;
+}
+const dhcpResult=await waitForMarker(dhcpMarker,180000);
 if(dhcpResult!=='0'){
 const reason=dhcpResult===null?'DHCP initialization marker timed out':'DHCP initialization exited with status '+dhcpResult;
 report('\\n*** RESTORED GUEST DHCP FAILED: '+reason+' ***\\n');
@@ -822,14 +840,7 @@ const egressMarker='__V86_RESTORE_EGRESS_DONE__';
 const egressCommand='nslookup google.com >/tmp/vs-restore-dns.log 2>&1; dns_rc=$?; wget -T 30 -t 1 -S -O /dev/null http://www.google.com/ >/tmp/vs-restore-http.log 2>&1; http_rc=$?; wget -T 30 -t 1 -S -O /dev/null https://www.google.com/generate_204 >/tmp/vs-restore-https.log 2>&1; https_rc=$?; cat /tmp/vs-restore-dns.log /tmp/vs-restore-http.log /tmp/vs-restore-https.log; echo '+egressMarker+':$dns_rc:$http_rc:$https_rc';
 statusText('DHCP restored; verifying DNS, HTTP, and HTTPS before marking the VM ready…');
 try{await sendVmCommand(egressCommand+'\\n');}catch(error){return {ok:false,reason:'could not start restored guest egress checks: '+(error&&error.message?error.message:String(error))};}
-const egressDeadline=Date.now()+120000;
-let egressResult=null;
-while(Date.now()<egressDeadline){
-const output=screenText().replace(/\\r/g,'');
-const line=output.split('\\n').find(item=>item.includes(egressMarker));
-if(line){egressResult=line.slice(line.indexOf(egressMarker)+egressMarker.length).trim().replace(/^:/,'');break;}
-await new Promise(resolve=>setTimeout(resolve,50));
-}
+const egressResult=await waitForMarker(egressMarker,120000);
 if(egressResult!=='0:0:0'){
 const reason=egressResult===null?'DNS/HTTP/HTTPS verification timed out':'DNS/HTTP/HTTPS checks failed ('+(egressResult||'no result')+')';
 report('\\n*** RESTORED GUEST NETWORK NOT READY: '+reason+' ***\\n');
@@ -838,7 +849,6 @@ return {ok:false,reason};
 report('\\nRESTORED_GUEST_NETWORK_READY=1\\nDHCP_IP='+ip+'\\nDHCP_GATEWAY='+gateway+'\\nDHCP_MAC='+mac+'\\nDNS_HTTP_HTTPS=PASS\\n');
 return {ok:true,ip,gateway,mac};
 }
-
 function startBootMonitor(){
 statusText('Tiny Core is booting; waiting up to five minutes for a stable shell prompt.');
 const bootStartedAt=Date.now();
