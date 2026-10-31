@@ -101,3 +101,18 @@ test("restored VM does not mark boot complete before the command probe passes", 
   assert.match(inline[1], /const virtualMac=.*?'02:00:00:00:00:00'/, "admin fallback MAC must be the reserved valid address");
   assert.doesNotMatch(inline[1], /const virtualMac=.*?'02:ff:ff:ff:ff:ff'/, "do not use the all-FF synthetic MAC fallback");
 });
+test("restored guest network recovery reapplies its MAC, renews DHCP, and verifies DNS/HTTP/HTTPS", () => {
+  const start = inline[1].indexOf("async function initializeRestoredGuestNetwork(){");
+  const end = inline[1].indexOf("\\nfunction startBootMonitor(){", start);
+  assert.ok(start >= 0 && end > start, "restored network recovery helper should exist");
+  const network = inline[1].slice(start, end);
+  assert.ok(network.includes("/sbin/ifconfig eth0 hw ether "), "reapply the assigned MAC after restoring the adapter");
+  assert.ok(network.includes("/sbin/udhcpc -f -n -q -i eth0"), "renew DHCP with bounded retries");
+  assert.ok(network.includes("RESTORE_DHCP_OK"), "require the expected guest IP and gateway before continuing");
+  assert.ok(network.includes("nslookup google.com"), "verify DNS after DHCP");
+  assert.ok(network.includes("http://www.google.com/"), "verify outbound HTTP after DHCP");
+  assert.ok(network.includes("https://www.google.com/generate_204"), "verify outbound HTTPS after DHCP");
+  assert.ok(network.includes("RESTORED_GUEST_NETWORK_READY=1"), "emit a final network-ready marker");
+  assert.ok(!network.includes("saveVmState"), "network repair must not overwrite the saved snapshot");
+});
+
