@@ -189,8 +189,8 @@ export class AccountRegistry extends DurableObject {
           (body.action !== "signup" && body.action !== "login")) return json({ error: "invalid_rate_limit_key" }, 400);
       const now = Date.now();
       const windowMs = body.action === "signup" ? 60 * 60 * 1000 : 15 * 60 * 1000;
-      // Testing phase: allow repeated signup attempts while still bounding accidental loops.
-      const limit = body.action === "signup" ? 10 : 30;
+      // Per-IP limits keep automated signup and password guessing bounded.
+      const limit = body.action === "signup" ? 5 : 10;
       const key = "auth-rate:" + body.action + ":" + await this.sha256(body.ip);
       const old = await this.ctx.storage.get<number[]>(key) ?? [];
       const recent = old.filter((time) => Number.isFinite(time) && now - time < windowMs);
