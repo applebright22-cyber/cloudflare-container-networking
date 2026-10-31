@@ -1,8 +1,14 @@
 name: Workerd guest snapshot round-trip
 
 on:
-  # Long snapshot test is manual-only; Oracle connection checks should not wait on it.
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts"
+      - "cloudflare/src/wisp-relay.ts"
+      - "cloudflare/src/wisp-stream.ts"
+      - ".github/workflows/headless-v86-snapshot-roundtrip.yml"
 
 jobs:
   guest-snapshot-roundtrip:
