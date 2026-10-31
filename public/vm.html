@@ -244,8 +244,10 @@ async function checkAccountExecution(){
   toggle.textContent="Oracle terminal (checking…)";
   if(window.snapshotIdentity==='admin'&&window.snapshotAdminCode){
     try{
-      const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
-      const data=await response.json().catch(()=>({}));
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),10000);
+      let response,data;
+      try{response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store',signal:controller.signal});data=await response.json().catch(()=>({}));}finally{clearTimeout(timeout)}
       if(response.ok&&data.status==='online'){
         oracleExecutionAvailable=true;
         toggle.hidden=false;
@@ -264,9 +266,11 @@ async function checkAccountExecution(){
   }
   if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken){toggle.textContent="Oracle terminal unavailable";return;}
   try{
-    const response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
-      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});
-    const data=await response.json().catch(()=>({}));
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),10000);
+    let response,data;
+    try{response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',signal:controller.signal,
+      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});data=await response.json().catch(()=>({}));}finally{clearTimeout(timeout)}
     if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
     if(data.enabled===true){
       oracleExecutionAvailable=true;
@@ -845,7 +849,7 @@ const rootCommand=[
 '/sbin/ifconfig eth0 up || exit 22',
 '/sbin/ifconfig eth0 | grep -qi "'+mac+'" || { echo RESTORE_MAC_FAILED; exit 23; }',
 'n=1',
-'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; [ "$dhcp_rc" -eq 0 ] && /sbin/ifconfig eth0 | grep -q "inet addr:'+ip+' " && /sbin/route -n | grep -q "0.0.0.0 *'+gateway+' " && { echo RESTORE_DHCP_OK; exit 0; }; n=$((n+1)); sleep 1; done',
+'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; if /sbin/ifconfig eth0 | grep -Fq "inet addr:'+ip+' " && /sbin/route -n | awk -v gw="'+gateway+'" '$1=="0.0.0.0" && $2==gw {found=1} END {exit !found}'; then echo RESTORE_DHCP_OK; echo RESTORE_UDHCPC_EXIT=$dhcp_rc; exit 0; fi; n=$((n+1)); sleep 1; done',
 'echo RESTORE_DHCP_FAILED',
 'cat /tmp/vs-restore-dhcp.log',
 '/sbin/ifconfig eth0',
