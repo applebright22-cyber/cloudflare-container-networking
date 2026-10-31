@@ -232,7 +232,7 @@ async function loadPaymentSettings(){
   if(cryptoStatus)cryptoStatus.textContent='Payment settings loaded.';
  }catch(error){if(status)status.textContent=error.message}
 }
-async async function connectPaypal(){
+async function connectPaypal(){
  const status=$('#payment-paypal-status'),button=$('#payment-paypal-connect');
  const clientId=$('#payment-paypal-client').value.trim(),secret=$('#payment-paypal-secret').value.trim(),mode=$('#payment-paypal-mode').value;
  if(!clientId||!secret){status.textContent='Enter both your PayPal Client ID and Secret.';return}
