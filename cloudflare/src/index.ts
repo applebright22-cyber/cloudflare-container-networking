@@ -648,6 +648,65 @@ export default {
       return json({ ok: true, account_id: accountId, api_key: apiKey, notice: "Copy this key now. It will not be shown again." });
     }
 
+    // Permanently delete the authenticated user's account and all account-scoped data.
+    if (url.pathname === "/api/account/delete" && request.method === "DELETE") {
+      let body: { account_id?: unknown; session_token?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const accountId = typeof body.account_id === "string" ? body.account_id : "";
+      const sessionToken = typeof body.session_token === "string" ? body.session_token : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || !/^[a-f0-9]{64}$/.test(sessionToken)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/auth/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, token: sessionToken }),
+      });
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+
+      const failures: string[] = [];
+      const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      const accountData = await accountRegistry.fetch("https://account-registry.internal/admin/purge-account-data", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      }).catch(() => new Response("account_data_purge_failed", { status: 500 }));
+      if (!accountData.ok) failures.push("account_registry");
+
+      const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(accountId));
+      const provisionerData = await provisioner.fetch("https://account-provisioner.internal/purge", { method: "POST" })
+        .catch(() => new Response("provisioner_purge_failed", { status: 500 }));
+      if (!provisionerData.ok) failures.push("provisioner");
+
+      for (const [bucket, prefix, label] of [
+        [env.VM_SNAPSHOTS, "vm-snapshots/" + accountId + "/", "snapshots"],
+        [env.PROJECT_STORAGE, "accounts/" + accountId + "/projects/", "projects"],
+      ] as Array<[R2Bucket, string, string]>) {
+        let cursor: string | undefined;
+        do {
+          const page = await bucket.list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) }).catch(() => null);
+          if (!page) { failures.push(label + "_list"); break; }
+          if (page.objects.length) {
+            try { await bucket.delete(page.objects.map((object) => object.key)); }
+            catch { failures.push(label + "_delete"); break; }
+          }
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+      }
+      try { await env.VM_SNAPSHOTS.delete("runtime-jobs/" + accountId + ".json"); }
+      catch { failures.push("runtime_job"); }
+
+      // Keep the auth record until all account data is removed so a failed deletion can be retried.
+      if (failures.length) return json({ error: "account_data_cleanup_incomplete", failures }, 207);
+      const authPurge = await authRegistry.fetch("https://account-registry.internal/admin/purge-account", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      }).catch(() => new Response("auth_purge_failed", { status: 500 }));
+      if (!authPurge.ok) return json({ error: "account_auth_cleanup_failed" }, 502);
+      const result = await authPurge.json().catch(() => ({})) as { verification?: { passed?: unknown } };
+      if (result.verification?.passed !== true) return json({ error: "account_auth_cleanup_unverified" }, 502);
+      return json({ ok: true, deleted: true, account_id: accountId });
+    }
+
     if (url.pathname === "/api/auth/session" && request.method === "POST") {
       let body: { account_id?: unknown; session_token?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
