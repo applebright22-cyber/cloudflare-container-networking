@@ -106,7 +106,7 @@ test("GUI startup handles optional Syslinux boot prompt and bounded shell proof 
     assert.ok(normalized.includes(marker), "expected startup marker: " + marker);
   }
   assert.ok(normalized.includes("nslookup google.com"), "startup must verify DNS resolution");
-  assert.ok(normalized.includes("wget -T 30 -t 2 -S -O /dev/null http://example.com/"), "startup must verify external plain HTTP over TCP");
+  assert.ok(normalized.includes("wget -T 30 -t 2 -S -O /dev/null http://www.google.com/"), "startup must verify external plain HTTP over TCP");
   assert.ok(normalized.includes("wget -T 30 -t 2 -S -O /dev/null https://www.google.com/generate_204"), "startup must verify external HTTPS over TCP");
   assert.ok(normalized.includes("egress.length!==3"), "startup must require DNS, HTTP, and HTTPS checks to pass");
   assert.ok(normalized.includes("DNS, HTTP, or HTTPS preflight failed; baseline snapshot will not be saved"), "a failed network preflight must block baseline snapshot creation");
@@ -134,7 +134,7 @@ test("TLS installs run in the foreground before HTTPS and certificate checks", (
   const commandList = html.slice(commandListStart, commandListEnd);
   assert.ok(commandList.indexOf("tce-load -i openssl-1.1.1") < commandList.indexOf("tce-load -i ca-certificates"));
   assert.ok(commandList.indexOf("tce-load -i ca-certificates") >= 0, "CA installation must run before snapshot save");
-  assert.ok(commandList.includes("http://example.com/"), "guest HTTP egress preflight must run before snapshot preparation completes");
+  assert.ok(commandList.includes("http://www.google.com/"), "guest HTTP egress preflight must run before snapshot preparation completes");
   assert.ok(commandList.includes("https://www.google.com/generate_204"), "guest HTTPS egress preflight must run before snapshot preparation completes");
   assert.ok(commandList.indexOf("__CA_CERTIFICATES_INSTALL_DONE:") < commandList.indexOf("__EGRESS_PREFLIGHT_DONE:"), "DNS/HTTPS checks must run after CA installation");
 });
@@ -158,7 +158,7 @@ test("bootstrap waits for a fresh completion marker before advancing", () => {
   assert.ok(startup.includes("CA_BUNDLE_PATH=$CA_BUNDLE"), "startup must verify the CA bundle");
   assert.ok(html.includes("ca_certificates_passed"), "saved baseline manifest must record CA certificate verification");
   assert.ok(startup.includes("nslookup google.com"), "startup must require a successful DNS lookup");
-  assert.ok(startup.includes("wget -T 30 -t 2 -S -O /dev/null http://example.com/"), "startup must verify external plain HTTP over TCP");
+  assert.ok(startup.includes("wget -T 30 -t 2 -S -O /dev/null http://www.google.com/"), "startup must verify external plain HTTP over TCP");
   assert.ok(startup.includes("wget -T 30 -t 2 -S -O /dev/null https://www.google.com/generate_204"), "startup must verify external HTTPS over TCP");
   assert.ok(startup.includes("egress.length!==3"), "startup must require DNS, HTTP, and HTTPS to pass before baseline save");
   assert.ok(!startup.includes("https://${apiUrl}"), "do not prepend a second HTTPS scheme to window.location.origin");
