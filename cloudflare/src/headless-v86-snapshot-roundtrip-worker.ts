@@ -414,7 +414,7 @@ exit 1`;
       await runStage("resource_preflight",
         "echo \"--- RESOURCE PREFLIGHT ---\"; df -h / /tmp /usr/local/tce 2>&1; free 2>&1; cat /proc/meminfo 2>/dev/null | head -n 8; echo \"TLS prerequisite installation will run before HTTPS preflight.\"",
         "RESOURCE_PREFLIGHT_DONE", SHELL_COMMAND_TIMEOUT_MS);
-      const dhcpPassed = await runStage("dhcp", dhcpCommand, "DHCP_DONE", 90000, true);
+      const dhcpPassed = await runStage("dhcp", dhcpCommand, "DHCP_DONE", 180000, true);
       const dhcpOutput = stages.dhcp.output ?? "";
       stages.dhcp.passed = dhcpPassed && /DHCP_OK/.test(dhcpOutput) &&
         dhcpOutput.includes("DHCP_ACTUAL_IP=" + virtualIp) && dhcpOutput.includes("DHCP_ACTUAL_GATEWAY=" + routerIp) &&
@@ -432,7 +432,7 @@ rc=$?
 cat /tmp/http-egress.log
 echo HTTP_EGRESS_RC=$rc
 [ "$rc" -eq 0 ] && echo TCP_HTTP_EGRESS_OK || echo TCP_HTTP_EGRESS_FAILED`;
-        await runStage("http_preflight", httpPreflightCommand, "HTTP_EGRESS_PREFLIGHT_DONE", 90000);
+        await runStage("http_preflight", httpPreflightCommand, "HTTP_EGRESS_PREFLIGHT_DONE", 180000);
         const httpOut = stages.http_preflight.output ?? "";
         stages.http_preflight.passed = stages.http_preflight.passed &&
           /HTTP_EGRESS_RC=0/.test(httpOut) && /TCP_HTTP_EGRESS_OK/.test(httpOut);
@@ -492,7 +492,7 @@ if [ "$install_rc" -eq 0 ] && openssl version >/dev/null 2>&1; then rc=0; else r
 echo OPENSSL_PATH=$(command -v openssl 2>/dev/null)
 echo OPENSSL_INSTALL_RC=$rc
 openssl version 2>&1`;
-            await runStage("openssl_install", opensslInstallCommand, "OPENSSL_INSTALL_DONE", 60000);
+            await runStage("openssl_install", opensslInstallCommand, "OPENSSL_INSTALL_DONE", 180000);
             const sslOut = stages.openssl_install.output ?? "";
             stages.openssl_install.passed = stages.openssl_install.passed && /OPENSSL_INSTALL_RC=0/.test(sslOut) && /OpenSSL 1\./.test(sslOut);
             if (!stages.openssl_install.passed) stages.openssl_install.error = "openssl_install_or_version_check_failed";
@@ -501,14 +501,14 @@ openssl version 2>&1`;
 echo '--- CA certificate install ---'
 echo CA_EXTENSION_FILES
 ls -l /tmp/tce/optional/ca-certificates* /usr/local/tce/optional/ca-certificates* 2>&1
-su - tc -c 'id; tce-load -i /tmp/tce/optional/ca-certificates.tcz' >/tmp/ca.log 2>&1
+timeout 180 su - tc -c 'id; tce-load -i /tmp/tce/optional/ca-certificates.tcz' >/tmp/ca.log 2>&1
 rc=$?
 echo CA_INSTALL_RC=$rc
 tail -n 20 /tmp/ca.log 2>&1
 CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs /usr/local/share/ca-certificates /etc/ssl -type f -name ca-certificates.crt 2>/dev/null | head -n 1)
 echo CA_BUNDLE_PATH=$CA_BUNDLE
 if [ -n "$CA_BUNDLE" ] && [ -s "$CA_BUNDLE" ] && grep -q 'BEGIN CERTIFICATE' "$CA_BUNDLE"; then echo CA_BUNDLE_CHECK_RC=0; else echo CA_BUNDLE_CHECK_RC=1; fi`;
-            await runStage("ca_install", caInstallCommand, "CA_CERTIFICATES_INSTALL_DONE", 600000, true);
+            await runStage("ca_install", caInstallCommand, "CA_CERTIFICATES_INSTALL_DONE", 180000, true);
             const caOut = stages.ca_install.output ?? "";
             stages.ca_install.passed = stages.ca_install.passed && /CA_INSTALL_RC=0/.test(caOut) && /CA_BUNDLE_CHECK_RC=0/.test(caOut);
             if (!stages.ca_install.passed) stages.ca_install.error = "ca_install_or_bundle_check_failed";
@@ -527,7 +527,7 @@ rc=$?
 cat /tmp/https-egress.log
 echo HTTPS_EGRESS_RC=$rc
 [ "$rc" -eq 0 ] && echo TCP_HTTPS_EGRESS_OK || echo TCP_HTTPS_EGRESS_FAILED`;
-          await runStage("https_preflight", httpsPreflightCommand, "EGRESS_PREFLIGHT_DONE", 90000);
+          await runStage("https_preflight", httpsPreflightCommand, "EGRESS_PREFLIGHT_DONE", 180000);
           const httpsOut = stages.https_preflight.output ?? "";
           stages.https_preflight.passed = stages.https_preflight.passed &&
             /HTTPS_EGRESS_RC=0/.test(httpsOut) && /TCP_HTTPS_EGRESS_OK/.test(httpsOut);
