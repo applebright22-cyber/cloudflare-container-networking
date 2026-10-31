@@ -438,7 +438,7 @@ exit 1`;
       if (stages.dhcp.passed) {
         const httpPreflightCommand = `set +e
 echo '--- EXTERNAL PLAIN HTTP EGRESS PREFLIGHT ---'
-wget -T 30 -t 1 -S -O /dev/null http://neverssl.com/ >/tmp/http-egress.log 2>&1
+wget -T 30 -t 1 -S -O /dev/null http://example.com/ >/tmp/http-egress.log 2>&1
 rc=$?
 cat /tmp/http-egress.log
 echo HTTP_EGRESS_RC=$rc
