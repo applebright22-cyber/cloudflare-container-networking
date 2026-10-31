@@ -190,7 +190,7 @@ export class AccountRegistry extends DurableObject {
       const now = Date.now();
       const windowMs = body.action === "signup" ? 60 * 60 * 1000 : 15 * 60 * 1000;
       // Testing phase: allow repeated signup attempts while still bounding accidental loops.
-      const limit = body.action === "signup" ? 500 : 2000;
+      const limit = body.action === "signup" ? 10 : 30;
       const key = "auth-rate:" + body.action + ":" + await this.sha256(body.ip);
       const old = await this.ctx.storage.get<number[]>(key) ?? [];
       const recent = old.filter((time) => Number.isFinite(time) && now - time < windowMs);
@@ -209,7 +209,7 @@ export class AccountRegistry extends DurableObject {
       const body = await request.json().catch(() => null) as { username?: unknown; password?: unknown; account_id?: unknown } | null;
       const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
       const password = typeof body?.password === "string" ? body.password : "";
-      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 4 || password.length > 128 ||
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 12 || password.length > 128 ||
           typeof body?.account_id !== "string" || !validAccountId(body.account_id)) {
         return json({ error: "invalid_signup_fields" }, 400);
       }
