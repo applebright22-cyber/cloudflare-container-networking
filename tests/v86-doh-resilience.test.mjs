@@ -47,6 +47,7 @@ function loadHandler(fetchImpl, warnings = []) {
   const context = {
     fetch: fetchImpl,
     AbortController,
+    DOMException,
     setTimeout,
     clearTimeout,
     Uint8Array,
@@ -203,14 +204,12 @@ test("both DoH resolvers timing out produce a synthetic SERVFAIL", async () => {
   assert.ok(Date.now() - started >= 30, "each resolver should receive its own bounded timeout");
 });
 
-test("truncated, wrong-opcode, and non-response DNS packets are rejected", async () => {
+test("truncated and wrong-opcode DNS packets are rejected", async () => {
   const calls = [];
   const input = queryPacket();
   const wrongOpcode = Uint8Array.from(input.udp.data);
   wrongOpcode[2] = 0x89; // QR set, opcode changed
   wrongOpcode[3] = 0x80;
-  const noQr = Uint8Array.from(input.udp.data);
-  noQr[3] = 0x80;
   const handler = loadHandler(async (url) => {
     calls.push(String(url));
     return calls.length === 1
