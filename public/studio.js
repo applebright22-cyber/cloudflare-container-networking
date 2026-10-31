@@ -184,8 +184,8 @@ async function loadPaymentSettings(){
   $('#payment-paypal-mode').value=paypal.mode||'sandbox';
   $('#payment-paypal-client').value=paypal.client_id||'';
   $('#payment-paypal-secret').value='';
-  status.textContent=paypal.connected?'Connected · '+String(paypal.mode).toUpperCase()+' · client ID '+paypal.client_id:'Not connected. Add your PayPal REST app credentials below.';
-  $('#payment-paypal-connect').textContent=paypal.connected?'Update PayPal connection':'Connect PayPal account';
+  status.textContent=paypal.connected?'PayPal REST app connected · '+String(paypal.mode).toUpperCase()+' · Client ID '+paypal.client_id:'Not connected. Add your PayPal REST app credentials below.';
+  $('#payment-paypal-connect').textContent=paypal.connected?'Update PayPal app':'Connect PayPal app';
   if(cryptoStatus)cryptoStatus.textContent='Payment settings loaded.';
  }catch(error){if(status)status.textContent=error.message}
 }
@@ -198,14 +198,14 @@ async function connectPaypal(){
   const r=await fetch('/api/payments/paypal/connect?account_id='+encodeURIComponent(accountId),{method:'PUT',headers:authHeaders(),body:JSON.stringify({client_id:clientId,client_secret:secret,mode})});
   const d=await r.json();if(!r.ok)throw new Error(d.error||'PayPal connection failed');
   $('#payment-paypal-secret').value='';paypalConnection={connected:true,mode:d.mode,client_id:d.client_id};
-  status.textContent='PayPal connected and credentials encrypted in Cloudflare storage.';
-  $('#payment-paypal-connect').textContent='Update PayPal connection';
+  status.textContent='PayPal REST app validated and connected. Credentials are encrypted in your account storage.';
+  $('#payment-paypal-connect').textContent='Update PayPal app';
  }catch(error){status.textContent=error.message}
  finally{button.disabled=false}
 }
 async function disconnectPaypal(){
- const status=$('#payment-paypal-status');if(!confirm('Disconnect this PayPal account from your VampireSquid store?'))return;
- try{const r=await fetch('/api/payments/paypal/connect?account_id='+encodeURIComponent(accountId),{method:'DELETE',headers:authHeaders()});const d=await r.json();if(!r.ok)throw new Error(d.error||'Disconnect failed');paypalConnection={connected:false};$('#payment-paypal-client').value='';$('#payment-paypal-secret').value='';status.textContent='PayPal disconnected.';$('#payment-paypal-connect').textContent='Connect PayPal account'}
+ const status=$('#payment-paypal-status');if(!confirm('Disconnect this PayPal REST app from your VampireSquid store?'))return;
+ try{const r=await fetch('/api/payments/paypal/connect?account_id='+encodeURIComponent(accountId),{method:'DELETE',headers:authHeaders()});const d=await r.json();if(!r.ok)throw new Error(d.error||'Disconnect failed');paypalConnection={connected:false};$('#payment-paypal-client').value='';$('#payment-paypal-secret').value='';status.textContent='PayPal REST app disconnected.';$('#payment-paypal-connect').textContent='Connect PayPal app'}
  catch(error){status.textContent=error.message}
 }
 async function saveCryptoSettings(){
