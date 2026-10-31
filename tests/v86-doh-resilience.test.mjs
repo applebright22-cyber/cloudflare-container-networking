@@ -183,7 +183,7 @@ test("a stalled primary DoH resolver is aborted before Google fallback succeeds"
   });
   const output = await new Promise((resolve) => handler(input, networkFor(resolve, 20)));
   assert.equal(calls.length, 2);
-  assert.match(calls[1], /dns\\.google/);
+  assert.match(calls[1], /dns\.google/);
   assert.deepEqual(Array.from(output.udp.data), Array.from(answer));
 });
 
