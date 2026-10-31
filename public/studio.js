@@ -217,11 +217,28 @@ async function saveCryptoSettings(){
 }
 
 
+function safePublishedUrl(value){
+ if(typeof value!=='string'||!value)return '';
+ try{const parsed=new URL(value,location.origin);if(parsed.origin!==location.origin||!/^\\/sites\\/[a-f0-9]{32}\\/$/.test(parsed.pathname)||parsed.search||parsed.hash)return '';return parsed.href}catch{return ''}
+}
+function updateViewWebsite(project){
+ const link=$('#view-website');if(!link)return;
+ const url=safePublishedUrl(project&&project.publishedUrl);
+ link.href=url||'#';link.setAttribute('aria-disabled',url?'false':'true');
+ link.title=url?'Open the selected published website':'Publish this project to make it available';
+}
+function updatePublishedAddress(project){
+ const holder=$('#published-address');if(!holder)return;
+ const url=safePublishedUrl(project&&project.publishedUrl);
+ holder.textContent='';
+ if(!url){holder.textContent='Not published yet';return}
+ const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=url;holder.appendChild(link);
+}
 function loadPublishOptions(){
  const select=$('#publish-project');if(!select)return;
  select.innerHTML=projects.map(p=>'<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.name)+'</option>').join('')||'<option value="">Create a project first</option>';
  const current=projects.find(p=>p.id===activeId)||projects[0];
- if(current){select.value=current.id;$('#published-address').textContent=current.publishedUrl||'Not published yet';}
+ if(current){select.value=current.id;updatePublishedAddress(current);updateViewWebsite(current)}else{updatePublishedAddress(null);updateViewWebsite(null)}
 }
 async function publishProject(){
  const status=$('#publish-status'),button=$('#publish-site'),project=projects.find(p=>p.id===$('#publish-project').value);
