@@ -62,7 +62,9 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
       const tokenResponse = await fetch(host + "/v1/oauth2/token", { method: "POST", headers: { authorization: "Basic " + btoa(credentials.client_id + ":" + credentials.client_secret), "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" });
       if (!tokenResponse.ok) return json({ error: "paypal_credentials_rejected", paypal_status: tokenResponse.status }, 400);
-      const encrypted = await encryptCredentials(env.PAYMENTS_ENCRYPTION_KEY, credentials);
+      let encrypted: { iv: string; ciphertext: string };
+      try { encrypted = await encryptCredentials(env.PAYMENTS_ENCRYPTION_KEY, credentials); }
+      catch { return json({ error: "payments_encryption_key_invalid" }, 503); }
       await env.PROJECT_STORAGE.put(key, JSON.stringify({ ...encrypted, mode: credentials.mode, client_id: credentials.client_id, connected_at: new Date().toISOString() }), { httpMetadata: { contentType: "application/json" } });
       const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(accountId, "settings")) ?? { wallet_address: "", crypto_enabled: false };
       settings.paypal_enabled = true;
