@@ -802,12 +802,14 @@ statusText('Restoring the guest network interface and requesting its account-spe
 const dhcpMarker='__V86_RESTORE_DHCP_DONE__';
 const rootCommand=[
 'set +e',
+'if [ -s /var/run/udhcpc.eth0.pid ]; then kill "$(cat /var/run/udhcpc.eth0.pid)" 2>/dev/null; fi',
+'/sbin/route del default 2>/dev/null',
 '/sbin/ifconfig eth0 down 2>/dev/null',
 '/sbin/ifconfig eth0 hw ether '+mac+' || exit 21',
 '/sbin/ifconfig eth0 up || exit 22',
 '/sbin/ifconfig eth0 | grep -qi "'+mac+'" || { echo RESTORE_MAC_FAILED; exit 23; }',
 'n=1',
-'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; /sbin/ifconfig eth0 | grep -q "'+ip+'" && /sbin/route -n | grep -q "'+gateway+'" && { echo RESTORE_DHCP_OK; exit 0; }; n=$((n+1)); sleep 1; done',
+'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; [ "$dhcp_rc" -eq 0 ] && /sbin/ifconfig eth0 | grep -q "inet addr:'+ip+' " && /sbin/route -n | grep -q "0.0.0.0 *'+gateway+' " && { echo RESTORE_DHCP_OK; exit 0; }; n=$((n+1)); sleep 1; done',
 'echo RESTORE_DHCP_FAILED',
 'cat /tmp/vs-restore-dhcp.log',
 '/sbin/ifconfig eth0',
