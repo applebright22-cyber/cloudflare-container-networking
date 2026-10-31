@@ -86,12 +86,25 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const accountId = url.searchParams.get("account_id") ?? "";
     if (!await authenticate(request, env, accountId)) return json({ error: "unauthorized" }, 401);
     const key = keyFor(accountId, "paypal-credentials");
+    const selectedMode = url.searchParams.get("mode") === "live" ? "live" : "sandbox";
+    const modeKey = (mode: "sandbox" | "live") => keyFor(accountId, "paypal-credentials-" + mode);
     if (paypalStatusMatch && request.method === "GET") {
-      const saved = await readJson<{ mode: string; client_id: string }>(env.PROJECT_STORAGE, key);
-      return json({ ok: true, connected: Boolean(saved), mode: saved?.mode ?? null, client_id: saved?.client_id ?? null });
+      const saved = await readJson<{ mode: string; client_id: string }>(env.PROJECT_STORAGE, modeKey(selectedMode))
+        ?? await readJson<{ mode: string; client_id: string }>(env.PROJECT_STORAGE, key).then(x => x?.mode === selectedMode ? x : null);
+      const sandbox = await readJson<{ client_id?: string }>(env.PROJECT_STORAGE, modeKey("sandbox"));
+      const live = await readJson<{ client_id?: string }>(env.PROJECT_STORAGE, modeKey("live"));
+      return json({ ok: true, connected: Boolean(saved), mode: selectedMode, client_id: saved?.client_id ?? null, available_modes: { sandbox: Boolean(sandbox), live: Boolean(live) } });
+    }
+    if (paypalConnectMatch && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { mode?: unknown } | null;
+      if (body?.mode !== "sandbox" && body?.mode !== "live") return json({ error: "invalid_paypal_mode" }, 400);
+      const saved = await readJson<any>(env.PROJECT_STORAGE, modeKey(body.mode));
+      if (!saved?.iv || !saved?.ciphertext) return json({ error: "paypal_mode_not_connected", mode: body.mode }, 409);
+      await env.PROJECT_STORAGE.put(key, JSON.stringify(saved), { httpMetadata: { contentType: "application/json" } });
+      return json({ ok: true, connected: true, mode: body.mode, client_id: saved.client_id });
     }
     if (paypalConnectMatch && request.method === "DELETE") {
-      await env.PROJECT_STORAGE.delete(key);
+      await Promise.all([env.PROJECT_STORAGE.delete(key), env.PROJECT_STORAGE.delete(modeKey("sandbox")), env.PROJECT_STORAGE.delete(modeKey("live"))]);
       const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(accountId, "settings")) ?? {};
       settings.paypal_enabled = false;
       await env.PROJECT_STORAGE.put(keyFor(accountId, "settings"), JSON.stringify(settings), { httpMetadata: { contentType: "application/json" } });
@@ -113,7 +126,9 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       let encrypted: { iv: string; ciphertext: string };
       try { encrypted = await encryptCredentials(env.PAYMENTS_ENCRYPTION_KEY, credentials); }
       catch { return json({ error: "payments_encryption_key_invalid" }, 503); }
-      await env.PROJECT_STORAGE.put(key, JSON.stringify({ ...encrypted, mode: credentials.mode, client_id: credentials.client_id, connected_at: new Date().toISOString() }), { httpMetadata: { contentType: "application/json" } });
+      const savedCredential = { ...encrypted, mode: credentials.mode, client_id: credentials.client_id, connected_at: new Date().toISOString() };
+      await env.PROJECT_STORAGE.put(modeKey(credentials.mode), JSON.stringify(savedCredential), { httpMetadata: { contentType: "application/json" } });
+      await env.PROJECT_STORAGE.put(key, JSON.stringify(savedCredential), { httpMetadata: { contentType: "application/json" } });
       const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(accountId, "settings")) ?? { wallet_address: "", crypto_enabled: false };
       settings.paypal_enabled = true;
       await env.PROJECT_STORAGE.put(keyFor(accountId, "settings"), JSON.stringify(settings), { httpMetadata: { contentType: "application/json" } });
