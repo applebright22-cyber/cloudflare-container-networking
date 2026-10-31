@@ -146,7 +146,7 @@ function snapshotUrl(){if(!window.snapshotIdentity)throw new Error('Choose an ac
 function snapshotUrlFor(identity){if(!identity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(identity)}
 function snapshotHeaders(contentType='application/octet-stream'){const headers={'content-type':contentType};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;return headers}
 async function saveVmState(manual=true){
-if(!bootComplete){if(manual)stateText('Startup must finish before saving a snapshot.');return false}
+if(!bootComplete&&(!manual||manualCommandRunning||!shellPrompt(screenText()))){if(manual)stateText('Wait for the guest shell prompt and finish any running command before saving.');return false}
 if(snapshotLoadFailed){stateText('Snapshot load failed; refusing to overwrite server state. Reload and retry.');return false}
 if(snapshotBusy){if(manual)stateText('A save is already in progress.');return false}
 if(!vmLoaded||!window.emulator||typeof window.emulator.save_state!=='function'){if(manual)stateText('VM is not ready to save yet.');return false}
