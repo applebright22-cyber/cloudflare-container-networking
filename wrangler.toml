@@ -23,6 +23,10 @@ ORACLE_ACCOUNT_EXEC_ENABLED = "true"
 binding = "VM_SNAPSHOTS"
 bucket_name = "cloudflare-container-vm-snapshots"
 
+[[r2_buckets]]
+binding = "PROJECT_STORAGE"
+bucket_name = "vampiresquid-project-storage"
+
 [assets]
 directory = "public"
 binding = "ASSETS"
