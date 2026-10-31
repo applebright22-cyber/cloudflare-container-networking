@@ -431,7 +431,7 @@ wget -T 30 -t 1 -S -O /dev/null http://neverssl.com/ >/tmp/http-egress.log 2>&1
 rc=$?
 cat /tmp/http-egress.log
 echo HTTP_EGRESS_RC=$rc
-[ "$rc" -eq 0 ] && echo TCP_HTTP_EGRESS_OK || { echo TCP_HTTP_EGRESS_FAILED; exit 1; }`;
+[ "$rc" -eq 0 ] && echo TCP_HTTP_EGRESS_OK || echo TCP_HTTP_EGRESS_FAILED`;
         await runStage("http_preflight", httpPreflightCommand, "HTTP_EGRESS_PREFLIGHT_DONE", 90000);
         const httpOut = stages.http_preflight.output ?? "";
         stages.http_preflight.passed = stages.http_preflight.passed &&
@@ -526,7 +526,7 @@ wget -T 30 -t 1 -S -O /dev/null https://www.google.com/generate_204 >/tmp/https-
 rc=$?
 cat /tmp/https-egress.log
 echo HTTPS_EGRESS_RC=$rc
-[ "$rc" -eq 0 ] && echo TCP_HTTPS_EGRESS_OK || { echo TCP_HTTPS_EGRESS_FAILED; exit 1; }`;
+[ "$rc" -eq 0 ] && echo TCP_HTTPS_EGRESS_OK || echo TCP_HTTPS_EGRESS_FAILED`;
           await runStage("https_preflight", httpsPreflightCommand, "EGRESS_PREFLIGHT_DONE", 90000);
           const httpsOut = stages.https_preflight.output ?? "";
           stages.https_preflight.passed = stages.https_preflight.passed &&
