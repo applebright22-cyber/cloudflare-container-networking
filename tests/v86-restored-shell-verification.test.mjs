@@ -106,6 +106,9 @@ test("restored guest network recovery reapplies its MAC, renews DHCP, and verifi
   const end = inline[1].indexOf("\nfunction startBootMonitor(){", start);
   assert.ok(start >= 0 && end > start, "restored network recovery helper should exist");
   const network = inline[1].slice(start, end);
+  assert.match(network, /const recoveryAttempt=Math\\.random\\(\\)\\.toString\\(36\\)\\.slice\\(2,10\\);/, "each recovery attempt must have a unique marker namespace");
+  assert.match(network, /const dhcpMarker='__V86_RESTORE_DHCP_DONE_'\\+recoveryAttempt\\+'__';/, "DHCP retries must not reuse an old completion marker");
+  assert.match(network, /const egressMarker='__V86_RESTORE_EGRESS_DONE_'\\+recoveryAttempt\\+'__';/, "egress retries must not reuse an old completion marker");
   assert.ok(network.includes("/sbin/ifconfig eth0 hw ether "), "reapply the assigned MAC after restoring the adapter");
   assert.ok(network.includes("/sbin/udhcpc -f -n -q -i eth0"), "renew DHCP with bounded retries");
   assert.ok(network.includes('dhcp_rc=$?'), "a stale address must not count as a fresh DHCP lease");
