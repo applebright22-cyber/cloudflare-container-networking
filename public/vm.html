@@ -518,12 +518,15 @@ statusText('Keyboard input failed: '+(e&&e.message?e.message:String(e)));
 };
 
 let apiAgentSocket=null,apiAgentConnecting=false,apiExecBusy=false,apiAgentReconnectPending=false;
-let oracleStatusTimer=null;
+let oracleStatusTimer=null,oracleStatusCheckInFlight=false;
 async function checkOracleBridge(){
   const label=document.getElementById('oracle-bridge-status');
-  if(!label)return;
+  if(!label||oracleStatusCheckInFlight)return;
+  oracleStatusCheckInFlight=true;
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),5000);
   try{
-    const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
+    const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store',signal:controller.signal});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
     if(data.status==='online'){
@@ -536,6 +539,9 @@ async function checkOracleBridge(){
   }catch(error){
     label.textContent='Oracle bridge: unavailable';
     label.title=error&&error.message?error.message:'Status request failed';
+  }finally{
+    clearTimeout(timeout);
+    oracleStatusCheckInFlight=false;
   }
 }
 function startOracleBridgeStatus(){
