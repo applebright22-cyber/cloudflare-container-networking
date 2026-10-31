@@ -57,7 +57,7 @@ test("long snapshot round-trip workflow is manual-only during Oracle integration
   const triggers = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("\njobs:"));
   assert.ok(triggers.includes("workflow_dispatch:"));
   assert.ok(!triggers.includes("\n  push:"));
-  assert.ok(!triggers.includes("\n  pull_request:"));
+  assert.ok(!triggers.includes("\n  pull_request:"), "the long Workerd guest snapshot test stays manual-only");
 });
 
 test("TinyCore startup checks Oracle bridge health without adding another terminal", () => {

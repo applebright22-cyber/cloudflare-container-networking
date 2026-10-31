@@ -389,16 +389,16 @@ window.vampireSquidRunNetworkCheck=async function(checkId){
 const checks={
  ip:[{label:'Interface / DHCP address',command:'ip addr show 2>/dev/null || ifconfig -a'}],
  routes:[{label:'Routing table',command:'ip route show 2>/dev/null || route -n'}],
- dns:[{label:'DNS resolver configuration',command:'cat /etc/resolv.conf'},{label:'DNS lookup',command:'nslookup example.com'}],
+ dns:[{label:'DNS resolver configuration',command:'cat /etc/resolv.conf'},{label:'DNS lookup',command:'nslookup www.google.com'}],
  ping:[{label:'Internet IP reachability',command:'ping -c 3 -W 2 1.1.1.1'}],
- https:[{label:'HTTPS request',command:'wget -S -O /dev/null https://example.com 2>&1'}],
+ https:[{label:'HTTPS request',command:'wget -S -O /dev/null https://www.google.com 2>&1'}],
  health:[
   {label:'Interface / DHCP address',command:'ip addr show 2>/dev/null || ifconfig -a'},
   {label:'Routing / gateway',command:'ip route show 2>/dev/null || route -n'},
   {label:'DNS resolver configuration',command:'cat /etc/resolv.conf'},
-  {label:'DNS lookup',command:'nslookup example.com'},
+  {label:'DNS lookup',command:'nslookup www.google.com'},
   {label:'Internet ping',command:'ping -c 3 -W 2 1.1.1.1'},
-  {label:'HTTPS test',command:'wget -S -O /dev/null https://example.com 2>&1'}
+  {label:'HTTPS test',command:'wget -S -O /dev/null https://www.google.com 2>&1'}
  ]
 };
 const steps=checks[checkId];
@@ -606,7 +606,7 @@ const commands=[
 'echo "--- OpenSSL verify/install ---"; if command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1; then install_rc=0; else tce-load -i openssl-1.1.1 >/tmp/openssl-install.log 2>&1; install_rc=$?; fi; if [ "$install_rc" -eq 0 ] && command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1; then rc=0; else rc=1; fi; echo OPENSSL_PATH=$(command -v openssl 2>/dev/null); openssl version 2>&1; echo OPENSSL_INSTALL_RC=$rc; printf "\n__OPENSSL_INSTALL_""DONE:%s\n" "$rc"',
 `echo "--- CA certificate verify/install ---"; CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs -type f -name ca-certificates.crt 2>/dev/null|head -n 1); if [ -s "$CA_BUNDLE" ]&&grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE"; then rc=0; else tce-load -i ca-certificates >/tmp/ca.log 2>&1; install_rc=$?; tail -n 5 /tmp/ca.log; CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs -type f -name ca-certificates.crt 2>/dev/null|head -n 1); [ "$install_rc" -eq 0 ]&&[ -s "$CA_BUNDLE" ]&&grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE"; rc=$?; fi; echo CA_BUNDLE_PATH=$CA_BUNDLE; echo CA_INSTALL_RC=$rc; printf "\\n__CA_CERTIFICATES_INSTALL_DONE:%s\\n" "$rc"`,
 
-`echo "--- DNS and HTTPS preflight ---"; nslookup google.com >/tmp/vs-dns-preflight.log 2>&1; dns_rc=$?; cat /tmp/vs-dns-preflight.log; if [ "$dns_rc" -eq 0 ]; then wget -T 30 -t 2 -S -O /dev/null ${apiUrl}/health >/tmp/vs-https-preflight.log 2>&1; https_rc=$?; else https_rc=1; fi; cat /tmp/vs-https-preflight.log 2>/dev/null; echo DNS_PREFLIGHT_RC=$dns_rc; echo HTTPS_PREFLIGHT_RC=$https_rc; printf "\\n__EGRESS_PREFLIGHT_DONE:%s:%s\\n" "$dns_rc" "$https_rc"`,
+  `echo "--- DNS / HTTP / HTTPS egress preflight ---"; nslookup google.com >/tmp/vs-dns-preflight.log 2>&1; dns_rc=$?; cat /tmp/vs-dns-preflight.log; if [ "$dns_rc" -eq 0 ]; then wget -T 30 -t 2 -S -O /dev/null http://www.google.com/ >/tmp/vs-http-preflight.log 2>&1; http_rc=$?; wget -T 30 -t 2 -S -O /dev/null https://www.google.com/generate_204 >/tmp/vs-https-preflight.log 2>&1; https_rc=$?; else http_rc=1; https_rc=1; fi; cat /tmp/vs-http-preflight.log /tmp/vs-https-preflight.log 2>/dev/null; echo DNS_PREFLIGHT_RC=$dns_rc; echo HTTP_PREFLIGHT_RC=$http_rc; echo HTTPS_PREFLIGHT_RC=$https_rc; printf "\\n__EGRESS_PREFLIGHT_DONE:%s:%s:%s\\n" "$dns_rc" "$http_rc" "$https_rc"`,
 
 ];
 const markers=['DHCP_DONE','__RESOURCE_PREFLIGHT_DONE','__TLS_DOWNLOAD_DONE:','__OPENSSL_INSTALL_DONE:','__CA_CERTIFICATES_INSTALL_DONE:','__EGRESS_PREFLIGHT_DONE:'];
@@ -619,7 +619,7 @@ async function next(){
 if(i>=commands.length){
 bootComplete=true;
 startOracleBridgeStatus();
-statusText('DHCP, CA, DNS, and HTTPS checks complete. Saving the Admin baseline snapshot.');
+statusText('DHCP, CA, DNS, HTTP, and HTTPS checks complete. Saving the Admin baseline snapshot.');
 report('\n===== STARTUP COMPLETE — VAMPIRESQUID READY =====\n');
 while(snapshotBusy)await new Promise(r=>requestAnimationFrame(r));
 let saved=false;
@@ -629,7 +629,7 @@ for(let attempt=1;attempt<=3&&!saved;attempt++){
 }
 if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
 const accountTerminal=String(window.snapshotIdentity||'').startsWith('acct-');
-statusText(accountTerminal?'Guest network setup complete; activating the Oracle account terminal.':saved?'DHCP, DNS, and HTTPS verified; CA certificates included in the saved VM snapshot.':'Automatic snapshot save failed after 3 attempts. The VM will retry on the autosave schedule.');
+statusText(accountTerminal?'Guest network setup complete; activating the Oracle account terminal.':saved?'DHCP, DNS, HTTP, and HTTPS verified; CA certificates included in the saved VM snapshot.':'Automatic snapshot save failed after 3 attempts. The VM will retry on the autosave schedule.');
 if(accountTerminal||window.snapshotIdentity==='admin')void checkAccountExecution();
 connectApiAgent();
 return;
@@ -647,7 +647,7 @@ if(marker){
 const t=terminal(),markerAt=t.lastIndexOf(marker);
 if(markerCount(t,marker)>markerCountBefore){
 report('----- bootstrap screen snapshot -----\n'+terminal()+'\n----- end bootstrap screen snapshot -----\n');
-if(marker==='DHCP_DONE'&&!terminal().includes('DHCP_OK')){report('*** DHCP did not install a usable IPv4 address and default route. No guessed gateway will be added; stopping before package/bootstrap downloads. ***\\n');statusText('DHCP/default-route check failed; diagnostics captured.');return} if(marker==='__OPENSSL_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** OpenSSL install did not produce a working binary; stopping before HTTPS. See /tmp/openssl-install.log. ***\\n');statusText('OpenSSL install failed; diagnostics captured.');return} if(marker==='__CA_CERTIFICATES_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** CA certificate file is missing; stopping before HTTPS. See /tmp/ca-certificates-install.log. ***\\n');statusText('CA install failed; diagnostics captured.');return} if(marker==='__EGRESS_PREFLIGHT_DONE:'){const egress=markerResult(t,marker).split(':');if(egress.length!==2||egress[0]!=='0'||egress[1]!=='0'){report('*** DNS or HTTPS preflight failed; baseline snapshot will not be saved. Inspect /tmp/vs-dns-preflight.log and /tmp/vs-https-preflight.log. ***\\n');statusText('DNS/HTTPS preflight failed; snapshot not saved.');return}} next();return
+if(marker==='DHCP_DONE'&&!terminal().includes('DHCP_OK')){report('*** DHCP did not install a usable IPv4 address and default route. No guessed gateway will be added; stopping before package/bootstrap downloads. ***\\n');statusText('DHCP/default-route check failed; diagnostics captured.');return} if(marker==='__OPENSSL_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** OpenSSL install did not produce a working binary; stopping before HTTPS. See /tmp/openssl-install.log. ***\\n');statusText('OpenSSL install failed; diagnostics captured.');return} if(marker==='__CA_CERTIFICATES_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** CA certificate file is missing; stopping before HTTPS. See /tmp/ca-certificates-install.log. ***\\n');statusText('CA install failed; diagnostics captured.');return} if(marker==='__EGRESS_PREFLIGHT_DONE:'){const egress=markerResult(t,marker).split(':');if(egress.length!==3||egress.some(rc=>rc!=='0')){report('*** DNS, HTTP, or HTTPS preflight failed; baseline snapshot will not be saved. Inspect /tmp/vs-dns-preflight.log, /tmp/vs-http-preflight.log, and /tmp/vs-https-preflight.log. ***\\n');statusText('DNS/HTTP/HTTPS preflight failed; snapshot not saved.');return}} next();return
 }
 requestAnimationFrame(wait)
 })()
