@@ -27,6 +27,7 @@ body:not(.logged-in) #account-id-panel{display:none}
 #account-id-value{color:#b8f7c4;overflow-wrap:anywhere;user-select:text}
 #account-id-message{color:#ffc66d;font-size:12px}body.oracle-terminal-mode #screen_container{display:none}body.oracle-terminal-mode #myst-log{box-sizing:border-box;height:calc(100vh - 285px);min-height:360px;max-height:none;white-space:pre-wrap;overflow:auto;outline:none;cursor:text}body.oracle-terminal-mode #myst-log:focus{outline:1px solid #555}
 body:not(.logged-in) #account-settings{display:none}
+#admin-accounts[hidden]{display:none!important}.admin-accounts-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid #253554}.admin-accounts-head strong,.admin-accounts-head small{display:block}.admin-accounts-head small{margin-top:4px;color:#9eacc8;font-size:10px}.admin-account-list{padding:8px 16px;max-height:260px;overflow:auto}.admin-account-row{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,2fr);gap:10px;padding:9px 0;border-bottom:1px solid #1d2a42;font-size:10px}.admin-account-row:last-child{border-bottom:0}.admin-account-row code{color:#8ee9ff;overflow-wrap:anywhere}
 </style>
 <style>
 body{background:#080b1a;color:#eef2ff;font:13px/1.6 Montserrat,system-ui,sans-serif}
@@ -114,6 +115,10 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
   </section>
  </div>
 </details>
+<section id="admin-accounts" class="account-settings" hidden aria-label="Created accounts">
+ <div class="admin-accounts-head"><div><strong>Created accounts</strong><small id="admin-account-count">Loading account list…</small></div><button id="admin-accounts-refresh" type="button">Refresh</button></div>
+ <div id="admin-account-list" class="admin-account-list" aria-live="polite"></div>
+</section>
 <section id="toolbar" aria-label="Terminal actions">
  <div class="toolbar-heading"><div><strong>Workspace controls</strong><span>Manage your VM session</span></div><a class="studio-return" href="/studio.html">← Studio</a></div>
  <div class="toolbar-groups">
@@ -888,6 +893,28 @@ keyHide.addEventListener('click',()=>{clearDisplayedApiKey();keyMessage.textCont
 const panel=document.getElementById('login-panel'),form=document.getElementById('login-form'),access=document.getElementById('access-type');
 const code=document.getElementById('admin-code'),username=document.getElementById('username'),password=document.getElementById('user-password');
 const message=document.getElementById('login-message'),createButton=document.getElementById('create-account'),loginButton=document.getElementById('open-vm');
+const adminAccountsPanel=document.getElementById('admin-accounts'),adminAccountList=document.getElementById('admin-account-list'),adminAccountCount=document.getElementById('admin-account-count'),adminAccountsRefresh=document.getElementById('admin-accounts-refresh');
+async function loadAdminAccounts(){
+  if(!window.snapshotAdminCode||!adminAccountsPanel)return;
+  adminAccountsRefresh.disabled=true;adminAccountCount.textContent='Loading…';
+  try{
+    const response=await fetch('/api/admin/accounts',{method:'GET',headers:{authorization:'Bearer '+window.snapshotAdminCode},cache:'no-store'});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||'HTTP '+response.status);
+    const accounts=Array.isArray(data.accounts)?data.accounts:[];
+    adminAccountCount.textContent=accounts.length+' account'+(accounts.length===1?'':'s')+' created';
+    adminAccountList.replaceChildren();
+    if(!accounts.length){adminAccountList.textContent='No user accounts have been created yet.';return}
+    for(const account of accounts){
+      const row=document.createElement('div');row.className='admin-account-row';
+      const usernameNode=document.createElement('strong');usernameNode.textContent=String(account.username||'Unknown user');
+      const idNode=document.createElement('code');idNode.textContent=String(account.account_id||'');
+      row.append(usernameNode,idNode);adminAccountList.append(row);
+    }
+  }catch(error){adminAccountCount.textContent='Could not load accounts';adminAccountList.textContent=error.message||'Account list request failed.'}
+  finally{adminAccountsRefresh.disabled=false}
+}
+adminAccountsRefresh?.addEventListener('click',loadAdminAccounts);
 let creating=false;
 function updateFields(){
   const admin=access.value==='admin';
@@ -963,6 +990,7 @@ form.addEventListener('submit',async function(event){
       const response=await fetch('/api/admin/access',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:adminCode})});
       if(!response.ok)throw new Error('That admin code was not accepted.');
       window.snapshotAdminCode=adminCode;
+      adminAccountsPanel.hidden=false;void loadAdminAccounts();
     }catch(error){message.textContent=error.message||'Admin access check failed.';return}
     window.snapshotIdentity='admin';
     showAccountId('admin');
