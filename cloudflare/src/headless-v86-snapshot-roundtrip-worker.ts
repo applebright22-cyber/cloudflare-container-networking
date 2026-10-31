@@ -425,6 +425,21 @@ exit 1`;
         : /DHCP_TIMEOUT/.test(dhcpOutput) ? "no_expected_dhcp_ip_and_gateway_within_ninety_seconds" : (stages.dhcp.error ?? "dhcp_stage_failed");
 
       if (stages.dhcp.passed) {
+        const httpPreflightCommand = `set +e
+echo '--- EXTERNAL PLAIN HTTP EGRESS PREFLIGHT ---'
+wget -T 30 -t 1 -S -O /dev/null http://neverssl.com/ >/tmp/http-egress.log 2>&1
+rc=$?
+cat /tmp/http-egress.log
+echo HTTP_EGRESS_RC=$rc
+[ "$rc" -eq 0 ] && echo TCP_HTTP_EGRESS_OK || { echo TCP_HTTP_EGRESS_FAILED; exit 1; }`;
+        await runStage("http_preflight", httpPreflightCommand, "HTTP_EGRESS_PREFLIGHT_DONE", 90000);
+        const httpOut = stages.http_preflight.output ?? "";
+        stages.http_preflight.passed = stages.http_preflight.passed &&
+          /HTTP_EGRESS_RC=0/.test(httpOut) && /TCP_HTTP_EGRESS_OK/.test(httpOut);
+        if (!stages.http_preflight.passed) stages.http_preflight.error = "external_tcp_http_egress_failed";
+      }
+
+      if (stages.dhcp.passed) {
         if (baselineSnapshot) {
           const baselineTlsCommand = `set +e
 echo "--- VERIFY TLS PREREQUISITES FROM RESTORED ADMIN SNAPSHOT ---"
@@ -505,30 +520,18 @@ if [ -n "$CA_BUNDLE" ] && [ -s "$CA_BUNDLE" ] && grep -q 'BEGIN CERTIFICATE' "$C
           : stages.openssl_install?.passed === true && stages.ca_install?.passed === true;
         if (tlsPrerequisitesPassed) {
           const httpsPreflightCommand = `set +e
-echo '--- EXTERNAL TCP / HTTP / HTTPS EGRESS PREFLIGHT ---'
+echo '--- EXTERNAL HTTPS EGRESS PREFLIGHT ---'
 cat /etc/resolv.conf 2>&1
-echo '--- Plain HTTP to an external non-Cloudflare host ---'
-wget -T 30 -t 1 -S -O /dev/null http://neverssl.com/ >/tmp/http-egress.log 2>&1
-http_rc=$?
-cat /tmp/http-egress.log
-echo HTTP_EGRESS_RC=$http_rc
-echo '--- HTTPS to Google ---'
 wget -T 30 -t 1 -S -O /dev/null https://www.google.com/generate_204 >/tmp/https-egress.log 2>&1
-https_rc=$?
+rc=$?
 cat /tmp/https-egress.log
-echo HTTPS_EGRESS_RC=$https_rc
-if [ "$http_rc" -eq 0 ] && [ "$https_rc" -eq 0 ]; then
-  echo TCP_HTTP_HTTPS_EGRESS_OK
-else
-  echo TCP_HTTP_HTTPS_EGRESS_FAILED
-  exit 1
-fi`;
-          await runStage("https_preflight", httpsPreflightCommand, "EGRESS_PREFLIGHT_DONE", 150000);
+echo HTTPS_EGRESS_RC=$rc
+[ "$rc" -eq 0 ] && echo TCP_HTTPS_EGRESS_OK || { echo TCP_HTTPS_EGRESS_FAILED; exit 1; }`;
+          await runStage("https_preflight", httpsPreflightCommand, "EGRESS_PREFLIGHT_DONE", 90000);
           const httpsOut = stages.https_preflight.output ?? "";
           stages.https_preflight.passed = stages.https_preflight.passed &&
-            /HTTP_EGRESS_RC=0/.test(httpsOut) && /HTTPS_EGRESS_RC=0/.test(httpsOut) &&
-            /TCP_HTTP_HTTPS_EGRESS_OK/.test(httpsOut);
-          if (!stages.https_preflight.passed) stages.https_preflight.error = "external_tcp_http_or_https_egress_failed";
+            /HTTPS_EGRESS_RC=0/.test(httpsOut) && /TCP_HTTPS_EGRESS_OK/.test(httpsOut);
+          if (!stages.https_preflight.passed) stages.https_preflight.error = "external_tcp_https_egress_failed";
         }
       }
     }
@@ -537,8 +540,8 @@ fi`;
       ? stages.baseline_tls_verify?.passed === true
       : stages.tls_download?.passed === true && stages.openssl_install?.passed === true && stages.ca_install?.passed === true;
     const guestChecksPassed = boot.booted && stages.dhcp?.passed === true &&
-      stages.resource_preflight?.passed === true && tlsPrerequisitesPassed &&
-      stages.https_preflight?.passed === true;
+      stages.resource_preflight?.passed === true && stages.http_preflight?.passed === true &&
+      tlsPrerequisitesPassed && stages.https_preflight?.passed === true;
     let snapshotRoundtrip: Record<string, unknown> = {
       attempted: false, saved: false, readback: false, restored: false, marker_verified: false,
     };
