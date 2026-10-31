@@ -253,7 +253,7 @@ export class AccountRegistry extends DurableObject {
       const token = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, "0")).join("");
       const tokenHash = await this.sha256(token);
       const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-      await this.ctx.storage.put("auth-session:" + tokenHash, { account_id: user.account_id, expires_at: expiresAt });
+      await this.ctx.storage.put("auth-session:" + tokenHash, { account_id: user.account_id, username, expires_at: expiresAt });
       return json({ account_id: user.account_id, session_token: token, expires_at: new Date(expiresAt).toISOString() });
     }
 
@@ -272,7 +272,7 @@ export class AccountRegistry extends DurableObject {
       const token = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, "0")).join("");
       const tokenHash = await this.sha256(token);
       const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-      await this.ctx.storage.put("auth-session:" + tokenHash, { account_id: user.account_id, expires_at: expiresAt });
+      await this.ctx.storage.put("auth-session:" + tokenHash, { account_id: user.account_id, username, expires_at: expiresAt });
       return json({ account_id: user.account_id, session_token: token, expires_at: new Date(expiresAt).toISOString() });
     }
 
@@ -281,12 +281,12 @@ export class AccountRegistry extends DurableObject {
       if (typeof body?.account_id !== "string" || !validAccountId(body.account_id) ||
           typeof body?.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) return json({ error: "unauthorized" }, 401);
       const tokenHash = await this.sha256(body.token);
-      const session = await this.ctx.storage.get<{ account_id: string; expires_at: number }>("auth-session:" + tokenHash);
+      const session = await this.ctx.storage.get<{ account_id: string; username?: string; expires_at: number }>("auth-session:" + tokenHash);
       if (!session || session.account_id !== body.account_id || session.expires_at <= Date.now()) {
         if (session) await this.ctx.storage.delete("auth-session:" + tokenHash);
         return json({ error: "unauthorized" }, 401);
       }
-      return json({ ok: true, account_id: session.account_id });
+      return json({ ok: true, account_id: session.account_id, ...(session.username ? { username: session.username } : {}) });
     }
 
     if (url.pathname === "/auth/logout" && request.method === "POST") {
