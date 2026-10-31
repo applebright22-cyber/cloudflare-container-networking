@@ -110,6 +110,7 @@ test("restored guest network recovery reapplies its MAC, renews DHCP, and verifi
   assert.ok(network.includes("/sbin/udhcpc -f -n -q -i eth0"), "renew DHCP with bounded retries");
   assert.ok(network.includes('dhcp_rc=$?'), "a stale address must not count as a fresh DHCP lease");
   assert.ok(network.includes('kill "$(cat /var/run/udhcpc.eth0.pid)"'), "stop the stale background DHCP client before renewing");
+  assert.ok(network.includes("rm -f /var/run/udhcpc.eth0.pid"), "remove the stale DHCP PID file before starting the foreground client");
   assert.ok(network.includes('inet addr:'), "compare the exact expected guest IPv4 address");
   assert.ok(network.includes('0.0.0.0 *'), "verify the default route uses the expected gateway");
   assert.ok(network.includes("RESTORE_DHCP_OK"), "require the expected guest IP and gateway before continuing");
