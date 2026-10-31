@@ -57,7 +57,8 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       const id = crypto.randomUUID();
       const record = { id, account_id: accountId, amount_usd: Number(amount).toFixed(2), description: body.description.trim(), status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
       await env.PROJECT_STORAGE.put(keyFor(accountId, "checkout-" + id), JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
-      return json({ ok: true, checkout: record, url: new URL("/pay/" + id, url.origin).toString() }, 201);
+      await env.PROJECT_STORAGE.put("payment-index/" + id + ".json", JSON.stringify({ account_id: accountId }), { httpMetadata: { contentType: "application/json" } });
+      return json({ ok: true, checkout: record, url: new URL("/checkout.html?id=" + id, url.origin).toString() }, 201);
     }
     return json({ error: "method_not_allowed" }, 405);
   }
@@ -86,22 +87,20 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     if (!receipt) return json({ ok: true, status: "pending", message: "Transaction not yet confirmed." });
     if (receipt.status !== "0x1") return json({ error: "transaction_failed" }, 400);
     const recipientTopic = "0x" + settings.wallet_address.slice(2).toLowerCase().padStart(64, "0");
+    const usedKey = "payment-used-transactions/" + hash.toLowerCase() + ".json";
+    if (await env.PROJECT_STORAGE.head(usedKey)) return json({ error: "transaction_already_used" }, 409);
     const expected = BigInt(Math.round(Number(page.amount_usd) * 1_000_000));
     const paid = (receipt.logs ?? []).some(log => log.address?.toLowerCase() === USDC_BASE.toLowerCase() && log.topics?.[0]?.toLowerCase() === TRANSFER_TOPIC && log.topics?.[2]?.toLowerCase() === recipientTopic && typeof log.data === "string" && BigInt(log.data) >= expected);
     if (!paid) return json({ error: "matching_usdc_transfer_not_found" }, 400);
     const updated = { ...page, status: "paid", transaction_hash: hash, paid_at: new Date().toISOString(), network: "Base", token: "USDC" };
+    await env.PROJECT_STORAGE.put(usedKey, JSON.stringify({ checkout_id: id, account_id: page.account_id }), { httpMetadata: { contentType: "application/json" } });
     await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
     return json({ ok: true, status: "paid", transaction_hash: hash });
   }
   return json({ error: "method_not_allowed" }, 405);
 }
 async function findCheckout(bucket: R2Bucket, id: string): Promise<any | null> {
-  // IDs are random UUIDs; locate the merchant record without exposing account IDs to the shopper.
-  let cursor: string | undefined;
-  do {
-    const page = await bucket.list({ prefix: "accounts/", limit: 1000, ...(cursor ? { cursor } : {}) });
-    for (const item of page.objects) if (item.key.endsWith("/checkout-" + id + ".json")) return readJson(bucket, item.key);
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
-  return null;
+  const index = await readJson<{ account_id?: string }>(bucket, "payment-index/" + id + ".json");
+  if (!index?.account_id || !accountOk(index.account_id)) return null;
+  return readJson(bucket, keyFor(index.account_id, "checkout-" + id));
 }
