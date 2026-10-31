@@ -204,6 +204,24 @@ test("both DoH resolvers timing out produce a synthetic SERVFAIL", async () => {
   assert.ok(Date.now() - started >= 30, "each resolver should receive its own bounded timeout");
 });
 
+test("a DNS packet without the QR response bit is rejected before fallback", async () => {
+  const calls = [];
+  const input = queryPacket();
+  const notResponse = Uint8Array.from(input.udp.data);
+  notResponse[2] = 0x01; // QR remains clear
+  notResponse[3] = 0x80;
+  const answer = Uint8Array.from(input.udp.data);
+  answer[2] = 0x81;
+  answer[3] = 0x80;
+  const handler = loadHandler(async (url) => {
+    calls.push(String(url));
+    return calls.length === 1 ? response(200, notResponse) : response(200, answer);
+  });
+  const output = await new Promise((resolve) => handler(input, networkFor(resolve, 20)));
+  assert.equal(calls.length, 2);
+  assert.deepEqual(Array.from(output.udp.data), Array.from(answer));
+});
+
 test("truncated and wrong-opcode DNS packets are rejected", async () => {
   const calls = [];
   const input = queryPacket();
