@@ -41,7 +41,7 @@ function migrateLegacyVisualProjects(){
  let changed=false;
  for(const project of projects){
   const html=project.files&&typeof project.files['index.html']==='string'?project.files['index.html']:'';
-  const legacyGeneric=/A NEW WAY FORWARD|Trusted expertise\\. Personal service\\.|<nav class="nav">✦ Store Website/i.test(html);
+  const legacyGeneric=/A NEW WAY FORWARD|Trusted expertise\. Personal service\.|<nav class="nav">✦ Store Website/i.test(html);
   if(project.kind==='Store'&&(!html||legacyGeneric)){
    project.files=storefrontTemplateFiles();project.sections=[];project.title='Everyday things. A little more lovely.';project.description='Thoughtful objects, cheerful colors, and useful things that brighten your day.';project.button='Shop the collection';project.updated=new Date().toISOString();changed=true;
   }else if(['Cafe','Agency','Portfolio','Business website'].includes(project.kind)&&(!html||legacyGeneric)){
