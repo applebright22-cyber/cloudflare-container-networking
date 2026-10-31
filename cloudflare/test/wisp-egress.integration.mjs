@@ -145,7 +145,7 @@ async function sendStreamData(stream, payload) {
 }
 
 async function testHttp() {
-  const stream = await openStream(1, "example.com", 80);
+  const stream = await openStream(1, "www.google.com", 80);
   const chunks = [];
   let responseResolve;
   let responseReject;
@@ -159,13 +159,13 @@ async function testHttp() {
     if (response.includes("\r\n\r\n")) responseResolve(response);
   };
   stream.onClose = () => responseResolve(Buffer.concat(chunks).toString("latin1"));
-  const request = "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n";
+  const request = "GET / HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n";
   await sendStreamData(stream, new TextEncoder().encode(request));
   const response = await timeout(responsePromise, 15000, "external_http_response");
   assert.match(response, /^HTTP\/1\.[01] [23]\d\d/m, "external HTTP request must receive a 2xx or 3xx response");
   sendPacket(closePacket(stream.id));
   streams.delete(stream.id);
-  console.log("PASS: WISP TCP/HTTP egress to example.com");
+  console.log("PASS: WISP TCP/HTTP egress to www.google.com");
 }
 
 class WispDuplex extends Duplex {
