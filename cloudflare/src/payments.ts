@@ -29,6 +29,49 @@ function validPayPalUrl(value: unknown): value is string {
 }
 export async function handlePayments(request: Request, env: PaymentEnv): Promise<Response | null> {
   const url = new URL(request.url);
+  const publicStoreMatch = url.pathname.match(/^\/api\/payments\/public\/checkout\/([a-f0-9]{32})$/);
+  if (publicStoreMatch) {
+    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+    const siteId = publicStoreMatch[1];
+    const mapping = await readJson<{ account_id?: string; project_id?: string }>(env.PROJECT_STORAGE, "published-sites/index/" + siteId + ".json");
+    if (!mapping?.account_id || !accountOk(mapping.account_id)) return json({ error: "site_not_found" }, 404);
+    const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(mapping.account_id, "settings"));
+    const credentials = await getPaypalCredentials(env, mapping.account_id);
+    if (!settings?.paypal_enabled || !credentials) return json({ error: "merchant_paypal_not_configured" }, 409);
+    const page = await env.PROJECT_STORAGE.get("published-sites/" + siteId + "/index.html");
+    if (!page) return json({ error: "published_site_missing" }, 404);
+    const html = await page.text();
+    const catalog = new Map<string, { name: string; price: number }>();
+    const buttonPattern = /<button\b(?=[^>]*\bdata-product-id=["']([a-z0-9-]{2,64})["'])(?=[^>]*\bdata-name=["']([^"']{1,100})["'])(?=[^>]*\bdata-price=["'](\d{1,7}(?:\.\d{1,2})?)["'])[^>]*>/gi;
+    for (const match of html.matchAll(buttonPattern)) {
+      const price = Number(match[3]);
+      if (Number.isFinite(price) && price > 0) catalog.set(match[1], { name: match[2].trim(), price });
+    }
+    if (!catalog.size) return json({ error: "store_catalog_not_found" }, 409);
+    const body = await request.json().catch(() => null) as { items?: unknown } | null;
+    if (!Array.isArray(body?.items) || body.items.length < 1 || body.items.length > 20) return json({ error: "invalid_cart" }, 400);
+    const quantities = new Map<string, number>();
+    for (const item of body.items) {
+      if (!item || typeof item !== "object") return json({ error: "invalid_cart_item" }, 400);
+      const productId = (item as { product_id?: unknown }).product_id;
+      const quantity = (item as { quantity?: unknown }).quantity;
+      if (typeof productId !== "string" || !catalog.has(productId) || !Number.isInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 99) return json({ error: "invalid_cart_item" }, 400);
+      quantities.set(productId, (quantities.get(productId) ?? 0) + Number(quantity));
+    }
+    let amount = 0;
+    const lineItems = Array.from(quantities, ([product_id, quantity]) => {
+      const product = catalog.get(product_id)!;
+      amount += product.price * quantity;
+      return { product_id, name: product.name, quantity, unit_amount_usd: product.price.toFixed(2) };
+    });
+    amount = Math.round(amount * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 9999999) return json({ error: "cart_total_invalid" }, 400);
+    const id = crypto.randomUUID();
+    const record = { id, account_id: mapping.account_id, site_id: siteId, amount_usd: amount.toFixed(2), description: lineItems.map(x => x.quantity + " × " + x.name).join(", ").slice(0, 120), items: lineItems, status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+    await env.PROJECT_STORAGE.put(keyFor(mapping.account_id, "checkout-" + id), JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
+    await env.PROJECT_STORAGE.put("payment-index/" + id + ".json", JSON.stringify({ account_id: mapping.account_id }), { httpMetadata: { contentType: "application/json" } });
+    return json({ ok: true, checkout: record, url: new URL("/checkout.html?id=" + id, url.origin).toString() }, 201);
+  }
   if (!url.pathname.startsWith("/api/payments/")) return null;
   const settingsMatch = url.pathname === "/api/payments/settings";
   const createMatch = url.pathname === "/api/payments/checkout";
