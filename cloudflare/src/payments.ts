@@ -60,7 +60,12 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       if (typeof body?.client_id !== "string" || body.client_id.length < 8 || body.client_id.length > 200 || typeof body.client_secret !== "string" || body.client_secret.length < 8 || body.client_secret.length > 300 || !["sandbox", "live"].includes(String(body.mode))) return json({ error: "invalid_paypal_credentials" }, 400);
       const credentials = { client_id: body.client_id.trim(), client_secret: body.client_secret.trim(), mode: body.mode as "sandbox" | "live" };
       const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
-      const tokenResponse = await fetch(host + "/v1/oauth2/token", { method: "POST", headers: { authorization: "Basic " + btoa(credentials.client_id + ":" + credentials.client_secret), "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" });
+      let tokenResponse: Response;
+      try {
+        tokenResponse = await fetch(host + "/v1/oauth2/token", { method: "POST", headers: { authorization: "Basic " + btoa(credentials.client_id + ":" + credentials.client_secret), "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" });
+      } catch {
+        return json({ error: "paypal_validation_unavailable" }, 502);
+      }
       if (!tokenResponse.ok) return json({ error: "paypal_credentials_rejected", paypal_status: tokenResponse.status }, 400);
       let encrypted: { iv: string; ciphertext: string };
       try { encrypted = await encryptCredentials(env.PAYMENTS_ENCRYPTION_KEY, credentials); }
@@ -82,7 +87,9 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const credentials = await getPaypalCredentials(env, page.account_id);
     if (!credentials) return json({ error: "paypal_not_connected" }, 409);
     const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
-    const access = await paypalAccessToken(host, credentials);
+    let access: string;
+    try { access = await paypalAccessToken(host, credentials); }
+    catch { return json({ error: "paypal_authentication_unavailable" }, 502); }
     if (paypalCreateMatch && request.method === "POST") {
       const created = await fetch(host + "/v2/checkout/orders", { method: "POST", headers: { authorization: "Bearer " + access, "content-type": "application/json", prefer: "return=representation" }, body: JSON.stringify({ intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, description: String(page.description).slice(0, 127), amount: { currency_code: "USD", value: Number(page.amount_usd).toFixed(2) } }] }) });
       const order = await created.json() as { id?: string };
