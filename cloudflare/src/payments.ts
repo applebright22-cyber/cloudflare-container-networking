@@ -112,7 +112,7 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       const body = await request.json().catch(() => null) as Record<string, unknown> | null;
       if (!body || (body.wallet_address !== "" && !addressOk(body.wallet_address)) || (body.paypal_url !== "" && !validPayPalUrl(body.paypal_url)) ||
         typeof body.crypto_enabled !== "boolean" || typeof body.paypal_enabled !== "boolean" ||
-        (body.crypto_enabled && !addressOk(body.wallet_address)) || (body.paypal_enabled && !validPayPalUrl(body.paypal_url))) return json({ error: "invalid_payment_settings" }, 400);
+        (body.crypto_enabled && !addressOk(body.wallet_address)) || (body.paypal_enabled && !validPayPalUrl(body.paypal_url) && !await readJson(env.PROJECT_STORAGE, keyFor(accountId, "paypal-credentials")))) return json({ error: "invalid_payment_settings" }, 400);
       const settings = { wallet_address: body.wallet_address, paypal_url: body.paypal_url, crypto_enabled: body.crypto_enabled, paypal_enabled: body.paypal_enabled, network: "Base", token: "USDC", updated_at: new Date().toISOString() };
       await env.PROJECT_STORAGE.put(settingsKey, JSON.stringify(settings), { httpMetadata: { contentType: "application/json" } });
       return json({ ok: true, settings });
