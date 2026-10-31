@@ -219,7 +219,7 @@ async function saveCryptoSettings(){
 
 function safePublishedUrl(value){
  if(typeof value!=='string'||!value)return '';
- try{const parsed=new URL(value,location.origin);if(parsed.origin!==location.origin||!/^\\/sites\\/[a-f0-9]{32}\\/$/.test(parsed.pathname)||parsed.search||parsed.hash)return '';return parsed.href}catch{return ''}
+ try{const parsed=new URL(value,location.origin);if(parsed.origin!==location.origin||!/^\/sites\/[a-f0-9]{32}\/$/.test(parsed.pathname)||parsed.search||parsed.hash)return '';return parsed.href}catch{return ''}
 }
 function updateViewWebsite(project){
  const link=$('#view-website');if(!link)return;
