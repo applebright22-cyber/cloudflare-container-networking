@@ -121,7 +121,7 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
   <div class="action-group"><span class="action-label">SHELL</span><div class="action-buttons"><button id="run-bootstrap" type="button">Wake shell</button><button id="paste-terminal" type="button">Paste into VM</button></div></div>
   <div class="action-group"><span class="action-label">RESULTS</span><div class="action-buttons"><button id="copy-results" type="button">Copy results</button><button id="clear-results" type="button">Clear results</button></div></div>
  </div>
- <div class="toolbar-status"><span id="state-status" aria-live="polite">Saved state: checking…</span><span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span><button id="oracle-terminal-toggle" type="button" disabled>Oracle terminal (checking…)</button><span id="copy-status"></span></div>
+ <div class="toolbar-status"><span id="state-status" aria-live="polite">Saved state: checking…</span><span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span><button id="oracle-terminal-toggle" type="button" hidden>Open Oracle terminal</button><span id="copy-status"></span></div>
 </section>
 <textarea id="results" spellcheck="false" aria-hidden="true" tabindex="-1" placeholder="Diagnostic results"></textarea>
 <section class="console-card" aria-labelledby="console-title">
@@ -146,7 +146,7 @@ function snapshotUrl(){if(!window.snapshotIdentity)throw new Error('Choose an ac
 function snapshotUrlFor(identity){if(!identity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(identity)}
 function snapshotHeaders(contentType='application/octet-stream'){const headers={'content-type':contentType};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;return headers}
 async function saveVmState(manual=true){
-if(!bootComplete&&(!manual||manualCommandRunning||!shellPrompt(screenText()))){if(manual)stateText('Wait for the guest shell prompt and finish any running command before saving.');return false}
+if(!bootComplete){if(manual)stateText('Startup must finish before saving a snapshot.');return false}
 if(snapshotLoadFailed){stateText('Snapshot load failed; refusing to overwrite server state. Reload and retry.');return false}
 if(snapshotBusy){if(manual)stateText('A save is already in progress.');return false}
 if(!vmLoaded||!window.emulator||typeof window.emulator.save_state!=='function'){if(manual)stateText('VM is not ready to save yet.');return false}
@@ -239,51 +239,37 @@ function activateOracleTerminal(){
 async function checkAccountExecution(){
   const toggle=document.getElementById('oracle-terminal-toggle');
   oracleExecutionAvailable=false;
-  toggle.hidden=false;
-  toggle.disabled=true;
-  toggle.textContent="Oracle terminal (checking…)";
+  toggle.hidden=true;
   if(window.snapshotIdentity==='admin'&&window.snapshotAdminCode){
     try{
-      const controller=new AbortController();
-      const timeout=setTimeout(()=>controller.abort(),10000);
-      let response,data;
-      try{response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store',signal:controller.signal});data=await response.json().catch(()=>({}));}finally{clearTimeout(timeout)}
+      const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
+      const data=await response.json().catch(()=>({}));
       if(response.ok&&data.status==='online'){
         oracleExecutionAvailable=true;
         toggle.hidden=false;
-        toggle.disabled=false;
-        toggle.textContent="Open Oracle terminal";
         statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
       }else{
-        toggle.textContent="Oracle terminal unavailable";
         statusText('Oracle agent is offline; Tiny Core remains active.');
       }
     }catch(error){
-      toggle.textContent="Oracle terminal unavailable";
       statusText('Could not verify Oracle availability; Tiny Core remains active.');
     }
     return;
   }
-  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken){toggle.textContent="Oracle terminal unavailable";return;}
+  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken)return;
   try{
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),10000);
-    let response,data;
-    try{response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',signal:controller.signal,
-      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});data=await response.json().catch(()=>({}));}finally{clearTimeout(timeout)}
+    const response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
+      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});
+    const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
     if(data.enabled===true){
       oracleExecutionAvailable=true;
       toggle.hidden=false;
-      toggle.disabled=false;
-      toggle.textContent="Open Oracle terminal";
       statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
     }else{
-      toggle.textContent="Oracle terminal unavailable";
       statusText('Oracle account execution is disabled; Tiny Core remains active.');
     }
   }catch(error){
-    toggle.textContent="Oracle terminal unavailable";
     statusText('Could not verify Oracle availability; Tiny Core remains active.');
   }
 }
@@ -855,7 +841,7 @@ const rootCommand=[
 '/sbin/ifconfig eth0 up || exit 22',
 '/sbin/ifconfig eth0 | grep -qi "'+mac+'" || { echo RESTORE_MAC_FAILED; exit 23; }',
 'n=1',
-'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; if /sbin/ifconfig eth0 | grep -Fq "inet addr:'+ip+' " && /sbin/route -n | grep -Eq "^[[:space:]]*0\\.0\\.0\\.0[[:space:]]+'+gateway+'([[:space:]]|$)"; then echo RESTORE_DHCP_OK; echo RESTORE_UDHCPC_EXIT=$dhcp_rc; exit 0; fi; n=$((n+1)); sleep 1; done',
+'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; [ "$dhcp_rc" -eq 0 ] && /sbin/ifconfig eth0 | grep -q "inet addr:'+ip+' " && /sbin/route -n | grep -q "0.0.0.0 *'+gateway+' " && { echo RESTORE_DHCP_OK; exit 0; }; n=$((n+1)); sleep 1; done',
 'echo RESTORE_DHCP_FAILED',
 'cat /tmp/vs-restore-dhcp.log',
 '/sbin/ifconfig eth0',
