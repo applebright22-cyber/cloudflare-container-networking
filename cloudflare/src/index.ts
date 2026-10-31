@@ -8,6 +8,7 @@ import { readCommittedGuestSnapshot } from "./headless-snapshot-store";
 import { AccountProvisioner } from "./account-provisioner";
 import { WispRelay } from "./wisp-relay";
 import { handleProjectStorageRequest } from "./project-storage";
+import { handlePayments } from "./payments";
 export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay };
 
 export interface Env {
@@ -1241,6 +1242,9 @@ export default {
       return json({ ok: true });
     }
 
+
+    const paymentResponse = await handlePayments(request, env);
+    if (paymentResponse) return paymentResponse;
 
     const projectStorageResponse = await handleProjectStorageRequest(request, env);
     if (projectStorageResponse) return projectStorageResponse;
