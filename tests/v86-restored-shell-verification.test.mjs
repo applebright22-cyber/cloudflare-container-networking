@@ -107,6 +107,10 @@ test("restored guest network recovery reapplies its MAC, renews DHCP, and verifi
   assert.ok(start >= 0 && end > start, "restored network recovery helper should exist");
   const network = inline[1].slice(start, end);
   assert.ok(network.includes("const recoveryAttempt=Math.random().toString(36).slice(2,10);"), "each recovery attempt must have a unique marker namespace");
+  assert.ok(network.indexOf("const egressCommand=") < network.indexOf("const rootCommand="), "test the restored network before destructive interface recovery");
+  assert.ok(network.includes("RESTORED_GUEST_NETWORK_ALREADY_READY=1"), "preserve a restored connection that already passes DNS/HTTP/HTTPS");
+  assert.ok(network.includes("/sbin/modprobe ne2k-pci 2>/dev/null"), "load the NE2000 driver before attempting DHCP recovery");
+  assert.ok(network.includes("/sbin/modprobe 8390 2>/dev/null"), "load the 8390 driver before attempting DHCP recovery");
   assert.ok(network.includes("const dhcpMarker='__V86_RESTORE_DHCP_DONE_'+recoveryAttempt+'__';"), "DHCP retries must not reuse an old completion marker");
   assert.ok(network.includes("const egressMarker='__V86_RESTORE_EGRESS_DONE_'+recoveryAttempt+'__';"), "egress retries must not reuse an old completion marker");
   assert.ok(network.includes("/sbin/ifconfig eth0 hw ether "), "reapply the assigned MAC after restoring the adapter");
