@@ -98,5 +98,6 @@ test("restored VM does not mark boot complete before the command probe passes", 
   assert.match(inline[1].slice(networkAt, readyAt), /if\(!network\.ok\)[\s\S]*?return;/);
   assert.ok(inline[1].includes("RESTORED_GUEST_NETWORK_READY=1"));
   assert.ok(inline[1].includes("02:00:00:00:00:00"), "admin fallback MAC must be a valid locally administered unicast address");
-  assert.ok(!inline[1].includes("02:ff:ff:ff:ff:ff"), "do not use the all-FF synthetic MAC fallback");
+  assert.match(inline[1], /const virtualMac=.*?'02:00:00:00:00:00'/, "admin fallback MAC must be the reserved valid address");
+  assert.doesNotMatch(inline[1], /const virtualMac=.*?'02:ff:ff:ff:ff:ff'/, "do not use the all-FF synthetic MAC fallback");
 });
