@@ -146,15 +146,17 @@ export default {
         const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
         const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(accountId));
 
-        const accountDelete = await accountRegistry.fetch("https://account-registry.internal/account/" + accountId, { method: "DELETE" })
-          .catch((error) => new Response(String(error), { status: 500 }));
-        if (!accountDelete.ok && accountDelete.status !== 404) {
-          failures.push({ account_id: accountId, step: "account_record", error: "http_" + accountDelete.status });
+        const accountData = await accountRegistry.fetch("https://account-registry.internal/admin/purge-account-data", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ account_id: accountId }),
+        }).catch((error) => new Response(String(error), { status: 500 }));
+        if (!accountData.ok) {
+          failures.push({ account_id: accountId, step: "account_registry", error: "http_" + accountData.status });
         }
 
-        const cancel = await provisioner.fetch("https://account-provisioner.internal/cancel", { method: "DELETE" })
+        const provisionerData = await provisioner.fetch("https://account-provisioner.internal/purge", { method: "POST" })
           .catch((error) => new Response(String(error), { status: 500 }));
-        if (!cancel.ok) failures.push({ account_id: accountId, step: "provisioning_job", error: "http_" + cancel.status });
+        if (!provisionerData.ok) failures.push({ account_id: accountId, step: "provisioner", error: "http_" + provisionerData.status });
 
         let cursor: string | undefined;
         do {
