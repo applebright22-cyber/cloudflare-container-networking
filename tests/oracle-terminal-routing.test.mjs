@@ -55,9 +55,11 @@ test("the existing terminal surface routes regular-account commands to Oracle wi
 test("long snapshot round-trip workflow is manual-only during Oracle integration", () => {
   const workflow = fs.readFileSync(new URL("../.github/workflows/headless-v86-snapshot-roundtrip.yml", import.meta.url), "utf8");
   const triggers = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("\njobs:"));
-  assert.ok(triggers.includes("workflow_dispatch:"));
-  assert.ok(!triggers.includes("\n  push:"));
-  assert.ok(!triggers.includes("\n  pull_request:"));
+  assert.ok(triggers.includes("workflow_dispatch:"), "the long guest test remains manually runnable");
+  assert.ok(triggers.includes("pull_request:"), "networking changes must run the real guest egress acceptance test");
+  assert.ok(workflow.includes('"cloudflare/src/headless-v86-snapshot-roundtrip-worker.ts"'));
+  assert.ok(workflow.includes('"cloudflare/src/wisp-relay.ts"'));
+  assert.ok(!triggers.includes("\n  push:"), "the long guest test does not run on every push");
 });
 
 test("TinyCore startup checks Oracle bridge health without adding another terminal", () => {
