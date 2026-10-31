@@ -10,18 +10,51 @@
 const id=new URLSearchParams(location.search).get("id");const statusEl=document.getElementById("status");let data;
 async function load(){if(!id){statusEl.textContent="Missing checkout ID.";return}try{const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id));data=await r.json();if(!r.ok)throw Error(data.error||"Checkout unavailable");document.getElementById("description").textContent=data.checkout.description;document.getElementById("amount").textContent="$"+data.checkout.amount_usd+" USD";document.getElementById("expires").textContent="Expires "+new Date(data.checkout.expires_at).toLocaleString();if(data.methods.crypto){document.getElementById("crypto").classList.remove("hidden");document.getElementById("wallet").textContent=data.wallet_address}if(data.methods.paypal && data.paypal?.client_id){document.getElementById("paypal").classList.remove("hidden");loadPayPalButtons()}if(data.checkout.status==="paid")statusEl.textContent="Payment confirmed."; }catch(e){statusEl.textContent=e.message}}
 
+let paypalSdkPromise;
 async function loadPayPalButtons(){
- const script=document.createElement("script");
- script.src="https://www.paypal.com/sdk/js?client-id="+encodeURIComponent(data.paypal.client_id)+"&currency=USD&intent=capture";
- script.onload=()=>{if(!window.paypal?.Buttons){statusEl.textContent="PayPal checkout could not initialize.";return}
-  window.paypal.Buttons({
-   createOrder:async()=>{statusEl.textContent="Creating secure PayPal order…";const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id)+"/paypal/create-order",{method:"POST"});const d=await r.json();if(!r.ok)throw Error(d.error||"Could not create PayPal order");return d.order_id},
-   onApprove:async(details)=>{statusEl.textContent="Confirming your payment…";const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id)+"/paypal/capture",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({order_id:details.orderID})});const d=await r.json();if(!r.ok)throw Error(d.error||"PayPal capture failed");statusEl.textContent=d.status==="paid"?"Payment confirmed. Thank you!":"Payment is not yet confirmed."},
-   onError:error=>{statusEl.textContent="PayPal checkout error: "+(error?.message||"Please try again.")}
-  }).render("#paypal-button-container")
- };
- script.onerror=()=>{statusEl.textContent="Unable to load PayPal checkout SDK."};
- document.head.appendChild(script);
+ const status=(message)=>{statusEl.textContent=message};
+ const container=document.getElementById("paypal-button-container");
+ if(!data?.paypal?.client_id){status("PayPal is not configured for this checkout.");return}
+ if(!window.paypal?.Buttons){
+  if(!paypalSdkPromise){
+   paypalSdkPromise=new Promise((resolve,reject)=>{
+    const existing=document.querySelector('script[data-vampirequid-paypal-sdk="1"]');
+    if(existing){existing.addEventListener("load",()=>resolve(),{once:true});existing.addEventListener("error",()=>reject(new Error("PayPal SDK could not be downloaded.")),{once:true});return}
+    const script=document.createElement("script");
+    const params=new URLSearchParams({ "client-id":data.paypal.client_id, currency:"USD", intent:"capture", components:"buttons" });
+    script.src="https://www.paypal.com/sdk/js?"+params.toString();
+    script.async=true;script.dataset.vampirequidPaypalSdk="1";
+    script.onload=()=>resolve();
+    script.onerror=()=>reject(new Error("PayPal SDK could not be downloaded. Check browser network or content blockers."));
+    document.head.appendChild(script);
+   });
+  }
+  try{await paypalSdkPromise}catch(error){paypalSdkPromise=null;status(error.message);return}
+ }
+ if(!window.paypal?.Buttons){status("PayPal SDK loaded, but its Buttons component is unavailable. Verify the Client ID matches the selected Sandbox/Live app.");return}
+ if(container.dataset.rendered==="1")return;
+ container.dataset.rendered="1";
+ try{
+  const buttons=window.paypal.Buttons({
+   createOrder:async()=>{
+    status("Creating secure PayPal order…");
+    const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id)+"/paypal/create-order",{method:"POST"});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not create PayPal order");
+    if(!d.order_id)throw new Error("PayPal did not return an order ID.");
+    return d.order_id;
+   },
+   onApprove:async(details)=>{
+    status("Confirming your payment…");
+    const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id)+"/paypal/capture",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({order_id:details.orderID})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||"PayPal capture failed");
+    status(d.status==="paid"?"Payment confirmed. Thank you!":"PayPal returned an unconfirmed payment. Contact the merchant before retrying.");
+   },
+   onCancel:()=>status("PayPal payment was cancelled. You have not been charged."),
+   onError:error=>status("PayPal checkout error: "+(error?.message||"Please try again."))
+  });
+  if(buttons.isEligible && !buttons.isEligible()){container.dataset.rendered="0";status("PayPal buttons are not eligible in this browser or region.");return}
+  await buttons.render("#paypal-button-container");
+ }catch(error){container.dataset.rendered="0";status("PayPal could not display checkout: "+(error?.message||"Please refresh and try again."))}
 }
 
 document.getElementById("copy").onclick=async()=>{await navigator.clipboard.writeText(data.wallet_address);statusEl.textContent="Wallet address copied."};
