@@ -217,6 +217,10 @@ async function loadPaymentSettings(){
   const settings=await settingsResponse.json(),paypal=await paypalResponse.json();
   if(!settingsResponse.ok)throw new Error(settings.error||'Could not load payment settings');
   if(!paypalResponse.ok)throw new Error(paypal.error||'Could not load PayPal connection');
+  if(paypal.connected){
+   const activate=await fetch('/api/payments/paypal/connect'+q,{method:'POST',headers,body:JSON.stringify({mode})});
+   const activated=await activate.json();if(!activate.ok)throw new Error(activated.error||'Could not activate selected PayPal environment');
+  }
   paypalConnection=paypal;
   $('#payment-wallet').value=settings.settings?.wallet_address||'';
   $('#payment-crypto-enabled').checked=!!settings.settings?.crypto_enabled;
