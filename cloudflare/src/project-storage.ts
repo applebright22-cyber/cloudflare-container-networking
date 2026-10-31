@@ -18,7 +18,15 @@ export async function handleProjectStorageRequest(request: Request, env: Project
     if (!mapping) return json({ error: "site_not_found" }, 404);
     const object = await env.PROJECT_STORAGE.get("published-sites/" + publicSiteMatch[1] + "/index.html");
     if (!object) return json({ error: "published_file_missing" }, 404);
-    return new Response(object.body, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60", "x-content-type-options": "nosniff" } });
+    return new Response(object.body, { headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=60",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "permissions-policy": "camera=(), microphone=(), geolocation=()",
+      "content-security-policy": "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src 'self' https: wss:; frame-src https:; object-src 'none'; base-uri 'self'; form-action 'self' https:; frame-ancestors 'none'; upgrade-insecure-requests"
+    } });
   }
   const publishMatch = url.pathname === "/api/studio/publish";
   if (publishMatch) {
