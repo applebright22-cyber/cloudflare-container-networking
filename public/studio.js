@@ -29,20 +29,7 @@ const DELETED_KEY='vampiresquid-deleted-projects-v1:'+accountId;
 function deletedIds(){try{return new Set(JSON.parse(localStorage.getItem(DELETED_KEY)||'[]'))}catch{return new Set()}}
 function saveDeletedIds(ids){try{localStorage.setItem(DELETED_KEY,JSON.stringify(Array.from(ids).slice(-200)));return true}catch{return false}}
 const VS_PLUGIN_PACKS={
- 'network-inspector':{name:'Network Inspector',version:'1.0.0',description:'Inspect TinyCore interfaces, routes, DNS, and basic reachability.',entrypoint:'plugins/network-inspector.sh',file:'plugins/network-inspector.sh',source:`#!/bin/sh
-# VampireSquid Network Inspector — read-only guest network inspection.
-echo "=== VAMPIRESQUID NETWORK INSPECTOR ==="
-echo "--- Interfaces ---"
-ifconfig -a 2>/dev/null || ip addr 2>/dev/null || echo "No interface inspection command found."
-echo "--- Routes ---"
-route -n 2>/dev/null || ip route 2>/dev/null || echo "No route inspection command found."
-echo "--- DNS configuration ---"
-cat /etc/resolv.conf 2>/dev/null || true
-echo "--- DNS lookup ---"
-if command -v nslookup >/dev/null 2>&1; then nslookup google.com; else echo "nslookup is not installed."; fi
-echo "--- External reachability ---"
-if command -v ping >/dev/null 2>&1; then ping -c 1 1.1.1.1; else echo "ping is not installed."; fi
-`},
+ 'network-inspector':{name:'Network Inspector',version:'1.1.0',description:'Inspect interfaces, routes, and DNS with Google Public DNS fallback.',entrypoint:'plugins/network-inspector.sh',file:'plugins/network-inspector.sh',source:"#!/bin/sh\n# VampireSquid Network Inspector — DNS fallback uses Google Public DNS.\necho \"=== VAMPIRESQUID NETWORK INSPECTOR ===\"\necho \"--- Interfaces ---\"\nifconfig -a 2>/dev/null || ip addr 2>/dev/null || echo \"No interface inspection command found.\"\necho \"--- Routes ---\"\nroute -n 2>/dev/null || ip route 2>/dev/null || echo \"No route inspection command found.\"\necho \"--- Configured DNS ---\"\ncat /etc/resolv.conf 2>/dev/null || true\necho \"--- DNS resolution ---\"\nif ! command -v nslookup >/dev/null 2>&1; then\n  echo \"nslookup is not installed; DNS checks skipped.\"\nelse\n  echo \"Trying configured resolver...\"\n  if nslookup google.com; then\n    echo \"DNS_OK=configured\"\n  else\n    echo \"Configured resolver failed; trying Google Public DNS 8.8.8.8...\"\n    if nslookup google.com 8.8.8.8; then\n      echo \"DNS_OK=google-8.8.8.8\"\n    else\n      echo \"Trying Google Public DNS 8.8.4.4...\"\n      if nslookup google.com 8.8.4.4; then\n        echo \"DNS_OK=google-8.8.4.4\"\n      else\n        echo \"DNS_FAILED=configured,8.8.8.8,8.8.4.4\"\n      fi\n    fi\n  fi\nfi\necho \"--- External reachability ---\"\nif command -v ping >/dev/null 2>&1; then ping -c 1 1.1.1.1 || ping -c 1 8.8.8.8; else echo \"ping is not installed.\"; fi\n"},
  'dhcp-lab':{name:'DHCP Lab',version:'1.0.0',description:'Inspect DHCP state and manually renew a TinyCore guest lease.',entrypoint:'plugins/dhcp-lab.sh',file:'plugins/dhcp-lab.sh',source:`#!/bin/sh
 # VampireSquid DHCP Lab. Default mode is read-only; renew is explicit.
 ACTION=$1
@@ -75,6 +62,7 @@ echo "=== VAMPIRESQUID ORACLE BRIDGE ==="
 wget -T 12 -t 1 -qO- "$BASE_URL/api/vm/oracle-status" || exit 1
 echo
 `},
+'android-companion':{name:'Android Companion (Termux)',version:'1.0.0',description:'Android-side device and network diagnostics using Termux and Google DNS over HTTPS.',entrypoint:'plugins/android-companion.sh',file:'plugins/android-companion.sh',source:"#!/data/data/com.termux/files/usr/bin/sh\n# VampireSquid Android Companion — designed for Termux on Android.\necho \"=== VAMPIRESQUID ANDROID COMPANION ===\"\necho \"--- Android build ---\"\ngetprop ro.build.version.release 2>/dev/null || echo \"Android build properties unavailable.\"\necho \"--- Device network ---\"\nip addr 2>/dev/null || ifconfig 2>/dev/null || echo \"Install iproute2 or net-tools in Termux.\"\necho \"--- DNS properties ---\"\ngetprop net.dns1 2>/dev/null\ngetprop net.dns2 2>/dev/null\necho \"--- Google DNS HTTPS resolver ---\"\nif command -v curl >/dev/null 2>&1; then\n  curl -fsS --max-time 8 -H 'accept: application/dns-json' 'https://dns.google/resolve?name=google.com&type=A' || echo \"Google DNS HTTPS query failed.\"\nelse\n  echo \"Install curl in Termux with: pkg install curl\"\nfi\necho \"--- Android environment ---\"\necho \"Termux: $(command -v termux-info 2>/dev/null || echo unavailable)\"\n"},
  'backend-starter':{name:'Backend Starter',version:'1.0.0',description:'Create and serve a tiny editable web application inside TinyCore.',entrypoint:'plugins/backend-starter.sh',file:'plugins/backend-starter.sh',source:`#!/bin/sh
 # VampireSquid Backend Starter — creates a local TinyCore web app.
 ROOT=$1
