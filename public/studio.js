@@ -149,6 +149,12 @@ function previewDoc(p){
   if(typeof files['app.js']==='string')doc=doc.replace(/<script[^>]+src=["']app\.js["'][^>]*><\/script>/i,previewBridge+'<script>'+files['app.js']+'</script>');
   const extraSections=(Array.isArray(p.sections)?p.sections:[]).map(section=>'<section class="vs-studio-section"><small>'+escapeHtml(section.type||'SECTION')+'</small><h2>'+escapeHtml(section.title||'')+'</h2><p>'+escapeHtml(section.body||'')+'</p></section>').join('');
   if(extraSections){doc=doc.replace('</head>','<style>.vs-studio-section{max-width:1100px;margin:18px auto;padding:24px;border:1px solid #ffffff22;border-radius:12px;background:#121d35;color:#eef3ff}.vs-studio-section small{color:#69dced;text-transform:uppercase;letter-spacing:1px}.vs-studio-section p{color:#a9b7d2;white-space:pre-wrap}</style></head>');doc=doc.replace('</main>',extraSections+'</main>')}
+  // Keep user-supplied and template HTML usable on narrow screens.
+  if(!/<meta\\b[^>]*name=[\"']viewport[\"']/i.test(doc)){
+   doc=doc.replace(/<head([^>]*)>/i,'<head$1><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
+  }
+  const responsiveCss='*,*::before,*::after{box-sizing:border-box}html{width:100%;max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%}body{min-width:0;max-width:100%;overflow-x:hidden;overflow-wrap:anywhere}img,picture,video,canvas,svg{max-width:100%}img,video{height:auto}iframe{max-width:100%}main,header,footer,section,article,aside{min-width:0}pre{max-width:100%;overflow-x:auto}table{max-width:100%;display:block;overflow-x:auto}input,select,textarea,button{max-width:100%;font:inherit}input,select,textarea{min-width:0}button,a{touch-action:manipulation}@media(max-width:640px){body{font-size:16px}h1,h2,h3,p{overflow-wrap:anywhere}input,select,textarea,button{min-height:40px}nav{max-width:100%;flex-wrap:wrap}img,video{object-fit:contain}}';
+  if(/<\\/head>/i.test(doc))doc=doc.replace(/<\\/head>/i,'<style id="vs-responsive-compat">'+responsiveCss+'</style></head>');
   return doc;
  }
  const accent=/^#[0-9a-f]{6}$/i.test(p.accent||'')?p.accent:'#a33cff',background=/^#[0-9a-f]{6}$/i.test(p.bg||'')?p.bg:'#10152b',title=escapeHtml(p.title||'Your headline'),desc=escapeHtml(p.description||''),button=escapeHtml(p.button||'Learn more'),sections=Array.isArray(p.sections)?p.sections:[];
