@@ -31,8 +31,9 @@ function queryPacket() {
   };
 }
 
-function networkFor(receive) {
+function networkFor(receive, timeoutMs = 3000) {
   return {
+    doh_timeout_ms: timeoutMs,
     doh_server: "cloudflare-dns.com",
     router_mac: "52:54:00:01:02:03",
     router_ip: [10, 240, 0, 1],
@@ -45,7 +46,9 @@ function networkFor(receive) {
 function loadHandler(fetchImpl, warnings = []) {
   const context = {
     fetch: fetchImpl,
-    AbortSignal,
+    AbortController,
+    setTimeout,
+    clearTimeout,
     Uint8Array,
     console: { warn: (...args) => warnings.push(args) },
     Ib: (_buffer, packet) => packet,
@@ -160,6 +163,64 @@ test("async DoH lookup keeps the original guest DNS packet when v86 reuses its p
   assert.equal(output.udp.dport, 53000);
 });
 
+
+
+test("a stalled primary DoH resolver is aborted before Google fallback succeeds", async () => {
+  const calls = [];
+  const input = queryPacket();
+  const answer = Uint8Array.from(input.udp.data);
+  answer[2] = 0x81;
+  answer[3] = 0x80;
+  const handler = loadHandler((url, init) => {
+    calls.push(String(url));
+    if (calls.length === 1) {
+      return new Promise((resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+    }
+    return Promise.resolve(response(200, answer));
+  });
+  const output = await new Promise((resolve) => handler(input, networkFor(resolve, 20)));
+  assert.equal(calls.length, 2);
+  assert.match(calls[1], /dns\\.google/);
+  assert.deepEqual(Array.from(output.udp.data), Array.from(answer));
+});
+
+test("both DoH resolvers timing out produce a synthetic SERVFAIL", async () => {
+  const calls = [];
+  const input = queryPacket();
+  const started = Date.now();
+  const handler = loadHandler((url, init) => {
+    calls.push(String(url));
+    return new Promise((resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    });
+  });
+  const output = await new Promise((resolve) => handler(input, networkFor(resolve, 20)));
+  assert.equal(calls.length, 2);
+  assert.equal(output.dns.flags, 33154);
+  assert.deepEqual(JSON.parse(JSON.stringify(output.dns.questions)), input.dns.questions);
+  assert.ok(Date.now() - started >= 30, "each resolver should receive its own bounded timeout");
+});
+
+test("truncated, wrong-opcode, and non-response DNS packets are rejected", async () => {
+  const calls = [];
+  const input = queryPacket();
+  const wrongOpcode = Uint8Array.from(input.udp.data);
+  wrongOpcode[2] = 0x89; // QR set, opcode changed
+  wrongOpcode[3] = 0x80;
+  const noQr = Uint8Array.from(input.udp.data);
+  noQr[3] = 0x80;
+  const handler = loadHandler(async (url) => {
+    calls.push(String(url));
+    return calls.length === 1
+      ? response(200, new Uint8Array([0x12, 0x34, 0x81]), "application/dns-message")
+      : response(200, wrongOpcode, "application/dns-message");
+  });
+  const output = await new Promise((resolve) => handler(input, networkFor(resolve, 20)));
+  assert.equal(calls.length, 2);
+  assert.equal(output.dns.flags, 33154);
+});
 
 test("v86 DNS patch script finds a real newline and is idempotent", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "v86-doh-patch-"));
