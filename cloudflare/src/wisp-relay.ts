@@ -206,7 +206,7 @@ export class WispRelay extends DurableObject {
         this.closedStreams.delete(streamId);
         this.pendingData.delete(streamId);
         this.pendingDataBytes.delete(streamId);
-        try { tcp.close(); } catch { /* already closed */ }
+        await closeTcpResources(tcp);
         return;
       }
       stream = {
