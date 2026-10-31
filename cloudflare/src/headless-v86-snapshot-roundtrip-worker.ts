@@ -546,7 +546,7 @@ echo HTTPS_EGRESS_RC=$rc
       attempted: false, saved: false, readback: false, restored: false, marker_verified: false,
     };
     let roundtripPassed = false;
-    if (guestChecksPassed) {
+    if (guestChecksPassed && path === "/snapshot-roundtrip") {
       const marker = "V86_SNAPSHOT_PERSISTED_MARKER_7f8d2a";
       const markerStage = await runStage("snapshot_marker", "printf '%s\\n' '" + marker + "' > /tmp/v86-snapshot-roundtrip-marker; test \"$(cat /tmp/v86-snapshot-roundtrip-marker)\" = '" + marker + "' && echo SNAPSHOT_MARKER_WRITTEN", "SNAPSHOT_MARKER_DONE", SHELL_COMMAND_TIMEOUT_MS);
       snapshotRoundtrip.attempted = true;
@@ -664,10 +664,11 @@ echo POST_SAVE_DHCP_DIAGNOSTICS_DONE`;
     let screenExcerpt = "";
     try { screenExcerpt = emulator?.screen_adapter?.get_text_screen?.().join("\\n").slice(-5000) ?? ""; } catch {}
     try { emulator?.stop(); } catch {}
-    const passed = guestChecksPassed && roundtripPassed;
-    await writeProgress(passed ? "running" : "error", passed ? "snapshot_readback_verified" : "failed", { guest_checks_passed: guestChecksPassed, passed, snapshot_ready_for_dashboard: passed, guest_booted: boot.booted, boot_error: boot.reason ?? null, stages: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, marker: item.marker, error: item.error ?? null, output: item.output ?? null }])), snapshot_roundtrip: snapshotRoundtrip });
+    const passed = guestChecksPassed && (path !== "/snapshot-roundtrip" || roundtripPassed);
+    const finalStep = path === "/snapshot-roundtrip" ? "snapshot_readback_verified" : "egress_verified";
+    await writeProgress(passed ? "complete" : "error", passed ? finalStep : "failed", { guest_checks_passed: guestChecksPassed, passed, snapshot_ready_for_dashboard: path === "/snapshot-roundtrip" && passed, guest_booted: boot.booted, boot_error: boot.reason ?? null, stages: Object.fromEntries(Object.entries(stages).map(([name, item]) => [name, { attempted: item.attempted, passed: item.passed, marker: item.marker, error: item.error ?? null, output: item.output ?? null }])), snapshot_roundtrip: snapshotRoundtrip });
     return Response.json({
-      probe: "tinycore-snapshot-save-readback",
+      probe: path === "/snapshot-roundtrip" ? "tinycore-snapshot-save-readback" : "tinycore-tcp-http-https-egress",
       identity: snapshotIdentity,
       runtime: "workerd",
       baseline_snapshot_used: Boolean(baselineSnapshot),
