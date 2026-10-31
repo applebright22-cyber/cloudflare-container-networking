@@ -1,0 +1,39 @@
+{
+  "platform": "VampireSquid",
+  "schema_version": 1,
+  "runtime": "TinyCore Linux",
+  "plugins": [
+    {
+      "id": "network-inspector",
+      "name": "Network Inspector",
+      "version": "1.0.0",
+      "entrypoint": "network-inspector.sh",
+      "capabilities": [
+        "interfaces.read",
+        "routes.read",
+        "dns.inspect",
+        "reachability.check"
+      ]
+    },
+    {
+      "id": "dhcp-lab",
+      "name": "DHCP Lab",
+      "version": "1.0.0",
+      "entrypoint": "dhcp-lab.sh",
+      "capabilities": [
+        "dhcp.lease.inspect",
+        "dhcp.lease.renew"
+      ]
+    },
+    {
+      "id": "backend-starter",
+      "name": "Backend Starter",
+      "version": "1.0.0",
+      "entrypoint": "backend-starter.sh",
+      "capabilities": [
+        "webapp.scaffold",
+        "http.server.local"
+      ]
+    }
+  ]
+}
