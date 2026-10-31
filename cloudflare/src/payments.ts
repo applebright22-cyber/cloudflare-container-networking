@@ -1,6 +1,7 @@
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
+  PAYMENTS_ENCRYPTION_KEY?: string;
 }
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -31,9 +32,77 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
   if (!url.pathname.startsWith("/api/payments/")) return null;
   const settingsMatch = url.pathname === "/api/payments/settings";
   const createMatch = url.pathname === "/api/payments/checkout";
+  const paypalConnectMatch = url.pathname === "/api/payments/paypal/connect";
+  const paypalStatusMatch = url.pathname === "/api/payments/paypal/status";
+  const paypalCreateMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})\/paypal\/create-order$/);
+  const paypalCaptureMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})\/paypal\/capture$/);
   const publicMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})$/);
   const verifyMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})\/verify$/);
-  if (!settingsMatch && !createMatch && !publicMatch && !verifyMatch) return json({ error: "not_found" }, 404);
+  if (!settingsMatch && !createMatch && !publicMatch && !verifyMatch && !paypalConnectMatch && !paypalStatusMatch && !paypalCreateMatch && !paypalCaptureMatch) return json({ error: "not_found" }, 404);
+  if (paypalConnectMatch || paypalStatusMatch) {
+    const accountId = url.searchParams.get("account_id") ?? "";
+    if (!await authenticate(request, env, accountId)) return json({ error: "unauthorized" }, 401);
+    const key = keyFor(accountId, "paypal-credentials");
+    if (paypalStatusMatch && request.method === "GET") {
+      const saved = await readJson<{ mode: string; client_id: string }>(env.PROJECT_STORAGE, key);
+      return json({ ok: true, connected: Boolean(saved), mode: saved?.mode ?? null, client_id: saved?.client_id ?? null });
+    }
+    if (paypalConnectMatch && request.method === "DELETE") {
+      await env.PROJECT_STORAGE.delete(key);
+      const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(accountId, "settings")) ?? {};
+      settings.paypal_enabled = false;
+      await env.PROJECT_STORAGE.put(keyFor(accountId, "settings"), JSON.stringify(settings), { httpMetadata: { contentType: "application/json" } });
+      return json({ ok: true, connected: false });
+    }
+    if (paypalConnectMatch && request.method === "PUT") {
+      if (!env.PAYMENTS_ENCRYPTION_KEY) return json({ error: "payments_encryption_key_not_configured" }, 503);
+      const body = await request.json().catch(() => null) as { client_id?: unknown; client_secret?: unknown; mode?: unknown } | null;
+      if (typeof body?.client_id !== "string" || body.client_id.length < 8 || body.client_id.length > 200 || typeof body.client_secret !== "string" || body.client_secret.length < 8 || body.client_secret.length > 300 || !["sandbox", "live"].includes(String(body.mode))) return json({ error: "invalid_paypal_credentials" }, 400);
+      const credentials = { client_id: body.client_id.trim(), client_secret: body.client_secret.trim(), mode: body.mode as "sandbox" | "live" };
+      const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const tokenResponse = await fetch(host + "/v1/oauth2/token", { method: "POST", headers: { authorization: "Basic " + btoa(credentials.client_id + ":" + credentials.client_secret), "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" });
+      if (!tokenResponse.ok) return json({ error: "paypal_credentials_rejected", paypal_status: tokenResponse.status }, 400);
+      const encrypted = await encryptCredentials(env.PAYMENTS_ENCRYPTION_KEY, credentials);
+      await env.PROJECT_STORAGE.put(key, JSON.stringify({ ...encrypted, mode: credentials.mode, client_id: credentials.client_id, connected_at: new Date().toISOString() }), { httpMetadata: { contentType: "application/json" } });
+      const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(accountId, "settings")) ?? { wallet_address: "", crypto_enabled: false };
+      settings.paypal_enabled = true;
+      await env.PROJECT_STORAGE.put(keyFor(accountId, "settings"), JSON.stringify(settings), { httpMetadata: { contentType: "application/json" } });
+      return json({ ok: true, connected: true, mode: credentials.mode, client_id: credentials.client_id });
+    }
+    return json({ error: "method_not_allowed" }, 405);
+  }
+  if (paypalCreateMatch || paypalCaptureMatch) {
+    const id = (paypalCreateMatch ?? paypalCaptureMatch)![1];
+    const page = await findCheckout(env.PROJECT_STORAGE, id);
+    if (!page) return json({ error: "checkout_not_found" }, 404);
+    if (page.status === "paid") return json({ ok: true, status: "paid" });
+    if (Date.now() > Date.parse(page.expires_at)) return json({ error: "checkout_expired" }, 410);
+    const credentials = await getPaypalCredentials(env, page.account_id);
+    if (!credentials) return json({ error: "paypal_not_connected" }, 409);
+    const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+    const access = await paypalAccessToken(host, credentials);
+    if (paypalCreateMatch && request.method === "POST") {
+      const created = await fetch(host + "/v2/checkout/orders", { method: "POST", headers: { authorization: "Bearer " + access, "content-type": "application/json", prefer: "return=representation" }, body: JSON.stringify({ intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, description: String(page.description).slice(0, 127), amount: { currency_code: "USD", value: Number(page.amount_usd).toFixed(2) } }] }) });
+      const order = await created.json() as { id?: string };
+      if (!created.ok || !order.id) return json({ error: "paypal_order_creation_failed", paypal_status: created.status }, 502);
+      await env.PROJECT_STORAGE.put(keyFor(page.account_id, "paypal-order-" + id), JSON.stringify({ order_id: order.id }), { httpMetadata: { contentType: "application/json" } });
+      return json({ ok: true, order_id: order.id });
+    }
+    if (paypalCaptureMatch && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { order_id?: unknown } | null;
+      const saved = await readJson<{ order_id: string }>(env.PROJECT_STORAGE, keyFor(page.account_id, "paypal-order-" + id));
+      if (!saved || body?.order_id !== saved.order_id) return json({ error: "paypal_order_mismatch" }, 400);
+      const captured = await fetch(host + "/v2/checkout/orders/" + encodeURIComponent(saved.order_id) + "/capture", { method: "POST", headers: { authorization: "Bearer " + access, "content-type": "application/json", prefer: "return=representation" }, body: "{}" });
+      const result = await captured.json() as { status?: string; purchase_units?: Array<{ payments?: { captures?: Array<{ status?: string; amount?: { value?: string; currency_code?: string }; id?: string }> } }> };
+      if (!captured.ok) return json({ error: "paypal_capture_failed", paypal_status: captured.status }, 502);
+      const capture = result.purchase_units?.[0]?.payments?.captures?.[0];
+      if (result.status !== "COMPLETED" || capture?.status !== "COMPLETED" || capture.amount?.currency_code !== "USD" || Number(capture.amount.value) !== Number(page.amount_usd)) return json({ error: "paypal_payment_not_completed" }, 409);
+      const updated = { ...page, status: "paid", payment_method: "paypal", paypal_order_id: saved.order_id, paypal_capture_id: capture.id ?? null, paid_at: new Date().toISOString() };
+      await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
+      return json({ ok: true, status: "paid", capture_id: capture.id ?? null });
+    }
+    return json({ error: "method_not_allowed" }, 405);
+  }
   if (settingsMatch || createMatch) {
     const accountId = url.searchParams.get("account_id") ?? "";
     if (!await authenticate(request, env, accountId)) return json({ error: "unauthorized" }, 401);
@@ -67,7 +136,8 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const page = await findCheckout(env.PROJECT_STORAGE, id);
     if (!page) return json({ error: "checkout_not_found" }, 404);
     const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(page.account_id, "settings"));
-    return json({ ok: true, checkout: page, methods: { crypto: Boolean(settings?.crypto_enabled), paypal: Boolean(settings?.paypal_enabled) }, wallet_address: settings?.crypto_enabled ? settings.wallet_address : null, paypal_url: settings?.paypal_enabled ? settings.paypal_url : null, network: "Base", token: "USDC", token_contract: USDC_BASE });
+    const paypalConfig = await readJson<{ client_id: string; mode: string }>(env.PROJECT_STORAGE, keyFor(page.account_id, "paypal-credentials"));
+    return json({ ok: true, checkout: page, methods: { crypto: Boolean(settings?.crypto_enabled), paypal: Boolean(settings?.paypal_enabled && paypalConfig) }, paypal: paypalConfig ? { client_id: paypalConfig.client_id, mode: paypalConfig.mode } : null, wallet_address: settings?.crypto_enabled ? settings.wallet_address : null, paypal_url: settings?.paypal_enabled ? settings.paypal_url : null, network: "Base", token: "USDC", token_contract: USDC_BASE });
   }
   if (verifyMatch && request.method === "POST") {
     const id = verifyMatch[1];
@@ -103,4 +173,32 @@ async function findCheckout(bucket: R2Bucket, id: string): Promise<any | null> {
   const index = await readJson<{ account_id?: string }>(bucket, "payment-index/" + id + ".json");
   if (!index?.account_id || !accountOk(index.account_id)) return null;
   return readJson(bucket, keyFor(index.account_id, "checkout-" + id));
+}
+
+
+async function encryptCredentials(secret: string, credentials: { client_id: string; client_secret: string; mode: "sandbox" | "live" }): Promise<{ iv: string; ciphertext: string }> {
+  const raw = Uint8Array.from(atob(secret), c => c.charCodeAt(0));
+  if (raw.length !== 32) throw new Error("PAYMENTS_ENCRYPTION_KEY must be base64-encoded 32-byte key");
+  const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(credentials)));
+  return { iv: btoa(String.fromCharCode(...iv)), ciphertext: btoa(String.fromCharCode(...new Uint8Array(encrypted))) };
+}
+async function decryptCredentials(secret: string, record: { iv: string; ciphertext: string }): Promise<{ client_id: string; client_secret: string; mode: "sandbox" | "live" }> {
+  const raw = Uint8Array.from(atob(secret), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: Uint8Array.from(atob(record.iv), c => c.charCodeAt(0)) }, key, Uint8Array.from(atob(record.ciphertext), c => c.charCodeAt(0)));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+async function getPaypalCredentials(env: PaymentEnv, accountId: string) {
+  if (!env.PAYMENTS_ENCRYPTION_KEY) return null;
+  const record = await readJson<{ iv: string; ciphertext: string }>(env.PROJECT_STORAGE, keyFor(accountId, "paypal-credentials"));
+  if (!record?.iv || !record.ciphertext) return null;
+  try { return await decryptCredentials(env.PAYMENTS_ENCRYPTION_KEY, record); } catch { return null; }
+}
+async function paypalAccessToken(host: string, credentials: { client_id: string; client_secret: string }) {
+  const response = await fetch(host + "/v1/oauth2/token", { method: "POST", headers: { authorization: "Basic " + btoa(credentials.client_id + ":" + credentials.client_secret), "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" });
+  const data = await response.json() as { access_token?: string };
+  if (!response.ok || !data.access_token) throw new Error("PayPal OAuth token request failed");
+  return data.access_token;
 }
