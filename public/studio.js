@@ -68,6 +68,13 @@ case "$ACTION" in
   *) echo "Usage: $0 [status|renew] [interface]"; exit 2 ;;
 esac
 `},
+ 'oracle-bridge-status':{name:'Oracle Bridge Connector',version:'1.0.0',description:'Read the Oracle executor bridge status through the Cloudflare Worker from TinyCore.',entrypoint:'plugins/oracle-bridge-status.sh',file:'plugins/oracle-bridge-status.sh',source:`#!/bin/sh
+# VampireSquid Oracle Bridge Connector — read-only bridge status.
+BASE_URL=https://cloudflare-container-networking.brightlambre22-6dd.workers.dev
+echo "=== VAMPIRESQUID ORACLE BRIDGE ==="
+wget -T 12 -t 1 -qO- "$BASE_URL/api/vm/oracle-status" || exit 1
+echo
+`},
  'backend-starter':{name:'Backend Starter',version:'1.0.0',description:'Create and serve a tiny editable web application inside TinyCore.',entrypoint:'plugins/backend-starter.sh',file:'plugins/backend-starter.sh',source:`#!/bin/sh
 # VampireSquid Backend Starter — creates a local TinyCore web app.
 ROOT=$1
