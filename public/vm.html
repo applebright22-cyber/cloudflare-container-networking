@@ -253,14 +253,16 @@ async function checkAccountExecution(){
         toggle.textContent="Open Oracle terminal";
         statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
       }else{
+        toggle.textContent="Oracle terminal unavailable";
         statusText('Oracle agent is offline; Tiny Core remains active.');
       }
     }catch(error){
+      toggle.textContent="Oracle terminal unavailable";
       statusText('Could not verify Oracle availability; Tiny Core remains active.');
     }
     return;
   }
-  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken)return;
+  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken){toggle.textContent="Oracle terminal unavailable";return;}
   try{
     const response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
       body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});
@@ -273,9 +275,11 @@ async function checkAccountExecution(){
       toggle.textContent="Open Oracle terminal";
       statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
     }else{
+      toggle.textContent="Oracle terminal unavailable";
       statusText('Oracle account execution is disabled; Tiny Core remains active.');
     }
   }catch(error){
+    toggle.textContent="Oracle terminal unavailable";
     statusText('Could not verify Oracle availability; Tiny Core remains active.');
   }
 }
