@@ -23,6 +23,7 @@ export interface Env {
   ADMIN_ACCESS_CODE?: string;
   VM_SNAPSHOTS: R2Bucket;
   PROJECT_STORAGE: R2Bucket;
+  PAYMENTS_ENCRYPTION_KEY?: string;
   ASSETS: Fetcher;
   TUNNEL_TOKEN: string;
   CLIENT_TOKEN: string;
