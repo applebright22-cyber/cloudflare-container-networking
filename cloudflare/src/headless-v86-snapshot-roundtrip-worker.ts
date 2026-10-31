@@ -439,7 +439,7 @@ echo HTTP_EGRESS_RC=$rc
         if (!stages.http_preflight.passed) stages.http_preflight.error = "external_tcp_http_egress_failed";
       }
 
-      if (stages.dhcp.passed) {
+      if (stages.dhcp.passed && stages.http_preflight?.passed === true) {
         if (baselineSnapshot) {
           const baselineTlsCommand = `set +e
 echo "--- VERIFY TLS PREREQUISITES FROM RESTORED ADMIN SNAPSHOT ---"
