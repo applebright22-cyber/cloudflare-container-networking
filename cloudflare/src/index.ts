@@ -452,8 +452,8 @@ export default {
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
       const password = typeof body.password === "string" ? body.password : "";
-      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 4 || password.length > 128) {
-        return json({ error: "username_must_be_2_to_32_chars_and_password_4_to_128_chars" }, 400);
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 12 || password.length > 128) {
+        return json({ error: "username_must_be_2_to_32_chars_and_password_12_to_128_chars" }, 400);
       }
 
       const baselineId = env.VM_BASELINE_ID ?? "admin";
