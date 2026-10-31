@@ -660,7 +660,7 @@ results.value='';save();report('\n===== VM RUN STARTED =====\n');
 statusText('Loading v86â¦');
 const networkIdentity=window.snapshotIdentity||'admin';
 const virtualIp=typeof window.snapshotVirtualIp==='string'&&/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(window.snapshotVirtualIp)?window.snapshotVirtualIp:'10.240.0.2';
-const virtualMac=typeof window.snapshotVirtualMac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(window.snapshotVirtualMac)?window.snapshotVirtualMac:'02:ff:ff:ff:ff:ff';
+const virtualMac=typeof window.snapshotVirtualMac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(window.snapshotVirtualMac)?window.snapshotVirtualMac:'02:00:00:00:00:00';
 const ipParts=virtualIp.split('.');
 const routerIp='10.240.'+Number(ipParts[2])+'.1';
 window.snapshotVirtualIp=virtualIp;
@@ -734,10 +734,19 @@ statusText('The restored guest did not pass its shell command probe. VM startup 
 report('\\n*** RESTORED GUEST SHELL VERIFICATION FAILED ***\\nreason='+verification.reason+'\\nSaved snapshot was not modified; Oracle guest command execution was not enabled.\\n');
 return;
 }
-bootComplete=true;
-stateText('Guest shell verified: echo command returned successfully.');
 report('RESTORED_GUEST_SHELL_VERIFIED=1\\nprobe='+verification.marker+'\\n');
-if(String(window.snapshotIdentity||'').startsWith('acct-')||window.snapshotIdentity==='admin')void checkAccountExecution();else statusText('Saved VM resumed; guest shell verified; connecting the Oracle bridge.');
+stateText('Shell verified; reinitializing the restored network before enabling VM services…');
+const network=await initializeRestoredGuestNetwork();
+if(!network.ok){
+bootComplete=false;
+stateText('Restored shell is responsive, but its network is not ready: '+network.reason+'. Saved snapshot was not changed.');
+statusText('Guest network initialization failed. The saved snapshot is preserved; inspect the network output and retry Wake shell.');
+report('\\n*** RESTORED GUEST NETWORK INITIALIZATION FAILED ***\\nreason='+network.reason+'\\nSaved snapshot was not modified.\\n');
+return;
+}
+bootComplete=true;
+stateText('Guest shell and network verified: DHCP, DNS, HTTP, and HTTPS are working.');
+if(String(window.snapshotIdentity||'').startsWith('acct-')||window.snapshotIdentity==='admin')void checkAccountExecution();else statusText('Saved VM resumed; guest shell and network verified; connecting the Oracle bridge.');
 connectApiAgent();
 return;
 }
@@ -780,6 +789,66 @@ if(lines.some(line=>line.trim()===marker)&&shellPrompt(text))return {ok:true,mar
 await new Promise(resolve=>setTimeout(resolve,25));
 }
 return {ok:false,reason:'echo probe output or the shell prompt did not return within '+commandTimeoutMs+' ms'};
+}
+
+async function initializeRestoredGuestNetwork(){
+const ip=String(window.snapshotVirtualIp||'');
+const mac=String(window.snapshotVirtualMac||'').toLowerCase();
+const gateway=String(window.snapshotRouterIp||'');
+if(!/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(ip))return {ok:false,reason:'invalid restored guest IPv4 identity'};
+if(!/^02(?::[0-9a-f]{2}){5}$/.test(mac)||mac==='02:ff:ff:ff:ff:ff')return {ok:false,reason:'invalid restored guest MAC address'};
+if(!/^10\.240\.\d{1,3}\.1$/.test(gateway))return {ok:false,reason:'invalid restored guest gateway'};
+statusText('Restoring the guest network interface and requesting its account-specific DHCP lease…');
+const recoveryAttempt=Math.random().toString(36).slice(2,10);
+const dhcpMarker='__V86_RESTORE_DHCP_DONE_'+recoveryAttempt+'__';
+const rootCommand=[
+'set +e',
+'if [ -s /var/run/udhcpc.eth0.pid ]; then kill "$(cat /var/run/udhcpc.eth0.pid)" 2>/dev/null; fi',
+'rm -f /var/run/udhcpc.eth0.pid',
+'/sbin/route del default 2>/dev/null',
+'/sbin/ifconfig eth0 down 2>/dev/null',
+'/sbin/ifconfig eth0 hw ether '+mac+' || exit 21',
+'/sbin/ifconfig eth0 up || exit 22',
+'/sbin/ifconfig eth0 | grep -qi "'+mac+'" || { echo RESTORE_MAC_FAILED; exit 23; }',
+'n=1',
+'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; [ "$dhcp_rc" -eq 0 ] && /sbin/ifconfig eth0 | grep -q "inet addr:'+ip+' " && /sbin/route -n | grep -q "0.0.0.0 *'+gateway+' " && { echo RESTORE_DHCP_OK; exit 0; }; n=$((n+1)); sleep 1; done',
+'echo RESTORE_DHCP_FAILED',
+'cat /tmp/vs-restore-dhcp.log',
+'/sbin/ifconfig eth0',
+'/sbin/route -n',
+'exit 24'
+].join('; ');
+const dhcpCommand="sudo -n sh -c '"+rootCommand+"'; rc=$?; echo "+dhcpMarker+":$rc";
+report('\\n===== RESTORED GUEST NETWORK INITIALIZATION =====\\nApplying the account MAC, renewing DHCP, and verifying the expected IP and gateway.\\n');
+try{await sendVmCommand(dhcpCommand+'\\n');}catch(error){return {ok:false,reason:'could not start restored guest DHCP: '+(error&&error.message?error.message:String(error))};}
+async function waitForMarker(marker,timeoutMs){
+const deadline=Date.now()+timeoutMs;
+while(Date.now()<deadline){
+const output=screenText().replace(/\r/g,'');
+const line=output.split('\n').find(item=>item.includes(marker));
+if(line)return line.slice(line.indexOf(marker)+marker.length).trim().replace(/^:/,'');
+await new Promise(resolve=>setTimeout(resolve,50));
+}
+return null;
+}
+const dhcpResult=await waitForMarker(dhcpMarker,180000);
+if(dhcpResult!=='0'){
+const reason=dhcpResult===null?'DHCP initialization marker timed out':'DHCP initialization exited with status '+dhcpResult;
+report('\\n*** RESTORED GUEST DHCP FAILED: '+reason+' ***\\n');
+return {ok:false,reason};
+}
+const egressMarker='__V86_RESTORE_EGRESS_DONE_'+recoveryAttempt+'__';
+const egressCommand='nslookup google.com >/tmp/vs-restore-dns.log 2>&1; dns_rc=$?; wget -T 30 -t 1 -S -O /dev/null http://www.google.com/ >/tmp/vs-restore-http.log 2>&1; http_rc=$?; wget -T 30 -t 1 -S -O /dev/null https://www.google.com/generate_204 >/tmp/vs-restore-https.log 2>&1; https_rc=$?; cat /tmp/vs-restore-dns.log /tmp/vs-restore-http.log /tmp/vs-restore-https.log; echo '+egressMarker+':$dns_rc:$http_rc:$https_rc';
+statusText('DHCP restored; verifying DNS, HTTP, and HTTPS before marking the VM ready…');
+try{await sendVmCommand(egressCommand+'\\n');}catch(error){return {ok:false,reason:'could not start restored guest egress checks: '+(error&&error.message?error.message:String(error))};}
+const egressResult=await waitForMarker(egressMarker,120000);
+if(egressResult!=='0:0:0'){
+const reason=egressResult===null?'DNS/HTTP/HTTPS verification timed out':'DNS/HTTP/HTTPS checks failed ('+(egressResult||'no result')+')';
+report('\\n*** RESTORED GUEST NETWORK NOT READY: '+reason+' ***\\n');
+return {ok:false,reason};
+}
+report('\\nRESTORED_GUEST_NETWORK_READY=1\\nDHCP_IP='+ip+'\\nDHCP_GATEWAY='+gateway+'\\nDHCP_MAC='+mac+'\\nDNS_HTTP_HTTPS=PASS\\n');
+return {ok:true,ip,gateway,mac};
 }
 function startBootMonitor(){
 statusText('Tiny Core is booting; waiting up to five minutes for a stable shell prompt.');
