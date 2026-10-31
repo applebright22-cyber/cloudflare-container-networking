@@ -786,9 +786,10 @@ export default {
         body: JSON.stringify({ account_id: body.account_id, token: body.session_token }),
       });
       if (!response.ok) return json({ error: "unauthorized" }, 401);
+      const verified = await response.json() as { username?: unknown };
       const identity = await getOrAllocateAccountNetworkIdentity(env, body.account_id);
       if (!identity) return json({ error: "account_network_identity_unavailable" }, 409);
-      return json({ ok: true, ...identity });
+      return json({ ok: true, ...(typeof verified.username === "string" ? { username: verified.username } : {}), ...identity });
     }
 
     if (url.pathname === "/api/network/ticket" && request.method === "POST") {
