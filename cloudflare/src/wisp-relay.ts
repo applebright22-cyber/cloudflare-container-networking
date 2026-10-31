@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { connect } from "cloudflare:sockets";
+import { closeTcpResources } from "./wisp-stream";
 
 interface TicketRecord { ticket: string; expires_at: number; }
 interface TcpStream {
@@ -194,8 +195,10 @@ export class WispRelay extends DurableObject {
     if (this.streams.has(streamId)) await this.closeStream(streamId);
 
     this.pendingStreams.add(streamId);
+    let tcp: Awaited<ReturnType<typeof connect>> | undefined;
+    let stream: TcpStream | undefined;
     try {
-      const tcp = connect({ hostname: host, port });
+      tcp = connect({ hostname: host, port });
       await tcp.opened;
       console.log("WISP_CONNECT_OPENED", JSON.stringify({ streamId, host, port }));
       this.pendingStreams.delete(streamId);
@@ -206,7 +209,7 @@ export class WispRelay extends DurableObject {
         try { tcp.close(); } catch { /* already closed */ }
         return;
       }
-      const stream: TcpStream = {
+      stream = {
         socket: tcp,
         writer: tcp.writable.getWriter(),
         reader: tcp.readable.getReader(),
@@ -236,7 +239,9 @@ export class WispRelay extends DurableObject {
       this.pendingData.delete(streamId);
       this.pendingDataBytes.delete(streamId);
       this.closedStreams.delete(streamId);
-      socket.send(closePacket(streamId, 0x42));
+      if (stream) await this.closeStream(streamId, stream);
+      else if (tcp) await closeTcpResources(tcp);
+      try { if (socket.readyState === WebSocket.OPEN) socket.send(closePacket(streamId, 0x42)); } catch { /* connection already closed */ }
     }
   }
 
@@ -273,9 +278,7 @@ export class WispRelay extends DurableObject {
     this.loggedGuestData.delete(streamId);
     this.pendingData.delete(streamId);
     this.pendingDataBytes.delete(streamId);
-    try { await stream.writer.close(); } catch { /* already closed */ }
-    try { await stream.reader.cancel(); } catch { /* already closed */ }
-    try { stream.socket.close(); } catch { /* already closed */ }
+    await closeTcpResources(stream.socket, stream.writer, stream.reader);
   }
 
   async webSocketClose(socket: WebSocket): Promise<void> {
