@@ -504,17 +504,31 @@ if [ -n "$CA_BUNDLE" ] && [ -s "$CA_BUNDLE" ] && grep -q 'BEGIN CERTIFICATE' "$C
           ? stages.baseline_tls_verify?.passed === true
           : stages.openssl_install?.passed === true && stages.ca_install?.passed === true;
         if (tlsPrerequisitesPassed) {
-          const httpsPreflightCommand = `echo '--- DNS / HTTPS PREFLIGHT ---'
+          const httpsPreflightCommand = `set +e
+echo '--- EXTERNAL TCP / HTTP / HTTPS EGRESS PREFLIGHT ---'
 cat /etc/resolv.conf 2>&1
-wget -T 10 -t 1 -S -O /dev/null https://cloudflare-container-networking.brightlambre22-6dd.workers.dev/health >/tmp/https-preflight.log 2>&1
-rc=$?
-cat /tmp/https-preflight.log
-echo HTTPS_PREFLIGHT_RC=$rc
-[ "$rc" -eq 0 ] && echo INTERNET_HTTPS_OK || echo HTTPS_PREFLIGHT_FAILED`;
-          await runStage("https_preflight", httpsPreflightCommand, "EGRESS_PREFLIGHT_DONE", 45000);
+echo '--- Plain HTTP to an external non-Cloudflare host ---'
+wget -T 30 -t 1 -S -O /dev/null http://neverssl.com/ >/tmp/http-egress.log 2>&1
+http_rc=$?
+cat /tmp/http-egress.log
+echo HTTP_EGRESS_RC=$http_rc
+echo '--- HTTPS to Google ---'
+wget -T 30 -t 1 -S -O /dev/null https://www.google.com/generate_204 >/tmp/https-egress.log 2>&1
+https_rc=$?
+cat /tmp/https-egress.log
+echo HTTPS_EGRESS_RC=$https_rc
+if [ "$http_rc" -eq 0 ] && [ "$https_rc" -eq 0 ]; then
+  echo TCP_HTTP_HTTPS_EGRESS_OK
+else
+  echo TCP_HTTP_HTTPS_EGRESS_FAILED
+  exit 1
+fi`;
+          await runStage("https_preflight", httpsPreflightCommand, "EGRESS_PREFLIGHT_DONE", 150000);
           const httpsOut = stages.https_preflight.output ?? "";
-          stages.https_preflight.passed = stages.https_preflight.passed && /HTTPS_PREFLIGHT_RC=0/.test(httpsOut) && /INTERNET_HTTPS_OK/.test(httpsOut);
-          if (!stages.https_preflight.passed) stages.https_preflight.error = "guest_dns_or_https_preflight_failed";
+          stages.https_preflight.passed = stages.https_preflight.passed &&
+            /HTTP_EGRESS_RC=0/.test(httpsOut) && /HTTPS_EGRESS_RC=0/.test(httpsOut) &&
+            /TCP_HTTP_HTTPS_EGRESS_OK/.test(httpsOut);
+          if (!stages.https_preflight.passed) stages.https_preflight.error = "external_tcp_http_or_https_egress_failed";
         }
       }
     }
