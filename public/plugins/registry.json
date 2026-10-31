@@ -34,6 +34,16 @@
         "webapp.scaffold",
         "http.server.local"
       ]
+    },
+    {
+      "id": "oracle-bridge-status",
+      "name": "Oracle Bridge Connector",
+      "version": "1.0.0",
+      "entrypoint": "oracle-bridge-status.sh",
+      "capabilities": [
+        "oracle.bridge.status.read",
+        "cloudflare.worker.fetch"
+      ]
     }
   ]
 }
