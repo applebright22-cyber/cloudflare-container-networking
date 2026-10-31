@@ -6,13 +6,14 @@
     {
       "id": "network-inspector",
       "name": "Network Inspector",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "entrypoint": "network-inspector.sh",
       "capabilities": [
         "interfaces.read",
         "routes.read",
         "dns.inspect",
-        "reachability.check"
+        "reachability.check",
+        "dns.google_fallback"
       ]
     },
     {
@@ -44,6 +45,22 @@
         "oracle.bridge.status.read",
         "cloudflare.worker.fetch"
       ]
+    },
+    {
+      "id": "android-companion",
+      "name": "Android Companion (Termux)",
+      "version": "1.0.0",
+      "runtime": "android-termux",
+      "entrypoint": "android-companion.sh",
+      "capabilities": [
+        "android.device.info.read",
+        "android.network.inspect",
+        "dns.google.doh"
+      ]
     }
+  ],
+  "runtime_support": [
+    "tinycore-linux",
+    "android-termux"
   ]
 }
