@@ -802,15 +802,12 @@ statusText('Restoring the guest network interface and requesting its account-spe
 const dhcpMarker='__V86_RESTORE_DHCP_DONE__';
 const rootCommand=[
 'set +e',
-'/sbin/modprobe 8390 2>/dev/null',
-'/sbin/modprobe ne2k-pci 2>/dev/null',
 '/sbin/ifconfig eth0 down 2>/dev/null',
 '/sbin/ifconfig eth0 hw ether '+mac+' || exit 21',
 '/sbin/ifconfig eth0 up || exit 22',
-'actual_mac=$(/sbin/ifconfig eth0 | sed -n "s/.*HWaddr \\([^ ]*\\).*/\\1/p" | tr A-F a-f)',
-'[ "$actual_mac" = "'+mac+'" ] || { echo RESTORE_MAC_FAILED:$actual_mac; exit 23; }',
+'/sbin/ifconfig eth0 | grep -qi "'+mac+'" || { echo RESTORE_MAC_FAILED; exit 23; }',
 'n=1',
-'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; actual_ip=$(/sbin/ifconfig eth0 | sed -n "s/.*inet addr:\\([^ ]*\\).*/\\1/p"); actual_gateway=$(/sbin/route -n | while read destination gateway mask flags metric ref use iface; do [ "$destination" = "0.0.0.0" ] && { echo "$gateway"; break; }; done); if [ "$actual_ip" = "'+ip+'" ] && [ "$actual_gateway" = "'+gateway+'" ]; then echo RESTORE_DHCP_OK; exit 0; fi; n=$((n+1)); sleep 1; done',
+'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; /sbin/ifconfig eth0 | grep -q "'+ip+'" && /sbin/route -n | grep -q "'+gateway+'" && { echo RESTORE_DHCP_OK; exit 0; }; n=$((n+1)); sleep 1; done',
 'echo RESTORE_DHCP_FAILED',
 'cat /tmp/vs-restore-dhcp.log',
 '/sbin/ifconfig eth0',
