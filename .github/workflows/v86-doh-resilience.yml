@@ -1,0 +1,31 @@
+name: v86 DNS-over-HTTPS resilience
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "public/v86/libv86.js"
+      - "scripts/patch-v86-doh.js"
+      - "tests/v86-doh-resilience.test.mjs"
+      - ".github/workflows/v86-doh-resilience.yml"
+  push:
+    branches: [main]
+    paths:
+      - "public/v86/libv86.js"
+      - "scripts/patch-v86-doh.js"
+      - "tests/v86-doh-resilience.test.mjs"
+      - ".github/workflows/v86-doh-resilience.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  dns-resilience:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test browser v86 DNS failover and timeout behavior
+        run: node --test tests/v86-doh-resilience.test.mjs

@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Developer Workspace · VampireSquid</title>
+<style>
+body{margin:0;background:#111;color:#ddd;font-family:monospace}#login-panel{padding:12px;background:#181818;border-bottom:1px solid #333}#login-panel h2{font-size:16px;margin:0 0 8px}#login-panel p{font-size:12px;line-height:1.5}#login-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}#login-form input,#login-form select{font:inherit;padding:7px;max-width:100%}#login-message{color:#ffc66d}body:not(.logged-in) #status,body:not(.logged-in) #toolbar,body:not(.logged-in) #results,body:not(.logged-in) #myst-log,body:not(.logged-in) #screen_container{display:none}
+#status{padding:8px}
+#toolbar{padding:8px;background:#181818;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:inherit;padding:6px 10px;cursor:pointer}
+#copy-status{color:#8f8}
+#myst-log{margin:0;padding:8px;height:220px;overflow:auto;white-space:pre-wrap;user-select:text;background:#000;color:#ddd;border-top:1px solid #333}
+#results{box-sizing:border-box;width:100%;min-height:300px;background:#000;color:#ddd;border:1px solid #444;padding:8px;font:14px monospace;resize:vertical}
+#screen_container{width:100%;min-height:480px}
+#api-key-panel{padding:12px;background:#181818;border-bottom:1px solid #333}
+body:not(.logged-in) #api-key-panel{display:none}
+#api-key-panel h2{font-size:15px;margin:0 0 8px}
+#api-key-panel p{font-size:12px;line-height:1.5;max-width:900px}
+#api-key-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#api-key-value{display:block;width:100%;max-width:900px;box-sizing:border-box;background:#080808;color:#b8f7c4;border:1px solid #444;padding:9px;font:12px monospace;overflow-wrap:anywhere;white-space:pre-wrap}
+#api-key-message{color:#ffc66d;font-size:12px}
+#api-key-warning{color:#ffcf70}
+#account-id-panel{padding:12px;background:#181818;border-bottom:1px solid #333;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+body:not(.logged-in) #account-id-panel{display:none}
+#account-id-panel strong{font-size:13px}
+#account-id-value{color:#b8f7c4;overflow-wrap:anywhere;user-select:text}
+#account-id-message{color:#ffc66d;font-size:12px}body.oracle-terminal-mode #screen_container{display:none}body.oracle-terminal-mode #myst-log{box-sizing:border-box;height:calc(100vh - 285px);min-height:360px;max-height:none;white-space:pre-wrap;overflow:auto;outline:none;cursor:text}body.oracle-terminal-mode #myst-log:focus{outline:1px solid #555}
+body:not(.logged-in) #account-settings{display:none}
+#admin-accounts[hidden]{display:none!important}.admin-accounts-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid #253554}.admin-accounts-head strong,.admin-accounts-head small{display:block}.admin-accounts-head small{margin-top:4px;color:#9eacc8;font-size:10px}.admin-account-list{padding:8px 16px;max-height:260px;overflow:auto}.admin-account-row{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,2fr);gap:10px;padding:9px 0;border-bottom:1px solid #1d2a42;font-size:10px}.admin-account-row:last-child{border-bottom:0}.admin-account-row code{color:#8ee9ff;overflow-wrap:anywhere}
+</style>
+<style>
+body{background:#080b1a;color:#eef2ff;font:13px/1.6 Montserrat,system-ui,sans-serif}
+#login-panel,#api-key-panel,#account-id-panel{background:linear-gradient(145deg,#111b32,#0b1224);border-color:#2a395c;padding:20px 24px}
+#login-panel h2{font:800 20px Montserrat,system-ui,sans-serif;letter-spacing:-.5px;color:#fff}
+#login-panel p,#api-key-panel p{font:12px/1.7 Montserrat,system-ui,sans-serif;color:#9eacc8}
+a{color:#63dfff}
+#login-form{gap:10px}
+#login-form input,#login-form select{background:#080f20;color:#f4f6ff;border:1px solid #3b4b6d;border-radius:8px;padding:10px}
+button{font:700 11px Montserrat,system-ui,sans-serif;border:1px solid #39496d;border-radius:8px;background:#17213a;color:#edf2ff;padding:10px 13px}
+button:hover,.studio-return:hover{filter:brightness(1.2)}
+#open-vm,#create-account{background:linear-gradient(100deg,#792de5,#a52be9 55%,#187be8);border:0}
+#status{padding:12px 20px;color:#b5c5e5;background:#0d1529}
+#toolbar{padding:12px 20px;background:#0d1529;border-block:1px solid #233251;align-items:center}
+.studio-return{display:inline-flex;align-items:center;padding:9px 12px;border-radius:8px;background:#211344;border:1px solid #55358a;color:#d9c4ff;font:700 10px Montserrat,system-ui,sans-serif;text-decoration:none}
+#results{background:#050a14;color:#b9d9ff;border:1px solid #2b395b;border-radius:8px;margin:12px;width:calc(100% - 24px);min-height:180px}
+#myst-log{background:#030711;color:#76f0ca;border:1px solid #253656;margin:12px;border-radius:8px;padding:14px}
+#screen_container{background:#030711;border:1px solid #263757;border-radius:10px;margin:12px;width:calc(100% - 24px);overflow:hidden}
+#api-key-value{background:#050a14;color:#7ef0d2;border-color:#344466;border-radius:8px}
+#account-id-value{color:#8ee9ff}
+#copy-status,#api-key-message,#account-id-message{color:#6ce8d1}
+@media(max-width:650px){#login-form{align-items:stretch}#login-form>*{width:100%}#results{margin:8px;width:calc(100% - 16px)}}
+</style>
+<style>
+body{background:#080b1a;color:#eaf0ff;font-family:Montserrat,system-ui,sans-serif}
+.runtime-status{margin:14px 20px;padding:10px 14px;border:1px solid #263653;border-radius:8px;background:#0d172b;color:#aebfdd;font-size:11px}
+.account-settings{margin:0 20px 14px;border:1px solid #2b3a5a;border-radius:9px;background:#0d1529;overflow:hidden}
+.account-settings summary{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;cursor:pointer;list-style:none}
+.account-settings summary::-webkit-details-marker{display:none}
+.account-settings summary strong,.toolbar-heading strong,.console-heading strong{display:block;font-size:11px;color:#edf2ff}
+.account-settings summary small,.toolbar-heading span,.console-heading span{display:block;margin-top:4px;color:#8495b6;font-size:10px}
+.settings-chevron{color:#aebddd}.account-settings-content{padding:0 16px 12px;border-top:1px solid #253554}
+#account-id-panel,#api-key-panel{padding:13px 0;background:none;border:0}
+.account-id-copy{display:grid;gap:5px;min-width:0;flex:1}
+.account-id-copy strong{font-size:10px;color:#9eacc8}
+#account-id-value{font:11px ui-monospace,monospace;color:#8ee9ff}
+#api-key-panel{border-top:1px solid #253554}
+#api-key-panel h2{font-size:12px;margin:0 0 6px}
+#api-key-panel p{font-size:10px;line-height:1.6}
+#api-key-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#api-key-value{max-width:none}
+#toolbar{display:block;margin:0 20px 14px;padding:14px;border:1px solid #2b3a5a;border-radius:9px;background:#0d1529}
+.toolbar-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.toolbar-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.action-group{padding:10px;border:1px solid #253554;border-radius:8px;background:#101b31}
+.action-label{display:block;margin-bottom:8px;color:#8394b5;font-size:8px;font-weight:800;letter-spacing:1px}
+.action-buttons{display:flex;flex-wrap:wrap;gap:7px}
+.action-buttons button{font-size:9px;padding:8px 10px}
+.action-buttons .danger-action{background:#281a2a;border-color:#62404d;color:#ffc1cb}
+.toolbar-status{display:flex;flex-wrap:wrap;gap:8px 18px;padding-top:11px;margin-top:11px;border-top:1px solid #253554;color:#91a3c5;font-size:9px}
+.console-card{margin:0 20px 20px;border:1px solid #2b3a5a;border-radius:10px;overflow:hidden;background:#030711}
+.console-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid #253554;background:#101a30}
+.console-heading strong{font-size:9px;letter-spacing:1px}
+.console-heading span{font-size:9px}
+.console-heading .console-live{color:#6ce8d1;font-size:8px;white-space:nowrap;letter-spacing:.7px}
+#myst-log{box-sizing:border-box;margin:0;width:100%;height:calc(100vh - 310px);min-height:300px;max-height:650px;padding:16px;border:0;border-radius:0;background:#030711;color:#76f0ca;font:12px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow:auto;outline:none}
+body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;max-height:650px}
+#results,#screen_container{display:none!important}
+@media(max-width:760px){.runtime-status,.account-settings,#toolbar,.console-card{margin-left:8px;margin-right:8px}.toolbar-groups{grid-template-columns:1fr}.toolbar-status{flex-direction:column;gap:6px}#myst-log,body.oracle-terminal-mode #myst-log{height:60vh;min-height:260px}}
+</style>
+</head>
+<body>
+<section id="login-panel">
+  <h2>🦑 VampireSquid · Developer Workspace</h2>
+  <p>Your optional Linux development environment. Your account and saved guest remain managed by the existing Cloudflare service. <a href="/studio.html">← Back to VampireSquid Studio</a> · <a href="/signup.html">Create an account</a></p>
+  <form id="login-form">
+    <label for="access-type">Account</label>
+    <select id="access-type"><option value="regular">Regular user</option><option value="admin">Admin</option></select>
+    <input id="username" type="text" maxlength="32" autocomplete="username" placeholder="Username" required>
+    <input id="user-password" type="password" autocomplete="current-password" placeholder="Password" required>
+    <input id="admin-code" type="password" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" autocomplete="off" placeholder="5-digit admin code" hidden>
+    <button id="open-vm" type="submit">Log in</button><button id="create-account" type="button">Create regular account</button><span id="login-message" role="status" aria-live="polite"></span>
+  </form>
+</section>
+<div id="status" class="runtime-status">Starting Linux VM...</div>
+<details id="account-settings" class="account-settings">
+ <summary><span><strong>Account &amp; API settings</strong><small>Account ID and API key</small></span><span class="settings-chevron">⌄</span></summary>
+ <div class="account-settings-content">
+  <section id="account-id-panel" aria-label="Account ID"><div class="account-id-copy"><strong>Account ID</strong><code id="account-id-value">Not signed in</code></div><button id="account-id-copy" type="button">Copy account ID</button><span id="account-id-message" role="status" aria-live="polite"></span></section>
+  <section id="api-key-panel" aria-labelledby="api-key-title">
+   <h2 id="api-key-title">Account API key</h2>
+   <p id="api-key-warning">Your current API key appears here after you sign in. Keys created before dashboard key display was enabled cannot be recovered from their stored hashes; this page will not change those keys automatically. Replacing a key invalidates the previous one.</p>
+   <div id="api-key-actions"><button id="api-key-generate" type="button">Replace API key</button><button id="api-key-copy" type="button" hidden>Copy key</button><button id="api-key-hide" type="button" hidden>Hide key</button><span id="api-key-message" role="status" aria-live="polite"></span></div>
+   <pre id="api-key-value" hidden></pre>
+  </section>
+ </div>
+</details>
+<section id="admin-accounts" class="account-settings" hidden aria-label="Created accounts">
+ <div class="admin-accounts-head"><div><strong>Created accounts</strong><small id="admin-account-count">Loading account list…</small></div><button id="admin-accounts-refresh" type="button">Refresh</button></div>
+ <div id="admin-account-list" class="admin-account-list" aria-live="polite"></div>
+</section>
+<section id="toolbar" aria-label="Terminal actions">
+ <div class="toolbar-heading"><div><strong>Workspace controls</strong><span>Manage your VM session</span></div><a class="studio-return" href="/studio.html">← Studio</a></div>
+ <div class="toolbar-groups">
+  <div class="action-group"><span class="action-label">VM STATE</span><div class="action-buttons"><button id="save-vm-state" type="button">Save VM state</button><button id="clear-vm-state" class="danger-action" type="button">Delete saved state</button></div></div>
+  <div class="action-group"><span class="action-label">SHELL</span><div class="action-buttons"><button id="run-bootstrap" type="button">Wake shell</button><button id="paste-terminal" type="button">Paste into VM</button></div></div>
+  <div class="action-group"><span class="action-label">RESULTS</span><div class="action-buttons"><button id="copy-results" type="button">Copy results</button><button id="clear-results" type="button">Clear results</button></div></div>
+ </div>
+ <div class="toolbar-status"><span id="state-status" aria-live="polite">Saved state: checking…</span><span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span><button id="oracle-terminal-toggle" type="button" hidden>Open Oracle terminal</button><span id="copy-status"></span></div>
+</section>
+<textarea id="results" spellcheck="false" aria-hidden="true" tabindex="-1" placeholder="Diagnostic results"></textarea>
+<section class="console-card" aria-labelledby="console-title">
+ <div class="console-heading"><div><strong id="console-title">VAMPIRESQUID TERMINAL</strong><span>Persistent shell · Select and copy terminal output</span></div><span class="console-live">● LIVE CONSOLE</span></div>
+ <pre id="myst-log" tabindex="0" aria-label="Terminal output">Waiting for Tiny Core...</pre>
+</section>
+<div id="screen_container" aria-hidden="true"><div></div><canvas></canvas></div>
+<script src="/v86/libv86.js"></script>
+<script>
+window.startVm=async function(){
+const status=document.getElementById('status'),results=document.getElementById('results'),mystLog=document.getElementById('myst-log'),copyStatus=document.getElementById('copy-status'),stateStatus=document.getElementById('state-status');
+const nodeId='7cbee0e9-da6b-4808-92a7-4a3c2a45a840',apiUrl=window.location.origin;
+let reportTimer=null,bootstrapStarted=false,bootComplete=false;
+let manualCommandRunning=false;
+let oracleTerminalMode=false,oracleExecutionAvailable=false,oracleTerminalOutput='',oracleTerminalInput='',oracleTerminalHistory=[],oracleTerminalHistoryIndex=0,oracleTerminalBusy=false;
+
+function statusText(t){status.textContent=t}
+let snapshotBusy=false,snapshotLoadFailed=false,vmLoaded=false,restoredSnapshot=false,autosaveTimer=null;
+function stateText(t){stateStatus.textContent=t}
+const SNAPSHOT_CHUNK_BYTES=8*1024*1024;
+function snapshotUrl(){if(!window.snapshotIdentity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(window.snapshotIdentity)}
+function snapshotUrlFor(identity){if(!identity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(identity)}
+function snapshotHeaders(contentType='application/octet-stream'){const headers={'content-type':contentType};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;return headers}
+async function saveVmState(manual=true){
+if(!bootComplete){if(manual)stateText('Startup must finish before saving a snapshot.');return false}
+if(snapshotLoadFailed){stateText('Snapshot load failed; refusing to overwrite server state. Reload and retry.');return false}
+if(snapshotBusy){if(manual)stateText('A save is already in progress.');return false}
+if(!vmLoaded||!window.emulator||typeof window.emulator.save_state!=='function'){if(manual)stateText('VM is not ready to save yet.');return false}
+snapshotBusy=true;stateText('Creating VM snapshot…');
+try{
+const state=await window.emulator.save_state();
+const generation=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+const chunks=Math.ceil(state.byteLength/SNAPSHOT_CHUNK_BYTES);
+for(let part=0;part<chunks;part++){
+const chunk=state.slice(part*SNAPSHOT_CHUNK_BYTES,Math.min((part+1)*SNAPSHOT_CHUNK_BYTES,state.byteLength));
+stateText('Uploading snapshot part '+(part+1)+' of '+chunks+'…');
+const response=await fetch(snapshotUrl()+'/chunks/'+generation+'/'+part,{method:'PUT',headers:snapshotHeaders(),body:chunk});
+if(!response.ok)throw new Error('snapshot part '+(part+1)+' failed with HTTP '+response.status);
+}
+const savedAt=new Date().toISOString();
+const response=await fetch(snapshotUrl(),{method:'PUT',headers:snapshotHeaders('application/json'),body:JSON.stringify({version:1,generation,chunks,byteLength:state.byteLength,savedAt,adminReady:window.snapshotIdentity==='admin'&&bootComplete===true,...(window.snapshotIdentity==='admin'&&bootComplete===true?{checks:{guest_booted:true,shell_command_passed:true,dhcp_passed:true,ca_certificates_passed:true}}:{})})});
+if(!response.ok)throw new Error('snapshot manifest failed with HTTP '+response.status);
+const result=await response.json();
+if(window.snapshotNeedsInitialSave===true&&String(window.snapshotIdentity||'').startsWith('acct-')){window.snapshotNeedsInitialSave=false;try{sessionStorage.removeItem('vm-initial-snapshot-pending')}catch(e){}}
+stateText('Server snapshot saved at '+new Date(result.savedAt||savedAt).toLocaleTimeString());
+report('\\nVM_SNAPSHOT_SAVE_OK bytes='+state.byteLength+' chunks='+chunks+' savedAt='+(result.savedAt||savedAt)+'\\n');
+return true;
+}catch(e){stateText('Snapshot save failed: '+(e&&e.message?e.message:'server storage unavailable'));report('\\n*** VM SNAPSHOT SAVE FAILED: '+(e&&e.message?e.message:String(e))+' ***\\n');return false}
+finally{snapshotBusy=false}
+}
+async function loadVmState(){
+try{
+const requestedIdentity=window.snapshotIdentity;
+const candidates=requestedIdentity==='user-usera'?['user-usera','regular-user-a']:requestedIdentity==='user-userb'?['user-userb','regular-user-b']:[requestedIdentity];
+const headers={};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;
+for(const identity of candidates){
+const response=await fetch(snapshotUrlFor(identity),{headers,cache:'no-store'});
+if(response.status===404){if(identity.startsWith('acct-')){let pending=window.snapshotNeedsInitialSave===true;try{pending=pending||sessionStorage.getItem('vm-initial-snapshot-pending')===identity}catch(e){}if(pending){window.snapshotNeedsInitialSave=true;continue}throw new Error('No saved VM snapshot exists for this account; refusing to boot a fresh VM over missing user data.')}continue;}
+if(!response.ok)throw new Error('server returned HTTP '+response.status+' for snapshot identity '+identity);
+const manifest=await response.json();
+if(manifest.version!==1||typeof manifest.generation!=='string'||!/^[a-z0-9-]{1,40}$/.test(manifest.generation)||!Number.isInteger(manifest.chunks)||manifest.chunks<1||manifest.chunks>128||!Number.isInteger(manifest.byteLength)||manifest.byteLength<1||manifest.byteLength>536870912||manifest.chunks!==Math.ceil(manifest.byteLength/SNAPSHOT_CHUNK_BYTES))throw new Error('snapshot manifest is invalid');
+const state=new Uint8Array(manifest.byteLength);
+for(let base=0;base<manifest.chunks;base+=4){
+const batch=await Promise.all(Array.from({length:Math.min(4,manifest.chunks-base)},async(_,offset)=>{
+const part=base+offset;
+const chunkResponse=await fetch(snapshotUrlFor(identity)+'/chunks/'+manifest.generation+'/'+part,{headers,cache:'no-store'});
+if(!chunkResponse.ok)throw new Error('snapshot part '+(part+1)+' failed with HTTP '+chunkResponse.status+' for identity '+identity);
+return {part,bytes:await chunkResponse.arrayBuffer()};
+}));
+for(const item of batch){const expected=Math.min(SNAPSHOT_CHUNK_BYTES,manifest.byteLength-item.part*SNAPSHOT_CHUNK_BYTES);if(item.bytes.byteLength!==expected)throw new Error('snapshot part '+(item.part+1)+' has an invalid size');state.set(new Uint8Array(item.bytes),item.part*SNAPSHOT_CHUNK_BYTES)}
+stateText('Downloading saved VM snapshot '+Math.min(base+4,manifest.chunks)+' of '+manifest.chunks+'…');
+}
+if(state.byteLength!==manifest.byteLength)throw new Error('snapshot size did not match its manifest');
+window.snapshotIdentity=identity;
+return {state:state.buffer,savedAt:Date.parse(manifest.savedAt||response.headers.get('x-snapshot-saved-at')||'')||Date.now(),version:1,bootstrapRequired:manifest.bootstrapRequired===true};
+}
+stateText('No server snapshot found; starting a clean VM.');
+return null;
+}catch(e){snapshotLoadFailed=true;stateText('Snapshot load failed; restore stopped to protect saved account data.');statusText('Could not load the saved account guest. No clean VM was started and the saved snapshot was preserved.');report('\\n===== SNAPSHOT RESTORE FAILED =====\\nidentity='+(requestedIdentity||'unknown')+'\\nreason='+(e&&e.message?e.message:String(e))+'\\nNo fresh guest was started; saved server data was preserved.\\n');return null}
+}
+document.getElementById('save-vm-state').onclick=()=>saveVmState(true);
+document.getElementById('clear-vm-state').onclick=async()=>{
+if(!bootComplete){stateText('Startup must finish before changing the saved snapshot.');return}
+if(!confirm('Delete this account’s saved VM snapshot from the server? This cannot be undone.'))return;
+try{const headers={};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;const response=await fetch(snapshotUrl(),{method:'DELETE',headers});if(!response.ok)throw new Error('server returned HTTP '+response.status);stateText('Server snapshot deleted. The current VM keeps running.')}
+catch(e){stateText('Could not delete snapshot: '+(e&&e.message?e.message:String(e)))}
+};
+function reportStorageKey(){return 'vampiresquid-network-test-results:'+(window.snapshotIdentity||'admin')}
+function legacyReportStorageKey(){return 'mysterium-network-test-results:'+(window.snapshotIdentity||'admin')}
+let reportSaveTimer=null;
+function save(){if(reportSaveTimer!==null)clearTimeout(reportSaveTimer);reportSaveTimer=setTimeout(()=>{reportSaveTimer=null;try{localStorage.setItem(reportStorageKey(),results.value)}catch(e){}},500)}
+function report(t){results.value+=t;results.scrollTop=results.scrollHeight;save()}
+function drawOracleTerminal(){
+  if(oracleTerminalOutput.length>30000)oracleTerminalOutput=oracleTerminalOutput.slice(-30000);
+  mystLog.textContent=oracleTerminalOutput+(oracleTerminalBusy?'\n[Oracle command running…]':'')+'\n$ '+oracleTerminalInput;
+  mystLog.scrollTop=mystLog.scrollHeight;
+}
+function activateOracleTerminal(){
+  const isAdmin=window.snapshotIdentity==='admin'&&Boolean(window.snapshotAdminCode);
+  const isAccount=/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))&&Boolean(window.snapshotAuthToken);
+  if((!isAdmin&&!isAccount)||oracleTerminalMode)return;
+  oracleTerminalMode=true;
+  document.body.classList.add('oracle-terminal-mode');
+  mystLog.setAttribute('aria-label','Oracle persistent account terminal');
+  mystLog.title='Commands run in the persistent Oracle account session through Cloudflare.';
+  oracleTerminalOutput='VampireSquid persistent developer shell\nRuntime: Oracle host via Cloudflare\nSession ID: '+window.snapshotIdentity+'\nType a command and press Enter. The browser VM remains running for its network relay.\n\n';
+  oracleTerminalInput='';
+  oracleTerminalHistory=[];
+  oracleTerminalHistoryIndex=0;
+  document.getElementById('run-bootstrap').hidden=true;
+  document.getElementById('oracle-terminal-toggle').textContent='Return to Tiny Core shell';
+  drawOracleTerminal();
+  mystLog.focus();
+}
+async function checkAccountExecution(){
+  const toggle=document.getElementById('oracle-terminal-toggle');
+  oracleExecutionAvailable=false;
+  toggle.hidden=true;
+  if(window.snapshotIdentity==='admin'&&window.snapshotAdminCode){
+    try{
+      const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
+      const data=await response.json().catch(()=>({}));
+      if(response.ok&&data.status==='online'){
+        oracleExecutionAvailable=true;
+        toggle.hidden=false;
+        statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
+      }else{
+        statusText('Oracle agent is offline; Tiny Core remains active.');
+      }
+    }catch(error){
+      statusText('Could not verify Oracle availability; Tiny Core remains active.');
+    }
+    return;
+  }
+  if(!/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))||!window.snapshotAuthToken)return;
+  try{
+    const response=await fetch('/api/account/exec/status',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',
+      body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
+    if(data.enabled===true){
+      oracleExecutionAvailable=true;
+      toggle.hidden=false;
+      statusText('Oracle terminal is available as an optional runtime; Tiny Core remains active.');
+    }else{
+      statusText('Oracle account execution is disabled; Tiny Core remains active.');
+    }
+  }catch(error){
+    statusText('Could not verify Oracle availability; Tiny Core remains active.');
+  }
+}
+function deactivateOracleTerminal(){
+  oracleTerminalMode=false;
+  document.body.classList.remove('oracle-terminal-mode');
+  mystLog.setAttribute('aria-label','Tiny Core terminal output');
+  mystLog.removeAttribute('title');
+  document.getElementById('run-bootstrap').hidden=false;
+  document.getElementById('oracle-terminal-toggle').textContent='Open Oracle terminal';
+  mystLog.textContent=terminal();
+}
+document.getElementById('oracle-terminal-toggle').addEventListener('click',function(){
+  if(oracleTerminalMode){deactivateOracleTerminal();return;}
+  if(oracleExecutionAvailable)activateOracleTerminal();
+});
+async function runOracleTerminalCommand(raw){
+  if(oracleTerminalBusy)return;
+  const command=String(raw||'').replace(/\r/g,'');
+  if(!command.trim()){drawOracleTerminal();return;}
+  if(command.length>4096){oracleTerminalOutput+='Command exceeds the 4096-character limit.\n';drawOracleTerminal();return;}
+  if(command.trim()==='clear'||command.trim()==='cls'){oracleTerminalOutput='';oracleTerminalInput='';drawOracleTerminal();return;}
+  oracleTerminalOutput+='\n$ '+command+'\n';
+  oracleTerminalInput='';
+  if(oracleTerminalHistory[oracleTerminalHistory.length-1]!==command)oracleTerminalHistory.push(command);
+  oracleTerminalHistoryIndex=oracleTerminalHistory.length;
+  oracleTerminalBusy=true;
+  drawOracleTerminal();
+  try{
+    const isAdmin=window.snapshotIdentity==='admin';
+    const headers={'content-type':'application/json'};
+    if(isAdmin)headers['x-admin-code']=window.snapshotAdminCode;
+    const endpoint=isAdmin?'/api/admin/oracle-exec':'/api/account/exec';
+    const payload=isAdmin?{command,timeout_ms:15000}:{account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken,command,timeout_ms:15000};
+    const response=await fetch(endpoint,{method:'POST',headers,cache:'no-store',body:JSON.stringify(payload)});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok){
+      if(data.error==='oracle_account_execution_disabled')oracleTerminalOutput+='Oracle execution is disabled by server policy. '+(data.reason||'Per-account OS/container isolation must be enabled before host shell access.')+'\n';
+      else if(data.error==='unauthorized')oracleTerminalOutput+='Session is no longer authorized. Please log in again.\n';
+      else oracleTerminalOutput+='Oracle execution failed (HTTP '+response.status+'): '+String(data.error||data.reason||'request_failed')+'\n';
+    }else{
+      const stdout=typeof data.stdout==='string'?data.stdout:'';
+      const stderr=typeof data.stderr==='string'?data.stderr:'';
+      if(stdout)oracleTerminalOutput+=stdout+(stdout.endsWith('\n')?'':'\n');
+      if(stderr)oracleTerminalOutput+='[stderr]\n'+stderr+(stderr.endsWith('\n')?'':'\n');
+      if(Number.isInteger(data.exit_code)&&data.exit_code!==0)oracleTerminalOutput+='[exit code: '+data.exit_code+']\n';
+      if(data.timed_out===true)oracleTerminalOutput+='[command timed out; the server may still be processing it]\n';
+    }
+  }catch(error){oracleTerminalOutput+='Could not reach the Cloudflare Oracle execution route: '+(error&&error.message?error.message:String(error))+'\n';}
+  finally{oracleTerminalBusy=false;drawOracleTerminal();}
+}
+document.addEventListener('keydown',event=>{
+  if(!oracleTerminalMode)return;
+  if(event.target&&event.target!==mystLog&&event.target!==document.body&&event.target!==document.documentElement)return;
+  const key=event.key;
+  if((event.ctrlKey||event.metaKey)&&event.shiftKey&&key.toLowerCase()==='v'){
+    event.preventDefault();event.stopImmediatePropagation();void pasteIntoVm();return;
+  }
+  if(event.ctrlKey||event.metaKey){
+    if(key.toLowerCase()==='l'){event.preventDefault();event.stopImmediatePropagation();oracleTerminalOutput='';drawOracleTerminal();}
+    else if(key.toLowerCase()==='c'){event.preventDefault();event.stopImmediatePropagation();if(oracleTerminalBusy)oracleTerminalOutput+='\n[The current API command cannot be interrupted from this terminal.]\n';else oracleTerminalInput='';drawOracleTerminal();}
+    return;
+  }
+  if(event.altKey)return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(key==='Enter'){
+    if(event.shiftKey){oracleTerminalInput+='\n';drawOracleTerminal();return;}
+    void runOracleTerminalCommand(oracleTerminalInput);return;
+  }
+  if(key==='Backspace'){oracleTerminalInput=Array.from(oracleTerminalInput).slice(0,-1).join('');drawOracleTerminal();return;}
+  if(key==='ArrowUp'){
+    if(oracleTerminalHistory.length){oracleTerminalHistoryIndex=Math.max(0,oracleTerminalHistoryIndex-1);oracleTerminalInput=oracleTerminalHistory[oracleTerminalHistoryIndex]||'';drawOracleTerminal();}
+    return;
+  }
+  if(key==='ArrowDown'){
+    if(oracleTerminalHistory.length){oracleTerminalHistoryIndex=Math.min(oracleTerminalHistory.length,oracleTerminalHistoryIndex+1);oracleTerminalInput=oracleTerminalHistory[oracleTerminalHistoryIndex]||'';drawOracleTerminal();}
+    return;
+  }
+  if(key==='Escape'){oracleTerminalInput='';drawOracleTerminal();return;}
+  if(key.length===1){oracleTerminalInput=(oracleTerminalInput+key).slice(0,4096);drawOracleTerminal();}
+},true);
+try{const current=localStorage.getItem(reportStorageKey());const legacy=localStorage.getItem(legacyReportStorageKey());if(current)results.value=current;else if(legacy){results.value=legacy;localStorage.setItem(reportStorageKey(),legacy)}}catch(e){}
+
+document.getElementById('clear-results').onclick=function(){results.value='';save()};
+document.getElementById('copy-results').onclick=async function(){
+try{await navigator.clipboard.writeText(results.value)}catch(e){results.focus();results.select();document.execCommand('copy')}
+copyStatus.textContent='Results copied.';requestAnimationFrame(()=>copyStatus.textContent='',1800)
+};
+async function pasteIntoVm(){
+try{
+const text=await navigator.clipboard.readText();if(!text)throw new Error('empty');
+if(oracleTerminalMode){oracleTerminalInput=(oracleTerminalInput+text.replace(/\r\n/g,'\n').replace(/\r/g,'')).slice(0,4096);drawOracleTerminal();copyStatus.textContent='Pasted into Oracle command line.';return}
+if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('VM not ready');
+window.emulator.keyboard_send_text(text);if(!/[\r\n]$/.test(text))window.emulator.keyboard_send_text('\n');
+copyStatus.textContent='Pasted and executed.'
+}catch(e){copyStatus.textContent='Paste blocked; use the button again.'}
+requestAnimationFrame(()=>copyStatus.textContent='',3000)
+}
+document.getElementById('paste-terminal').onclick=pasteIntoVm;
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='v'){e.preventDefault();pasteIntoVm()}});
+
+function shellPrompt(text){
+const normalized=String(text||'').replace(/\r/g,'').replace(/\u00a0/g,' ');
+const lines=normalized.split('\n').map(line=>line.trim()).filter(Boolean);
+const promptPattern=/^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+(?::[^\n]{0,100})?\s*[$#]\s*$/;
+const lastLine=lines.length?lines[lines.length-1]:'';
+return promptPattern.test(lastLine)?lastLine:'';
+}
+function screenText(){
+if(window.emulator&&window.emulator.screen_adapter&&typeof window.emulator.screen_adapter.get_text_screen==='function'){
+return window.emulator.screen_adapter.get_text_screen().join('\n');
+}
+const s=document.querySelector('#screen_container > div');
+return(s&&s.textContent)||'';
+}
+window.vampireSquidRunNetworkCheck=async function(checkId){
+const checks={
+ ip:[{label:'Interface / DHCP address',command:'ip addr show 2>/dev/null || ifconfig -a'}],
+ routes:[{label:'Routing table',command:'ip route show 2>/dev/null || route -n'}],
+ dns:[{label:'DNS resolver configuration',command:'cat /etc/resolv.conf'},{label:'DNS lookup',command:'nslookup www.google.com'}],
+ ping:[{label:'Internet IP reachability',command:'ping -c 3 -W 2 1.1.1.1'}],
+ https:[{label:'HTTPS request',command:'wget -S -O /dev/null https://www.google.com 2>&1'}],
+ health:[
+  {label:'Interface / DHCP address',command:'ip addr show 2>/dev/null || ifconfig -a'},
+  {label:'Routing / gateway',command:'ip route show 2>/dev/null || route -n'},
+  {label:'DNS resolver configuration',command:'cat /etc/resolv.conf'},
+  {label:'DNS lookup',command:'nslookup www.google.com'},
+  {label:'Internet ping',command:'ping -c 3 -W 2 1.1.1.1'},
+  {label:'HTTPS test',command:'wget -S -O /dev/null https://www.google.com 2>&1'}
+ ]
+};
+const steps=checks[checkId];
+if(!steps)throw new Error('Unknown diagnostic.');
+if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('Tiny Core guest input is unavailable. Open the terminal and wait for the VM to finish starting.');
+if(window.vampireSquidRunNetworkCheck.busy)throw new Error('A guest diagnostic is already running.');
+window.vampireSquidRunNetworkCheck.busy=true;
+const results=[];
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const deadline=Date.now()+180000;
+try{
+ for(let index=0;index<steps.length;index++){
+  const step=steps[index],nonce=Math.random().toString(36).slice(2,10),marker='__VS_DIAG_'+nonce+':DONE:';
+  const wrapped=step.command+'; __vs_diag_rc=$?; printf "\\n__VS_DIAG_"; printf "%s" "'+nonce+'"; printf ":DONE:%s\\n" "$__vs_diag_rc"';
+  try{
+   if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
+   await window.emulator.keyboard_send_text(wrapped+'\n',2);
+  }catch(error){
+   results.push({label:step.label,ok:false,interrupted:true,output:'Input delivery failed: '+(error&&error.message?error.message:String(error))});
+   break;
+  }
+  let last=screenText(),completion='';
+  while(Date.now()<deadline){
+   await pause(200);
+   last=screenText();
+   const at=last.lastIndexOf(marker);
+   if(at>=0){completion=last.slice(at+marker.length).split(/\r?\n/,1)[0].trim();break;}
+  }
+  if(!completion){
+   results.push({label:step.label,ok:false,interrupted:true,output:'Diagnostic interrupted: the overall 3-minute diagnostic limit expired before the guest completion marker arrived. Earlier results are preserved.',screen:last});
+   break;
+  }
+  const rc=Number(completion);
+  const commandFailed=Number.isFinite(rc)&&rc!==0;
+  results.push({label:step.label,ok:!commandFailed,interrupted:false,exitCode:Number.isFinite(rc)?rc:null,output:last});
+ }
+ const ok=results.length===steps.length&&results.every(result=>result.ok&&!result.interrupted);
+ const complete=results.length===steps.length&&results.every(result=>!result.interrupted);
+ const output=results.map((result,index)=>'===== '+(index+1)+'. '+result.label+' =====\n'+(result.interrupted?'[INCOMPLETE] ':result.ok?'[PASS] ':'[CHECK] ')+(result.output||'No guest output captured.')).join('\n\n');
+ return {ok,complete,results,output};
+}finally{window.vampireSquidRunNetworkCheck.busy=false;}
+};
+let lastMirrorLines=[];
+let lastMirrorRaw='';
+let terminalHistory='';
+function appendTerminalHistory(lines){
+if(!lines.length)return;
+const chunk=lines.join('\n');
+if(!chunk.trim())return;
+terminalHistory+=(terminalHistory?'\n':'')+chunk;
+report('\n===== LIVE SHELL HISTORY =====\n'+chunk+'\n');
+}
+function normalizeScreenLines(raw){
+const lines=String(raw||'').replace(/\r/g,'').split('\n').map(line=>line.replace(/[ \t]+$/,''));
+while(lines.length&& !lines[0].trim())lines.shift();
+while(lines.length&& !lines[lines.length-1].trim())lines.pop();
+return lines;
+}
+function mirror(){
+if(oracleTerminalMode)return;
+const raw=screenText().replace(/\r/g,'');
+const lines=normalizeScreenLines(raw);
+if(!raw.trim())return;
+if(raw!==lastMirrorRaw){mystLog.textContent=raw;mystLog.scrollTop=mystLog.scrollHeight;lastMirrorRaw=raw;}
+if(!lastMirrorLines.length){
+if(lines.length&&!manualCommandRunning)appendTerminalHistory(lines);
+lastMirrorLines=lines;
+return;
+}
+// Compare normalized, nonblank screen rows so padding and empty rows do not
+// break the overlap and cause the same terminal output to be logged repeatedly.
+let overlap=0;
+const max=Math.min(lastMirrorLines.length,lines.length);
+for(let n=max;n>0;n--){
+let same=true;
+for(let j=0;j<n;j++){
+if(lastMirrorLines[lastMirrorLines.length-n+j]!==lines[j]){same=false;break}
+}
+if(same){overlap=n;break}
+}
+if(overlap<lines.length&&!manualCommandRunning)appendTerminalHistory(lines.slice(overlap));
+lastMirrorLines=lines;
+}
+function mirrorLoop(){mirror();setTimeout(mirrorLoop,500)}
+setTimeout(mirrorLoop,500);
+
+document.getElementById('run-bootstrap').onclick=async function(){
+if(!window.emulator||!vmLoaded){statusText('VM is not ready yet. Wait for the VM engine to load.');report('\n*** MANUAL START: VM is not ready. ***\n');return}
+if(bootstrapStarted){statusText('Bootstrap has already started in this page session; check the report.');return}
+try{
+if(typeof window.emulator.keyboard_send_text!=='function')throw new Error('v86 keyboard_send_text API is unavailable');
+if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
+statusText('Sending explicit Enter and shell test command; waiting for a stable prompt.');
+report('\n===== MANUAL SHELL WAKE =====\nSending Enter, then echo __MANUAL_BOOTSTRAP_WAKE__.\n');
+await sendVmCommand('\n');
+await sendVmCommand('echo __MANUAL_BOOTSTRAP_WAKE__\n');
+report('Keyboard API accepted the shell wake sequence.\n');
+startBootMonitor();
+}catch(e){
+report('\n*** MANUAL SHELL WAKE FAILED: '+(e&&e.message?e.message:String(e))+' ***\n');
+statusText('Keyboard input failed: '+(e&&e.message?e.message:String(e)));
+}
+};
+
+let apiAgentSocket=null,apiAgentConnecting=false,apiExecBusy=false,apiAgentReconnectPending=false;
+let oracleStatusTimer=null,oracleStatusCheckInFlight=false;
+async function checkOracleBridge(){
+  const label=document.getElementById('oracle-bridge-status');
+  if(!label||oracleStatusCheckInFlight)return;
+  oracleStatusCheckInFlight=true;
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),5000);
+  try{
+    const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store',signal:controller.signal});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
+    if(data.status==='online'){
+      label.textContent='Oracle bridge: online';
+      label.title='Oracle outbound WebSocket connected; account command routing is still a separate integration step.';
+    }else{
+      label.textContent='Oracle bridge: offline';
+      label.title='Oracle executor has not connected to Cloudflare.';
+    }
+  }catch(error){
+    label.textContent='Oracle bridge: unavailable';
+    label.title=error&&error.message?error.message:'Status request failed';
+  }finally{
+    clearTimeout(timeout);
+    oracleStatusCheckInFlight=false;
+  }
+}
+function startOracleBridgeStatus(){
+  if(oracleStatusTimer!==null)return;
+  checkOracleBridge();
+  oracleStatusTimer=setInterval(checkOracleBridge,15000);
+}
+async function connectApiAgent(){
+if(window.snapshotIdentity!=='admin'||!window.snapshotAdminCode||apiAgentConnecting)return;
+if(apiAgentSocket&&apiAgentSocket.readyState<=1)return;
+apiAgentConnecting=true;
+try{
+const ticketResponse=await fetch('/api/vm/agent-ticket',{method:'POST',headers:{'x-admin-code':window.snapshotAdminCode}});
+if(!ticketResponse.ok)throw new Error('agent ticket HTTP '+ticketResponse.status);
+const ticket=await ticketResponse.json();
+const wsUrl=new URL('/api/vm/agent',window.location.href);
+wsUrl.protocol=window.location.protocol==='https:'?'wss:':'ws:';
+wsUrl.searchParams.set('ticket',ticket.ticket);
+const ws=new WebSocket(wsUrl);
+apiAgentSocket=ws;
+ws.onopen=()=>{apiAgentConnecting=false;ws.send(JSON.stringify({type:'heartbeat'}));stateText('VM ready; API execution agent connected.')};
+ws.onmessage=async event=>{
+let message;
+try{message=JSON.parse(event.data)}catch(e){return}
+if(message.type!=='exec'||typeof message.id!=='string'||typeof message.command!=='string')return;
+if(apiExecBusy||bootstrapStarted||!bootComplete){
+ws.send(JSON.stringify({type:'result',id:message.id,stdout:'',stderr:'VM is busy or startup is incomplete.',exit_code:null}));
+return;
+}
+apiExecBusy=true;
+const id=message.id.replace(/[^a-f0-9-]/gi,'').slice(0,36);
+const begin='__API_EXEC_BEGIN_'+id+'__',end='__API_EXEC_END_'+id+'__:';
+try{
+if(!id)throw new Error('invalid execution id');
+const before=screenText();
+const command='printf "\\n'+begin+'\\n"; ( '+message.command+' ); rc=$?; printf "\\n'+end+'%s\\n" "$rc"';
+await sendVmCommand(command+'\n');
+const deadline=Date.now()+Math.min(Math.max(Number(message.timeout_ms)||15000,1000),20000);
+let finalScreen='',exitCode=null;
+while(Date.now()<deadline){
+const t=screenText(),endAt=t.lastIndexOf(end);
+if(endAt>=0){
+const line=t.slice(endAt+end.length).split(/\r?\n/,1)[0].trim();
+if(/^(-?\d+)$/.test(line)&&shellPrompt(t.slice(endAt))){
+finalScreen=t;exitCode=Number(line);break;
+}
+}
+await new Promise(resolve=>requestAnimationFrame(resolve));
+}
+if(exitCode===null){
+ws.send(JSON.stringify({type:'result',id:message.id,stdout:'',stderr:'Command timed out or the shell prompt did not return. The command may still be running in the VM.',exit_code:null,timed_out:true}));
+}else{
+const beginAt=finalScreen.lastIndexOf(begin);
+const endAt=finalScreen.lastIndexOf(end);
+const stdout=beginAt>=0&&endAt>beginAt?finalScreen.slice(beginAt+begin.length,endAt).replace(/^\r?\n/,'').trimEnd():'Command completed; output was outside the visible terminal buffer.';
+ws.send(JSON.stringify({type:'result',id:message.id,stdout,stderr:'',exit_code:exitCode}));
+}
+}catch(error){
+ws.send(JSON.stringify({type:'result',id:message.id,stdout:'',stderr:error&&error.message?error.message:String(error),exit_code:null}));
+}finally{apiExecBusy=false}
+};
+ws.onerror=()=>{apiAgentConnecting=false};
+ws.onclose=()=>{apiAgentConnecting=false;if(apiAgentSocket===ws)apiAgentSocket=null;if(bootComplete&&window.snapshotIdentity==='admin'&&!apiAgentReconnectPending){apiAgentReconnectPending=true;let frames=180;const reconnect=()=>{if(!bootComplete||window.snapshotIdentity!=='admin'){apiAgentReconnectPending=false;return}if(--frames<=0){apiAgentReconnectPending=false;connectApiAgent();return}requestAnimationFrame(reconnect)};requestAnimationFrame(reconnect)}};
+}catch(error){
+apiAgentConnecting=false;
+stateText('VM ready, API agent connection failed: '+(error&&error.message?error.message:String(error)));
+}
+}
+async function sendVmCommand(cmd){
+if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('v86 keyboard API unavailable');
+if(typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
+await window.emulator.keyboard_send_text(cmd,2);
+
+}
+
+async function startBootstrap(){
+if(bootstrapStarted)return;if(manualCommandRunning){requestAnimationFrame(startBootstrap);return}bootstrapStarted=true;statusText('Tiny Core ready; checking DHCP, CA certificates, DNS, and HTTPS.');
+const commands=[
+`echo "--- NETWORK INIT ---"; sudo -n sh -c '/sbin/modprobe ne2k-pci 2>/dev/null; /sbin/modprobe 8390 2>/dev/null; iface=eth0; /sbin/ifconfig -a | grep -q "^eth0" || { echo NIC_MISSING; exit 1; }; mac="${window.snapshotVirtualMac||'02:ff:ff:ff:ff:ff'}"; ip="${window.snapshotVirtualIp||'10.240.0.2'}"; gw="${window.snapshotRouterIp||'10.240.0.1'}"; echo DHCP_EXPECTED_IP=$ip; /sbin/ifconfig "$iface" down 2>/dev/null; /sbin/ifconfig "$iface" hw ether "$mac" || { echo MAC_ASSIGN_FAILED; exit 1; }; /sbin/ifconfig "$iface" up || exit 1; n=1; while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i "$iface"; /sbin/ifconfig "$iface" | grep -q "$ip" && /sbin/route -n | grep -q "$gw" && { echo DHCP_OK; echo DHCP_ASSIGNED_IP=$ip; echo DHCP_ASSIGNED_GATEWAY=$gw; exit 0; }; n=$((n+1)); sleep 3; done; echo DHCP_FAILED; /sbin/ifconfig -a; /sbin/route -n; cat /etc/resolv.conf; exit 1'; echo DHCP_DONE`,
+'echo "--- RESOURCE PREFLIGHT ---"; df -h / /tmp /usr/local/tce 2>&1; free 2>&1; cat /proc/meminfo 2>/dev/null | head -n 8; echo "TLS prerequisites will be installed and included in the saved VM state."; printf "\n__RESOURCE_""PREFLIGHT_DONE\n"',
+'echo "--- TLS prerequisite check/download ---"; ca_bundle=$(find /usr/local/etc/ssl/certs /etc/ssl/certs /usr/local/share/ca-certificates -type f -name ca-certificates.crt 2>/dev/null | head -n 1); if command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1 && [ -s "$ca_bundle" ] && grep -q "BEGIN CERTIFICATE" "$ca_bundle"; then echo TLS_PREREQUISITES_ALREADY_PRESENT; openssl_dl=0; ca_dl=0; else tce-load -w openssl-1.1.1.tcz; openssl_dl=$?; tce-load -w ca-certificates.tcz; ca_dl=$?; fi; echo OPENSSL_DOWNLOAD_RC=$openssl_dl; echo CA_DOWNLOAD_RC=$ca_dl; printf "\n__TLS_DOWNLOAD_""DONE:%s:%s\n" "$openssl_dl" "$ca_dl"',
+'echo "--- OpenSSL verify/install ---"; if command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1; then install_rc=0; else tce-load -i openssl-1.1.1 >/tmp/openssl-install.log 2>&1; install_rc=$?; fi; if [ "$install_rc" -eq 0 ] && command -v openssl >/dev/null 2>&1 && openssl version >/dev/null 2>&1; then rc=0; else rc=1; fi; echo OPENSSL_PATH=$(command -v openssl 2>/dev/null); openssl version 2>&1; echo OPENSSL_INSTALL_RC=$rc; printf "\n__OPENSSL_INSTALL_""DONE:%s\n" "$rc"',
+`echo "--- CA certificate verify/install ---"; CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs -type f -name ca-certificates.crt 2>/dev/null|head -n 1); if [ -s "$CA_BUNDLE" ]&&grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE"; then rc=0; else tce-load -i ca-certificates >/tmp/ca.log 2>&1; install_rc=$?; tail -n 5 /tmp/ca.log; CA_BUNDLE=$(find /usr/local/etc/ssl/certs /etc/ssl/certs -type f -name ca-certificates.crt 2>/dev/null|head -n 1); [ "$install_rc" -eq 0 ]&&[ -s "$CA_BUNDLE" ]&&grep -q "BEGIN CERTIFICATE" "$CA_BUNDLE"; rc=$?; fi; echo CA_BUNDLE_PATH=$CA_BUNDLE; echo CA_INSTALL_RC=$rc; printf "\\n__CA_CERTIFICATES_INSTALL_DONE:%s\\n" "$rc"`,
+
+  `echo "--- DNS / HTTP / HTTPS egress preflight ---"; nslookup google.com >/tmp/vs-dns-preflight.log 2>&1; dns_rc=$?; cat /tmp/vs-dns-preflight.log; if [ "$dns_rc" -eq 0 ]; then wget -T 30 -t 2 -S -O /dev/null http://www.google.com/ >/tmp/vs-http-preflight.log 2>&1; http_rc=$?; wget -T 30 -t 2 -S -O /dev/null https://www.google.com/generate_204 >/tmp/vs-https-preflight.log 2>&1; https_rc=$?; else http_rc=1; https_rc=1; fi; cat /tmp/vs-http-preflight.log /tmp/vs-https-preflight.log 2>/dev/null; echo DNS_PREFLIGHT_RC=$dns_rc; echo HTTP_PREFLIGHT_RC=$http_rc; echo HTTPS_PREFLIGHT_RC=$https_rc; printf "\\n__EGRESS_PREFLIGHT_DONE:%s:%s:%s\\n" "$dns_rc" "$http_rc" "$https_rc"`,
+
+];
+const markers=['DHCP_DONE','__RESOURCE_PREFLIGHT_DONE','__TLS_DOWNLOAD_DONE:','__OPENSSL_INSTALL_DONE:','__CA_CERTIFICATES_INSTALL_DONE:','__EGRESS_PREFLIGHT_DONE:'];
+// No per-step timeout; wait for completion markers.
+let i=0;
+function terminal(){return screenText()}
+function markerCount(text,marker){return String(text||'').split(marker).length-1}
+function markerResult(text,marker){const at=String(text||'').lastIndexOf(marker);return at<0?'':String(text).slice(at+marker.length).split(/\r?\n/,1)[0].trim()}
+async function next(){
+if(i>=commands.length){
+bootComplete=true;
+startOracleBridgeStatus();
+statusText('DHCP, CA, DNS, HTTP, and HTTPS checks complete. Saving the Admin baseline snapshot.');
+report('\n===== STARTUP COMPLETE — VAMPIRESQUID READY =====\n');
+while(snapshotBusy)await new Promise(r=>requestAnimationFrame(r));
+let saved=false;
+for(let attempt=1;attempt<=3&&!saved;attempt++){
+  if(attempt>1){statusText('Automatic snapshot save retry '+attempt+' of 3…');report('Automatic snapshot save retry '+attempt+' of 3.\\n');await new Promise(r=>setTimeout(r,1500*attempt));}
+  saved=await saveVmState(false);
+}
+if(!autosaveTimer)autosaveTimer=setInterval(()=>saveVmState(false),5*60*1000);
+const accountTerminal=String(window.snapshotIdentity||'').startsWith('acct-');
+statusText(accountTerminal?'Guest network setup complete; activating the Oracle account terminal.':saved?'DHCP, DNS, HTTP, and HTTPS verified; CA certificates included in the saved VM snapshot.':'Automatic snapshot save failed after 3 attempts. The VM will retry on the autosave schedule.');
+if(accountTerminal||window.snapshotIdentity==='admin')void checkAccountExecution();
+connectApiAgent();
+return;
+}
+const n=i++,cmd=commands[n],marker=markers[n];
+if(n===0){
+report('\n===== KEYBOARD INPUT WAKE =====\nSending Enter to ensure the detected shell is accepting keyboard input.\n');
+await sendVmCommand('\n');
+}
+report('\n===== BOOTSTRAP STEP '+(n+1)+'/'+commands.length+' =====\n'+cmd+'\n');
+const markerCountBefore=marker?markerCount(terminal(),marker):0;
+await sendVmCommand(cmd+'\n');
+if(marker){
+(function wait(){
+const t=terminal(),markerAt=t.lastIndexOf(marker);
+if(markerCount(t,marker)>markerCountBefore){
+report('----- bootstrap screen snapshot -----\n'+terminal()+'\n----- end bootstrap screen snapshot -----\n');
+if(marker==='DHCP_DONE'&&!terminal().includes('DHCP_OK')){report('*** DHCP did not install a usable IPv4 address and default route. No guessed gateway will be added; stopping before package/bootstrap downloads. ***\\n');statusText('DHCP/default-route check failed; diagnostics captured.');return} if(marker==='__OPENSSL_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** OpenSSL install did not produce a working binary; stopping before HTTPS. See /tmp/openssl-install.log. ***\\n');statusText('OpenSSL install failed; diagnostics captured.');return} if(marker==='__CA_CERTIFICATES_INSTALL_DONE:'&&markerResult(t,marker)!=='0'){report('*** CA certificate file is missing; stopping before HTTPS. See /tmp/ca-certificates-install.log. ***\\n');statusText('CA install failed; diagnostics captured.');return} if(marker==='__EGRESS_PREFLIGHT_DONE:'){const egress=markerResult(t,marker).split(':');if(egress.length!==3||egress.some(rc=>rc!=='0')){report('*** DNS, HTTP, or HTTPS preflight failed; baseline snapshot will not be saved. Inspect /tmp/vs-dns-preflight.log, /tmp/vs-http-preflight.log, and /tmp/vs-https-preflight.log. ***\\n');statusText('DNS/HTTP/HTTPS preflight failed; snapshot not saved.');return}} next();return
+}
+requestAnimationFrame(wait)
+})()
+}else requestAnimationFrame(next)
+}
+next()
+}
+
+results.value='';save();report('\n===== VM RUN STARTED =====\n');
+statusText('Loading v86â¦');
+const networkIdentity=window.snapshotIdentity||'admin';
+const virtualIp=typeof window.snapshotVirtualIp==='string'&&/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(window.snapshotVirtualIp)?window.snapshotVirtualIp:'10.240.0.2';
+const virtualMac=typeof window.snapshotVirtualMac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(window.snapshotVirtualMac)?window.snapshotVirtualMac:'02:ff:ff:ff:ff:ff';
+const ipParts=virtualIp.split('.');
+const routerIp='10.240.'+Number(ipParts[2])+'.1';
+window.snapshotVirtualIp=virtualIp;
+window.snapshotVirtualMac=virtualMac;
+window.snapshotRouterIp=routerIp;
+let networkTicket='';
+try{
+  const ticketBody=networkIdentity==='admin'?{account_id:'admin',admin_code:window.snapshotAdminCode}:{account_id:networkIdentity,session_token:window.snapshotAuthToken};
+  const ticketResponse=await fetch(apiUrl+'/api/network/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(ticketBody)});
+  const ticketData=await ticketResponse.json().catch(()=>({}));
+  if(!ticketResponse.ok||typeof ticketData.ticket!=='string'||!/^[a-f0-9]{64}$/.test(ticketData.ticket))throw new Error(ticketData.error||'network_ticket_failed');
+  networkTicket=ticketData.ticket;
+}catch(e){statusText('Could not authorize the account network relay: '+(e&&e.message?e.message:String(e)));report('\n*** NETWORK RELAY TICKET FAILED; VM startup stopped. ***\n');return}
+const relayUrl='wisps://'+window.location.host+'/api/network/wisp/?account_id='+encodeURIComponent(networkIdentity)+'&ticket='+encodeURIComponent(networkTicket);
+try{
+const V86Constructor=window.V86;if(typeof V86Constructor!=='function')throw new Error('The v86 browser runtime did not load (window.V86 is unavailable). Check /v86/libv86.js.');window.emulator=new V86Constructor({
+wasm_path:'/v86/v86.wasm',memory_size:128*1024*1024,vga_memory_size:8*1024*1024,
+screen_container:document.getElementById('screen_container'),
+bios:{url:'/bios/seabios.bin'},vga_bios:{url:'/bios/vgabios.bin'},
+cdrom:{url:'/boot/TinyCorePure64-11.0-v86-ne2k-dhcp-experimental.iso'},
+net_device:{type:'ne2k',relay_url:relayUrl,router_ip:routerIp,vm_ip:virtualIp,masquerade:true,dns_method:'doh',doh_server:'cloudflare-dns.com',preserve_mac_from_state_image:false},autostart:false
+});
+statusText('Loading VM engine and checking for a saved stateâ¦');
+window.emulator.add_listener('emulator-loaded',async function(){
+if(vmLoaded)return;
+vmLoaded=true;
+const record=await loadVmState();
+if(snapshotLoadFailed&&window.snapshotIdentity&&window.snapshotIdentity.startsWith('acct-')){
+statusText('Account snapshot could not be restored; VM startup stopped to protect user data.');
+stateText('Restore failed; no fresh bootstrap started.');
+return;
+}
+if(record&&record.state){
+try{
+stateText('Restoring saved VM state into the browser emulator…');
+statusText('Snapshot downloaded. Restoring the saved guest into v86…');
+await window.emulator.restore_state(record.state);
+restoredSnapshot=true;
+stateText('Guest state restored in v86 from '+new Date(record.savedAt).toLocaleString()+'. Waiting for guest shell verification…');
+report('\\nSNAPSHOT_BYTES_RESTORED='+record.state.byteLength+'\\nSNAPSHOT_SAVED_AT='+new Date(record.savedAt).toISOString()+'\\n');
+await window.emulator.run();
+}catch(e){
+restoredSnapshot=false;
+snapshotLoadFailed=true;
+stateText('Saved state could not be restored; starting a clean VM without overwriting the stored snapshot.');
+report('\n*** RESTORE FAILED: '+(e&&e.message?e.message:String(e))+'; server snapshot preserved. ***\n');
+if(window.snapshotIdentity&&window.snapshotIdentity.startsWith('acct-')){
+statusText('Account snapshot restore failed; stopped without starting a fresh VM.');
+return;
+}
+await window.emulator.run();
+}
+}else{
+stateText('No saved VM state found; starting a clean VM.');
+await window.emulator.run();
+}
+if(restoredSnapshot){
+if(record&&record.bootstrapRequired){
+statusText('New account baseline restored; running one-time VM setup before saving its initialized state.');
+startBootMonitor();
+return;
+}
+startOracleBridgeStatus();
+stateText('Verifying restored Tiny Core shell: waiting for a stable prompt, then running an echo probe (up to 25 seconds)…');
+report('\\n===== RESTORED GUEST SHELL VERIFICATION =====\\nWaiting for a stable Tiny Core prompt and an echo command round-trip.\\n');
+const verification=await verifyRestoredGuestShell();
+if(!verification.ok){
+bootComplete=false;
+stateText('Guest shell verification failed: '+verification.reason+'. Saved snapshot was not changed.');
+statusText('The restored guest did not pass its shell command probe. VM startup is not marked ready; inspect the guest screen or use Wake shell / run bootstrap.');
+report('\\n*** RESTORED GUEST SHELL VERIFICATION FAILED ***\\nreason='+verification.reason+'\\nSaved snapshot was not modified; Oracle guest command execution was not enabled.\\n');
+return;
+}
+bootComplete=true;
+stateText('Guest shell verified: echo command returned successfully.');
+report('RESTORED_GUEST_SHELL_VERIFIED=1\\nprobe='+verification.marker+'\\n');
+if(String(window.snapshotIdentity||'').startsWith('acct-')||window.snapshotIdentity==='admin')void checkAccountExecution();else statusText('Saved VM resumed; guest shell verified; connecting the Oracle bridge.');
+connectApiAgent();
+return;
+}
+startBootMonitor();
+});
+let promptCandidate='',promptCandidateSince=0;
+const PROMPT_STABLE_MS=2000;
+function shellPrompt(text){
+const normalized=String(text||'').replace(/\r/g,'').replace(/\u00a0/g,' ');
+const lines=normalized.split('\n').map(line=>line.trim()).filter(Boolean);
+const promptPattern=/^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+(?::[^\n]{0,100})?\s*[$#]\s*$/;
+for(let i=lines.length-1;i>=Math.max(0,lines.length-6);i--){
+if(promptPattern.test(lines[i]))return lines[i];
+}
+return '';
+}
+async function verifyRestoredGuestShell(promptTimeoutMs=15000,commandTimeoutMs=10000){
+const promptDeadline=Date.now()+promptTimeoutMs;
+let candidate='',candidateSince=0,stablePrompt=false;
+while(Date.now()<promptDeadline){
+const prompt=shellPrompt(screenText());
+if(prompt){
+if(prompt===candidate&&Date.now()-candidateSince>=PROMPT_STABLE_MS){stablePrompt=true;break;}
+if(prompt!==candidate){candidate=prompt;candidateSince=Date.now();}
+}else{candidate='';candidateSince=0;}
+await new Promise(resolve=>setTimeout(resolve,25));
+}
+if(!stablePrompt)return {ok:false,reason:'no stable Tiny Core shell prompt appeared within '+promptTimeoutMs+' ms'};
+const marker='__V86_RESTORE_SHELL_OK_'+Math.random().toString(36).slice(2,10)+'__';
+try{
+await sendVmCommand('echo '+marker+'\n');
+}catch(error){
+return {ok:false,reason:'could not send shell probe: '+(error&&error.message?error.message:String(error))};
+}
+const commandDeadline=Date.now()+commandTimeoutMs;
+while(Date.now()<commandDeadline){
+const text=screenText().replace(/\r/g,'');
+const lines=normalizeScreenLines(text);
+if(lines.some(line=>line.trim()===marker)&&shellPrompt(text))return {ok:true,marker};
+await new Promise(resolve=>setTimeout(resolve,25));
+}
+return {ok:false,reason:'echo probe output or the shell prompt did not return within '+commandTimeoutMs+' ms'};
+}
+function startBootMonitor(){
+statusText('Tiny Core is booting; waiting up to five minutes for a stable shell prompt.');
+const bootStartedAt=Date.now();
+const BOOT_TIMEOUT_MS=300000;
+let bootPromptHandled=false;
+(function waitForBootComplete(){
+const t=screenText();
+const elapsed=Date.now()-bootStartedAt;
+// Some Tiny Core ISOs stop at the Syslinux prompt; auto-booting images will
+// never show it. Send Enter only when a standalone boot: prompt is visible.
+if(!bootPromptHandled&&t.split('\n').some(line=>/^boot:\s*$/i.test(line.trim()))){
+bootPromptHandled=true;
+try{
+if(window.emulator&&typeof window.emulator.keyboard_send_scancodes==='function'){
+window.emulator.keyboard_send_scancodes([0x1C,0x9C]);
+statusText('Tiny Core bootloader prompt detected; sent Enter and waiting for Linux.');
+}else{
+statusText('Tiny Core is at the bootloader prompt, but keyboard input is unavailable.');
+report('\n*** BOOT ERROR: bootloader prompt detected but keyboard_send_scancodes is unavailable. ***\n'+t+'\n');
+return;
+}
+}catch(e){
+statusText('Could not advance Tiny Core bootloader: '+(e&&e.message?e.message:String(e)));
+report('\n*** BOOT ERROR: '+(e&&e.message?e.message:String(e))+' ***\n'+t+'\n');
+return;
+}
+}
+const prompt=shellPrompt(t);
+if(prompt){
+if(prompt===promptCandidate){
+if(Date.now()-promptCandidateSince>=PROMPT_STABLE_MS){
+statusText('Tiny Core shell prompt is stable; starting bootstrap.');
+startBootstrap();
+return;
+}
+}else{promptCandidate=prompt;promptCandidateSince=Date.now();}
+}else{promptCandidate='';promptCandidateSince=0;}
+if(elapsed>=BOOT_TIMEOUT_MS){
+statusText('Tiny Core did not reach a shell within five minutes; bootstrap was not started.');
+report('\n*** BOOT TIMEOUT after '+Math.round(elapsed/1000)+' seconds. No bootstrap was started. Current guest screen follows. ***\n'+t+'\n');
+stateText('Boot timed out; saved snapshot was not changed.');
+return;
+}
+requestAnimationFrame(waitForBootComplete);
+})();
+}
+}catch(e){statusText('VM ERROR: '+e.message)}
+};
+window.onload=function(){
+const keyPanel=document.getElementById('api-key-panel');
+const keyGenerate=document.getElementById('api-key-generate');
+const keyCopy=document.getElementById('api-key-copy');
+const keyHide=document.getElementById('api-key-hide');
+const keyValue=document.getElementById('api-key-value');
+const keyMessage=document.getElementById('api-key-message');
+const accountIdValue=document.getElementById('account-id-value');
+const accountIdCopy=document.getElementById('account-id-copy');
+const accountIdMessage=document.getElementById('account-id-message');
+function showAccountId(id){accountIdValue.textContent=String(id||'Not signed in');accountIdMessage.textContent='';}
+accountIdCopy.addEventListener('click',async()=>{const id=accountIdValue.textContent;if(!id||id==='Not signed in')return;try{await navigator.clipboard.writeText(id);accountIdMessage.textContent='Account ID copied.';}catch(e){accountIdMessage.textContent='Clipboard blocked; select and copy the ID above.';}});
+function clearDisplayedApiKey(){keyValue.textContent='';keyValue.hidden=true;keyCopy.hidden=true;keyHide.hidden=true;}
+async function loadCurrentApiKey(){
+  if(!window.snapshotIdentity||!String(window.snapshotIdentity).startsWith('acct-')||!window.snapshotAuthToken)return;
+  keyMessage.textContent='Loading current API key…';clearDisplayedApiKey();
+  try{
+    const response=await fetch('/api/account/api-key?account_id='+encodeURIComponent(window.snapshotIdentity),{method:'GET',headers:{authorization:'Bearer '+window.snapshotAuthToken},cache:'no-store'});
+    const data=await response.json().catch(()=>({}));
+    if(response.status===404){keyMessage.textContent='This account’s key was created before dashboard display was enabled. It has not been changed; its original value cannot be recovered from the stored hash.';return;}
+    if(!response.ok)throw new Error(data.error||'HTTP '+response.status);
+    if(typeof data.api_key!=='string'||!/^acct_[a-f0-9]{64}$/.test(data.api_key))throw new Error('The server response did not contain a valid API key.');
+    keyValue.textContent=data.api_key;keyValue.hidden=false;keyCopy.hidden=false;keyHide.hidden=false;
+    keyMessage.textContent='Current API key loaded. Copy it if needed; it will load again when you sign in.';
+  }catch(error){keyMessage.textContent='Could not load the current API key: '+(error&&error.message?error.message:'request failed');}
+}
+keyGenerate.addEventListener('click',async()=>{
+  if(!window.snapshotIdentity||!String(window.snapshotIdentity).startsWith('acct-')||!window.snapshotAuthToken){
+    keyMessage.textContent='Log in with a regular account first. Admin sessions do not have a user API key.';
+    return;
+  }
+  const approved=confirm('This creates a new API key and invalidates the previous key. The previous key cannot be recovered. Continue?');
+  if(!approved)return;
+  keyGenerate.disabled=true;keyMessage.textContent='Generating replacement key…';clearDisplayedApiKey();
+  try{
+    const response=await fetch('/api/account/api-key/rotate',{method:'POST',headers:{'content-type':'application/json'},cache:'no-store',body:JSON.stringify({account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||'HTTP '+response.status);
+    if(typeof data.api_key!=='string'||!/^acct_[a-f0-9]{64}$/.test(data.api_key))throw new Error('The server response did not contain a valid API key.');
+    keyValue.textContent=data.api_key;keyValue.hidden=false;keyCopy.hidden=false;keyHide.hidden=false;
+    keyMessage.textContent='Replacement created. Copy it to a password manager now; it will not be shown again after you hide it or leave this page.';
+  }catch(error){keyMessage.textContent='Could not create a replacement key: '+(error&&error.message?error.message:'request failed');}
+  finally{keyGenerate.disabled=false;}
+});
+keyCopy.addEventListener('click',async()=>{
+  if(keyValue.hidden||!keyValue.textContent)return;
+  try{await navigator.clipboard.writeText(keyValue.textContent);keyMessage.textContent='API key copied to clipboard.';}
+  catch(e){keyMessage.textContent='Clipboard access was blocked. Select and copy the displayed key manually.';}
+});
+keyHide.addEventListener('click',()=>{clearDisplayedApiKey();keyMessage.textContent='Key hidden from this page.';});
+const panel=document.getElementById('login-panel'),form=document.getElementById('login-form'),access=document.getElementById('access-type');
+const code=document.getElementById('admin-code'),username=document.getElementById('username'),password=document.getElementById('user-password');
+const message=document.getElementById('login-message'),createButton=document.getElementById('create-account'),loginButton=document.getElementById('open-vm');
+const adminAccountsPanel=document.getElementById('admin-accounts'),adminAccountList=document.getElementById('admin-account-list'),adminAccountCount=document.getElementById('admin-account-count'),adminAccountsRefresh=document.getElementById('admin-accounts-refresh');
+async function loadAdminAccounts(){
+  if(!window.snapshotAdminCode||!adminAccountsPanel)return;
+  adminAccountsRefresh.disabled=true;adminAccountCount.textContent='Loading…';
+  try{
+    const response=await fetch('/api/admin/accounts',{method:'GET',headers:{authorization:'Bearer '+window.snapshotAdminCode},cache:'no-store'});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||'HTTP '+response.status);
+    const accounts=Array.isArray(data.accounts)?data.accounts:[];
+    adminAccountCount.textContent=accounts.length+' account'+(accounts.length===1?'':'s')+' created';
+    adminAccountList.replaceChildren();
+    if(!accounts.length){adminAccountList.textContent='No user accounts have been created yet.';return}
+    for(const account of accounts){
+      const row=document.createElement('div');row.className='admin-account-row';
+      const usernameNode=document.createElement('strong');usernameNode.textContent=String(account.username||'Unknown user');
+      const idNode=document.createElement('code');idNode.textContent=String(account.account_id||'');
+      row.append(usernameNode,idNode);adminAccountList.append(row);
+    }
+  }catch(error){adminAccountCount.textContent='Could not load accounts';adminAccountList.textContent=error.message||'Account list request failed.'}
+  finally{adminAccountsRefresh.disabled=false}
+}
+adminAccountsRefresh?.addEventListener('click',loadAdminAccounts);
+let creating=false;
+function updateFields(){
+  const admin=access.value==='admin';
+  code.hidden=!admin;code.required=admin;
+  username.hidden=admin;username.required=!admin;
+  password.hidden=admin;password.required=!admin;
+  createButton.hidden=admin;
+  loginButton.textContent=creating?'Create account':'Log in';
+  password.autocomplete=creating?'new-password':'current-password';
+}
+function beginAccountSession(data,launchVm=true){
+  if(!data||typeof data.account_id!=='string'||!/^acct-[a-f0-9-]{36}$/.test(data.account_id)||typeof data.session_token!=='string'){
+    throw new Error('The server returned an invalid account session.');
+  }
+  window.snapshotIdentity=data.account_id;
+  showAccountId(data.account_id);
+  window.snapshotAuthToken=data.session_token;
+  if(typeof data.virtual_ip==='string'&&/^10\.240\.\d{1,3}\.(?:[2-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(data.virtual_ip))window.snapshotVirtualIp=data.virtual_ip;
+  if(typeof data.virtual_mac==='string'&&/^02(?::[0-9a-f]{2}){5}$/.test(data.virtual_mac))window.snapshotVirtualMac=data.virtual_mac;
+  try {
+    if (typeof data.username === 'string') sessionStorage.setItem('vm-username', data.username);
+    if (typeof data.login_time === 'string') sessionStorage.setItem('vm-login-time', data.login_time);
+    else if (typeof data.username === 'string') sessionStorage.setItem('vm-login-time', new Date().toISOString());
+  } catch(e) {}
+  window.snapshotNeedsInitialSave=data.snapshot_initialization_required===true;
+  try{if(window.snapshotNeedsInitialSave)sessionStorage.setItem('vm-initial-snapshot-pending',data.account_id);else window.snapshotNeedsInitialSave=sessionStorage.getItem('vm-initial-snapshot-pending')===data.account_id}catch(e){}
+  try{sessionStorage.setItem('vm-account-id',data.account_id);sessionStorage.setItem('vm-session-token',data.session_token)}catch(e){}
+  if(launchVm&&String(window.snapshotIdentity||'').startsWith('acct-')&&new URLSearchParams(location.search).get('workspace')!=='1'){location.replace('/studio.html');return;}
+  if(launchVm){panel.hidden=true;document.body.classList.add('logged-in');loadCurrentApiKey();window.startVm();}
+}
+const progressLabels={
+  queued:'Waiting for a VM worker…',starting_vm:'Starting the Linux VM…',booting_linux:'Booting Tiny Core Linux…',
+  linux_booted:'Linux booted. Preparing network checks…',resource_preflight:'Checking guest resources…',
+  dhcp:'Testing DHCP and default route…',tls_download:'Downloading OpenSSL and CA packages…',
+  openssl_install:'Installing and checking OpenSSL…',ca_install:'Installing CA certificates…',
+  https_preflight:'Testing DNS and HTTPS from Linux…',snapshot_marker:'Writing guest persistence marker…',
+  snapshot_saved:'Saving the VM snapshot…',snapshot_readback_verified:'Snapshot saved; verifying stored bytes…',
+  complete:'Snapshot saved and verified; opening dashboard…'
+};
+async function waitForRegistration(data){
+  beginAccountSession(data,false);
+  panel.hidden=false;document.body.classList.remove('logged-in');
+  createButton.disabled=true;loginButton.disabled=true;
+  try{
+    while(true){
+      const response=await fetch('/api/auth/registration-status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:data.account_id,session_token:data.session_token})});
+      const progress=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(progress.error||'Could not read registration progress.');
+      message.textContent=progressLabels[progress.step]||('VM initialization: '+(progress.step||progress.status||'working')+'…');
+      if(progress.status==='complete'&&progress.complete===true){
+        try{sessionStorage.removeItem('vm-initial-snapshot-pending')}catch(e){}
+        beginAccountSession({...data,status:'ready',snapshot_initialization_required:false},true);
+        return;
+      }
+      if(progress.status==='error')throw new Error('VM initialization failed at '+(progress.step||'an unknown stage')+': '+(progress.error||progress.boot_error||'check failed'));
+      await new Promise(resolve=>setTimeout(resolve,3000));
+    }
+  }finally{createButton.disabled=false;loginButton.disabled=false;}
+}
+access.addEventListener('change',()=>{creating=false;message.textContent='';updateFields()});
+createButton.addEventListener('click',()=>{
+  creating=!creating;
+  message.textContent=creating?'Create a server account. Use at least 4 characters for the password.':'';
+  updateFields();
+});
+form.addEventListener('submit',async function(event){
+  event.preventDefault();message.textContent='';
+  if(access.value==='admin'){
+    const adminCode=code.value.trim();
+    if(!/^[0-9]{5}$/.test(adminCode)){message.textContent='Enter the five-digit admin code.';return}
+    message.textContent='Checking admin code…';
+    try{
+      const response=await fetch('/api/admin/access',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:adminCode})});
+      if(!response.ok)throw new Error('That admin code was not accepted.');
+      window.snapshotAdminCode=adminCode;
+      adminAccountsPanel.hidden=false;void loadAdminAccounts();
+    }catch(error){message.textContent=error.message||'Admin access check failed.';return}
+    window.snapshotIdentity='admin';
+    showAccountId('admin');
+    try{sessionStorage.setItem('vm-username','admin');sessionStorage.setItem('vm-login-time',new Date().toISOString())}catch(e){}
+    panel.hidden=true;document.body.classList.add('logged-in');window.startVm();return;
+  }
+  const name=username.value.trim().toLowerCase(),pass=password.value;
+  if(!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(name)){message.textContent='Username must be 2–32 characters: letters, numbers, _ or -.';return}
+  if(creating&&pass.length<4){message.textContent='New passwords must be at least 4 characters.';return}
+   if(!creating&&!pass){message.textContent='Enter your password.';return}
+  message.textContent=creating?'Creating your account; the VM snapshot will be saved after its first network test…':'Signing in and loading your saved VM…';
+  try{
+    const response=await fetch(creating?'/api/auth/signup':'/api/auth/login',{
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:name,password:pass})
+    });
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error==='username_unavailable'?'That username is already taken.':data.error==='baseline_snapshot_not_found'?'The old baseline-based signup path is still active on this deployment. The account-first signup fix needs to be deployed.':creating?'Account creation failed: '+(data.error||response.status):'Incorrect username or password.');
+    const wasCreating=creating;
+    creating=false;
+    if(wasCreating&&data.status==='provisioning')await waitForRegistration(data);
+    else beginAccountSession(data);
+  }catch(error){message.textContent=error&&error.message?error.message:'Account request failed.';updateFields()}
+});
+updateFields();
+// Keep the session through a same-tab refresh, but ask the server to validate it before
+// opening any per-account snapshot. The session token never goes in localStorage.
+(async()=>{
+  let accountId='',token='';
+  try{accountId=sessionStorage.getItem('vm-account-id')||'';token=sessionStorage.getItem('vm-session-token')||''}catch(e){}
+  if(!accountId||!token)return;
+  try{
+    const response=await fetch('/api/auth/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:token})});
+    if(!response.ok)throw new Error('session expired');
+    const sessionData=await response.json().catch(()=>({}));
+    const statusResponse=await fetch('/api/auth/registration-status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:token})});
+    const registration=await statusResponse.json().catch(()=>({}));
+    if(statusResponse.ok&&['provisioning','queued','running'].includes(registration.status))await waitForRegistration({account_id:accountId,session_token:token,snapshot_initialization_required:true,virtual_ip:sessionData.virtual_ip,virtual_mac:sessionData.virtual_mac});
+    else if(statusResponse.ok&&registration.status==='error')throw new Error('VM initialization failed: '+(registration.error||registration.step||'check failed'));
+    else {
+      if(registration.status==='complete'){try{sessionStorage.removeItem('vm-initial-snapshot-pending')}catch(e){}}
+      beginAccountSession({account_id:accountId,session_token:token,snapshot_initialization_required:false,virtual_ip:sessionData.virtual_ip,virtual_mac:sessionData.virtual_mac});
+    }
+  }catch(e){
+    try{sessionStorage.removeItem('vm-account-id');sessionStorage.removeItem('vm-session-token')}catch(ignore){}
+    message.textContent='Please log in again to restore your saved VM.';
+  }
+})();
+};
+</script>
+</body>
+</html>
