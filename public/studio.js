@@ -37,6 +37,22 @@ function visualTemplateFiles(kind){
  const css='*{box-sizing:border-box}body{margin:0;background:'+data[4]+';color:'+(kind==='Agency'?'#f2f1e9':'#20201e')+';font:16px/1.6 system-ui,sans-serif}nav{height:76px;padding:0 8%;display:flex;justify-content:space-between;align-items:center;background:#20201e;color:white}nav b{letter-spacing:2px}nav span{font-size:11px}.hero{min-height:500px;padding:90px 12%;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;background:'+(kind==='Agency'?'linear-gradient(120deg,#17271e,#101712)':kind==='Cafe'?'#ead8c2':'#e5e2d9')+'}.hero small,section small{font-size:10px;letter-spacing:3px;font-weight:800;color:'+data[3]+'}.hero h1{max-width:850px;font:700 clamp(44px,8vw,92px)/.98 Georgia,serif;margin:22px 0}.hero p,section p{max-width:650px;color:#777}.cta{padding:14px 22px;background:'+data[3]+';color:#20201e;text-decoration:none;font-weight:bold}section{padding:55px 12%;border-bottom:1px solid #8884}section h2{font:700 34px Georgia,serif}footer{padding:25px 8%;background:#20201e;color:white}footer a{color:white}@media(max-width:650px){.hero{padding:60px 8%}section{padding:35px 8%}nav{padding:0 5%}}';
  return {_title:data[0],_description:data[2],'index.html':html,'styles.css':css,'app.js':''};
 }
+function migrateLegacyVisualProjects(){
+ let changed=false;
+ for(const project of projects){
+  if(project.files&&typeof project.files['index.html']==='string')continue;
+  if(['Cafe','Agency','Portfolio','Business website'].includes(project.kind)){
+   const template=visualTemplateFiles(project.kind);
+   if(!template['index.html'])continue;
+   project.files=template;project.updated=new Date().toISOString();changed=true;
+  }else if(project.kind==='Store'){
+   project.files=storefrontTemplateFiles();project.sections=[];project.updated=new Date().toISOString();changed=true;
+  }
+ }
+ if(changed){persist();for(const project of projects)if(sessionToken&&accountId!=='guest')syncProject(project);renderProjects();}
+}
+migrateLegacyVisualProjects();
+
 function createProject(name,kind='Business website'){
  const p={id:id(),name:name.trim(),kind,created:new Date().toISOString(),updated:new Date().toISOString(),title:'Make your idea happen.',description:'A beautiful place to begin. Tell the world what makes your business special.',button:'Get started',accent:'#a33cff',bg:'#10152b',extra:false,sections:[]};
  if(['Cafe','Agency','Portfolio','Business website'].includes(kind)){
