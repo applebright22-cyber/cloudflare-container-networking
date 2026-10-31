@@ -40,12 +40,14 @@ export async function handleProjectStorageRequest(request: Request, env: Project
     try { project = await projectObject.json() as Record<string, unknown>; } catch { return json({ error: "project_record_invalid" }, 500); }
     if (project.id !== body.project_id) return json({ error: "project_owner_mismatch" }, 403);
     const slug = typeof project.publishSlug === "string" && /^[a-f0-9]{32}$/.test(project.publishSlug) ? project.publishSlug : crypto.randomUUID().replace(/-/g, "");
+    const publishedUrl = new URL("/sites/" + slug + "/", request.url).toString();
     project.publishSlug = slug;
+    project.publishedUrl = publishedUrl;
     project.publishedAt = new Date().toISOString();
-    await env.PROJECT_STORAGE.put(projectKey, JSON.stringify(project), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
     await env.PROJECT_STORAGE.put("published-sites/" + slug + "/index.html", htmlBytes, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
     await env.PROJECT_STORAGE.put("published-sites/index/" + slug + ".json", JSON.stringify({ account_id: accountId, project_id: body.project_id, published_at: project.publishedAt }), { httpMetadata: { contentType: "application/json" } });
-    return json({ ok: true, project_id: body.project_id, published_at: project.publishedAt, url: new URL("/sites/" + slug + "/", request.url).toString() });
+    await env.PROJECT_STORAGE.put(projectKey, JSON.stringify(project), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
+    return json({ ok: true, project_id: body.project_id, published_at: project.publishedAt, url: publishedUrl });
   }
 
   if (url.pathname !== "/api/studio/projects" && !/^\/api\/studio\/projects\/[a-z0-9-]{3,80}$/.test(url.pathname)) return null;
