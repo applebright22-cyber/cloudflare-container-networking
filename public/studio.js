@@ -45,8 +45,10 @@ if command -v ping >/dev/null 2>&1; then ping -c 1 1.1.1.1; else echo "ping is n
 `},
  'dhcp-lab':{name:'DHCP Lab',version:'1.0.0',description:'Inspect DHCP state and manually renew a TinyCore guest lease.',entrypoint:'plugins/dhcp-lab.sh',file:'plugins/dhcp-lab.sh',source:`#!/bin/sh
 # VampireSquid DHCP Lab. Default mode is read-only; renew is explicit.
-ACTION=${1:-status}
-IFACE=${2:-eth0}
+ACTION=$1
+[ -n "$ACTION" ] || ACTION=status
+IFACE=$2
+[ -n "$IFACE" ] || IFACE=eth0
 case "$ACTION" in
   status)
     echo "=== VAMPIRESQUID DHCP LAB ==="
@@ -68,7 +70,8 @@ esac
 `},
  'backend-starter':{name:'Backend Starter',version:'1.0.0',description:'Create and serve a tiny editable web application inside TinyCore.',entrypoint:'plugins/backend-starter.sh',file:'plugins/backend-starter.sh',source:`#!/bin/sh
 # VampireSquid Backend Starter — creates a local TinyCore web app.
-ROOT=${1:-/home/tc/vs-app}
+ROOT=$1
+[ -n "$ROOT" ] || ROOT=/home/tc/vs-app
 mkdir -p "$ROOT" || exit 1
 if [ ! -f "$ROOT/index.html" ]; then
   cat > "$ROOT/index.html" <<'HTML'
