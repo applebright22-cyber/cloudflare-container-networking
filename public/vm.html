@@ -849,7 +849,7 @@ const rootCommand=[
 '/sbin/ifconfig eth0 up || exit 22',
 '/sbin/ifconfig eth0 | grep -qi "'+mac+'" || { echo RESTORE_MAC_FAILED; exit 23; }',
 'n=1',
-'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; if /sbin/ifconfig eth0 | grep -Fq "inet addr:'+ip+' " && /sbin/route -n | awk -v gw="'+gateway+'" '$1=="0.0.0.0" && $2==gw {found=1} END {exit !found}'; then echo RESTORE_DHCP_OK; echo RESTORE_UDHCPC_EXIT=$dhcp_rc; exit 0; fi; n=$((n+1)); sleep 1; done',
+'while [ "$n" -le 8 ]; do /sbin/udhcpc -f -n -q -i eth0 >/tmp/vs-restore-dhcp.log 2>&1; dhcp_rc=$?; if /sbin/ifconfig eth0 | grep -Fq "inet addr:'+ip+' " && /sbin/route -n | grep -Eq "^[[:space:]]*0\\.0\\.0\\.0[[:space:]]+'+gateway+'([[:space:]]|$)"; then echo RESTORE_DHCP_OK; echo RESTORE_UDHCPC_EXIT=$dhcp_rc; exit 0; fi; n=$((n+1)); sleep 1; done',
 'echo RESTORE_DHCP_FAILED',
 'cat /tmp/vs-restore-dhcp.log',
 '/sbin/ifconfig eth0',
