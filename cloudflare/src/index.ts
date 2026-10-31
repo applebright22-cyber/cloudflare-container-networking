@@ -137,6 +137,7 @@ export default {
       const accounts = Array.isArray(result.accounts) ? result.accounts : [];
       const failures: Array<{ account_id: string; step: string; error: string }> = [];
       let snapshotsDeleted = 0;
+      let projectsDeleted = 0;
 
       await Promise.all(accounts.map(async (entry) => {
         const accountId = typeof entry.account_id === "string" ? entry.account_id : "";
@@ -174,6 +175,29 @@ export default {
           cursor = page.truncated ? page.cursor : undefined;
         } while (cursor);
 
+        // Remove the account's saved Studio projects along with its VM snapshot.
+        let projectCursor: string | undefined;
+        do {
+          const page = await env.PROJECT_STORAGE.list({
+            prefix: "accounts/" + accountId + "/projects/", limit: 1000,
+            ...(projectCursor ? { cursor: projectCursor } : {}),
+          }).catch(() => null);
+          if (!page) {
+            failures.push({ account_id: accountId, step: "project_objects", error: "r2_list_failed" });
+            break;
+          }
+          if (page.objects.length) {
+            try {
+              await env.PROJECT_STORAGE.delete(page.objects.map((object) => object.key));
+              projectsDeleted += page.objects.length;
+            } catch {
+              failures.push({ account_id: accountId, step: "project_objects", error: "r2_delete_failed" });
+              break;
+            }
+          }
+          projectCursor = page.truncated ? page.cursor : undefined;
+        } while (projectCursor);
+
         try {
           await env.VM_SNAPSHOTS.delete("runtime-jobs/" + accountId + ".json");
         } catch {
@@ -186,6 +210,7 @@ export default {
         accounts_cleared_from_auth_registry: accounts.length,
         account_records_and_snapshots_processed: accounts.filter((entry) => typeof entry.account_id === "string" && /^acct-[a-f0-9-]{36}$/.test(entry.account_id)).length,
         snapshot_objects_deleted: snapshotsDeleted,
+        project_objects_deleted: projectsDeleted,
         failures,
         preserved: ["auth-users Durable Object namespace identity", "Admin baseline snapshot"],
       }, failures.length ? 207 : 200);
@@ -223,8 +248,10 @@ export default {
 
         // Inventory R2 snapshot keys first; never include the Admin baseline prefix.
         const snapshotKeys: string[] = [];
+        const projectKeys: string[] = [];
         let cursor: string | undefined;
         let listFailed = false;
+        let projectListFailed = false;
         do {
           const page = await env.VM_SNAPSHOTS.list({
             prefix: "vm-snapshots/" + accountId + "/", limit: 1000, cursor,
@@ -237,7 +264,20 @@ export default {
         steps.runtime_job_exists = Boolean(await env.VM_SNAPSHOTS.head("runtime-jobs/" + accountId + ".json").catch(() => null));
         if (listFailed) errors.push({ step: "snapshot_list", error: "r2_list_failed" });
 
-        if (!dryRun && !listFailed) {
+        let projectCursor: string | undefined;
+        do {
+          const page = await env.PROJECT_STORAGE.list({
+            prefix: "accounts/" + accountId + "/projects/", limit: 1000,
+            ...(projectCursor ? { cursor: projectCursor } : {}),
+          }).catch(() => null);
+          if (!page) { projectListFailed = true; break; }
+          projectKeys.push(...page.objects.map((object) => object.key));
+          projectCursor = page.truncated ? page.cursor : undefined;
+        } while (projectCursor);
+        steps.project_objects_found = projectKeys.length;
+        if (projectListFailed) errors.push({ step: "project_list", error: "r2_list_failed" });
+
+        if (!dryRun && !listFailed && !projectListFailed) {
           const authPurge = await authRegistry.fetch("https://account-registry.internal/admin/purge-account", {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ account_id: accountId }),
@@ -278,6 +318,15 @@ export default {
             }
           }
           steps.snapshot_objects_deleted = errors.some((entry) => entry.step === "snapshot_objects") ? null : snapshotKeys.length;
+          for (let offset = 0; offset < projectKeys.length; offset += 1000) {
+            try {
+              await env.PROJECT_STORAGE.delete(projectKeys.slice(offset, offset + 1000));
+            } catch {
+              errors.push({ step: "project_objects", error: "r2_delete_failed" });
+              break;
+            }
+          }
+          steps.project_objects_deleted = errors.some((entry) => entry.step === "project_objects") ? null : projectKeys.length;
           try {
             await env.VM_SNAPSHOTS.delete("runtime-jobs/" + accountId + ".json");
             steps.runtime_job_deleted = true;
@@ -291,6 +340,7 @@ export default {
             "all storage keys and alarm in the account-specific AccountRegistry object",
             "all storage keys and alarm in the account-specific AccountProvisioner object",
             "R2 objects under vm-snapshots/" + accountId + "/",
+            "R2 objects under accounts/" + accountId + "/projects/",
             "R2 object runtime-jobs/" + accountId + ".json",
           ];
         }
