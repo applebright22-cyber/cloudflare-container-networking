@@ -60,6 +60,17 @@ export default {
       const relay = env.WISP_RELAY.get(env.WISP_RELAY.idFromName(identity));
       return relay.fetch(request);
     }
+    if (path === "/test-ticket" && request.method === "POST") {
+      let identity = "test-wisp-egress";
+      try {
+        const body = await request.json() as { identity?: unknown };
+        if (typeof body.identity === "string") identity = body.identity.toLowerCase();
+      } catch {}
+      if (!/^test-[a-z0-9-]{1,32}$/.test(identity)) return Response.json({ error: "invalid_test_identity" }, { status: 400 });
+      const relay = env.WISP_RELAY.get(env.WISP_RELAY.idFromName(identity));
+      const ticketResponse = await relay.fetch("https://wisp-relay.internal/ticket", { method: "POST" });
+      return new Response(ticketResponse.body, { status: ticketResponse.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
     if (path === "/ready") return Response.json({ ready: true, probe: "tinycore-dhcp-openssl-ca" });
     if (path === "/progress" && request.method === "GET") {
       const identity = (requestUrl.searchParams.get("identity") ?? "").toLowerCase();
