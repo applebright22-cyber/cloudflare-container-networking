@@ -15,7 +15,7 @@ const ticketResponse = await fetch(base + "/test-ticket", {
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ identity }),
 });
-assert.equal(ticketResponse.status, 200, "WISP test ticket endpoint must return 200");
+assert.equal(ticketResponse.status, 201, "WISP test ticket endpoint must create a ticket");
 const { ticket } = await ticketResponse.json();
 assert.match(ticket, /^[a-f0-9]{64}$/, "WISP ticket must be a 64-character hex token");
 
