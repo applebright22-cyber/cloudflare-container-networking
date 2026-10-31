@@ -8,6 +8,11 @@ const inline = html.match(/<script>\s*([\s\S]*?)<\/script>/);
 assert.ok(inline, "VM page should contain its inline controller script");
 assert.doesNotThrow(() => new vm.Script(inline[1]), "VM page controller should parse as JavaScript");
 
+const markerWaitStart = inline[1].indexOf("async function waitForShellMarker(");
+const markerWaitEnd = inline[1].indexOf("\nasync function initializeRestoredGuestNetwork()", markerWaitStart);
+assert.ok(markerWaitStart >= 0 && markerWaitEnd > markerWaitStart, "network result marker waiter should be discoverable");
+const markerWaitSource = inline[1].slice(markerWaitStart, markerWaitEnd) + "\nglobalThis.__waitForShellMarker = waitForShellMarker;";
+
 const helperStart = inline[1].indexOf("function shellPrompt(text){", inline[1].indexOf("window.emulator.add_listener('emulator-loaded'"));
 const helperEnd = inline[1].indexOf("\nfunction startBootMonitor()", helperStart);
 assert.ok(helperStart >= 0 && helperEnd > helperStart, "restored shell verification helper should remain discoverable");
@@ -108,7 +113,8 @@ test("restored guest network recovery reapplies its MAC, renews DHCP, and verifi
   const network = inline[1].slice(start, end);
   assert.ok(network.includes("const recoveryAttempt=Math.random().toString(36).slice(2,10);"), "each recovery attempt must have a unique marker namespace");
   assert.ok(network.includes("/^10\\.240\\.\\d{1,3}\\.(?:[2-9]|[1-9]\\d|1\\d\\d|2[0-4]\\d|25[0-4])$/.test(ip)"), "IPv4 validation regex must use single-escaped dots and digit classes");
-  assert.ok(network.includes("output.split('\\n')"), "marker parser must split actual terminal newlines");
+  assert.ok(markerWaitSource.includes("output.lastIndexOf(marker)"), "completion markers must be read from terminal output");
+  assert.ok(markerWaitSource.includes("shellPrompt(afterMarker)"), "completion markers must wait for the prompt, not command echo");
   assert.ok(network.indexOf("const egressCommand=") < network.indexOf("const rootCommand="), "test the restored network before destructive interface recovery");
   assert.ok(network.includes("RESTORED_GUEST_NETWORK_ALREADY_READY=1"), "preserve a restored connection that already passes DNS/HTTP/HTTPS");
   assert.ok(network.includes("/sbin/modprobe ne2k-pci 2>/dev/null"), "load the NE2000 driver before attempting DHCP recovery");
@@ -130,3 +136,36 @@ test("restored guest network recovery reapplies its MAC, renews DHCP, and verifi
   assert.ok(!network.includes("saveVmState"), "network repair must not overwrite the saved snapshot");
 });
 
+
+
+function createMarkerWaiter(screens) {
+  let reads = 0;
+  let now = 0;
+  const context = {
+    screenText: () => screens[Math.min(reads++, screens.length - 1)],
+    shellPrompt: text => String(text).replace(/\r/g, "").split("\n").some(line => /^tc@box:~\$\s*$/.test(line.trim())),
+    Date: { now: () => now },
+    setTimeout: callback => { now += 50; callback(); },
+  };
+  vm.runInNewContext(markerWaitSource, context);
+  return { wait: context.__waitForShellMarker, get reads() { return reads; } };
+}
+
+test("restored networking ignores the echoed marker until its numeric result and prompt return", async () => {
+  const marker = "__V86_RESTORE_DHCP_DONE_test123__";
+  const echoedCommand = "tc@box:~$ sudo ... echo " + marker + ":$rc";
+  const guest = createMarkerWaiter([
+    echoedCommand,
+    echoedCommand + "\n" + marker + ":0",
+    echoedCommand + "\n" + marker + ":0\ntc@box:~$",
+  ]);
+  assert.equal(await guest.wait(marker, 1000), "0");
+  assert.equal(guest.reads, 3, "wait for the shell to print the result and return to its prompt");
+});
+
+test("restored networking rejects a literal shell variable as a DHCP result", async () => {
+  const marker = "__V86_RESTORE_DHCP_DONE_test456__";
+  const echoedCommand = "tc@box:~$ sudo ... echo " + marker + ":$rc\ntc@box:~$";
+  const guest = createMarkerWaiter([echoedCommand]);
+  assert.equal(await guest.wait(marker, 100), null);
+});
