@@ -87,10 +87,16 @@ test("restored guest reports keyboard probe errors as failures", async () => {
 test("restored VM does not mark boot complete before the command probe passes", () => {
   const listenerStart = inline[1].indexOf("window.emulator.add_listener('emulator-loaded'");
   const verificationAt = inline[1].indexOf("const verification=await verifyRestoredGuestShell()", listenerStart);
+  const networkAt = inline[1].indexOf("const network=await initializeRestoredGuestNetwork()", verificationAt);
   const readyAt = inline[1].indexOf("bootComplete=true;", listenerStart);
   const agentAt = inline[1].indexOf("connectApiAgent();", listenerStart);
   assert.ok(listenerStart >= 0 && verificationAt > listenerStart);
-  assert.ok(readyAt > verificationAt, "bootComplete must be set only after verification");
-  assert.ok(agentAt > verificationAt, "API agent connection must follow verification");
-  assert.match(inline[1].slice(verificationAt, readyAt), /if\(!verification\.ok\)[\s\S]*?return;/);
+  assert.ok(networkAt > verificationAt, "restored guest networking must be reinitialized after shell verification");
+  assert.ok(readyAt > networkAt, "bootComplete must wait for restored DHCP/DNS/HTTP/HTTPS checks");
+  assert.ok(agentAt > networkAt, "API agent connection must follow restored network verification");
+  assert.match(inline[1].slice(verificationAt, networkAt), /if\(!verification\.ok\)[\s\S]*?return;/);
+  assert.match(inline[1].slice(networkAt, readyAt), /if\(!network\.ok\)[\s\S]*?return;/);
+  assert.ok(inline[1].includes("RESTORED_GUEST_NETWORK_READY=1"));
+  assert.ok(inline[1].includes("02:00:00:00:00:00"), "admin fallback MAC must be a valid locally administered unicast address");
+  assert.ok(!inline[1].includes("02:ff:ff:ff:ff:ff"), "do not use the all-FF synthetic MAC fallback");
 });
