@@ -592,6 +592,38 @@ export default {
       return json(await response.json(), response.status);
     }
 
+    if (url.pathname === "/api/ambassador/deals" && (request.method === "GET" || request.method === "POST")) {
+      const body = request.method === "POST"
+        ? await request.json().catch(() => null) as Record<string, unknown> | null
+        : null;
+      const ambassadorId = request.method === "GET"
+        ? url.searchParams.get("ambassador_id") ?? ""
+        : (typeof body?.ambassador_id === "string" ? body.ambassador_id : "");
+      const token = request.method === "GET"
+        ? url.searchParams.get("session_token") ?? ""
+        : (typeof body?.session_token === "string" ? body.session_token : "");
+      if (!/^amb-[a-f0-9-]{36}$/.test(ambassadorId) || !/^[a-f0-9]{64}$/.test(token)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/ambassador/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ambassador_id: ambassadorId, token }),
+      });
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      const payload = request.method === "POST"
+        ? { ...body, ambassador_id: ambassadorId, token }
+        : null;
+      const path = request.method === "GET"
+        ? "/ambassador/deals?ambassador_id=" + encodeURIComponent(ambassadorId) + "&token=" + encodeURIComponent(token)
+        : "/ambassador/deals";
+      const result = await authRegistry.fetch("https://account-registry.internal" + path, {
+        method: request.method,
+        ...(payload ? { headers: { "content-type": "application/json" }, body: JSON.stringify(payload) } : {}),
+      });
+      return json(await result.json().catch(() => ({ error: "deal_service_failed" })), result.status);
+    }
+
     // Signup clones the verified Admin baseline; it never starts a Linux boot.
     if (url.pathname === "/api/auth/signup" && request.method === "POST") {
       let body: { username?: unknown; password?: unknown };
