@@ -12,6 +12,8 @@ const vmPage = read("public/vm.html");
 const storefront = read("public/stockroom-storefront.js");
 const workerConfig = read("cloudflare/wrangler.toml");
 const rootConfig = read("wrangler.toml");
+const tinycoreBoot = read("tinycore/stockroom/bootlocal-stockroom.sh");
+const tinycoreStart = read("tinycore/stockroom/start-stockroom.sh");
 
 test("Stockroom replaces the former Cockpit navigation and view", () => {
   assert.match(studioHtml, /data-view="stockroom"/);
@@ -29,17 +31,20 @@ test("each business gets a persistent SQLite database with product and inventory
   assert.match(database, /COLLATE NOCASE UNIQUE/);
   assert.match(database, /price_cents/);
   assert.match(database, /variations_json/);
-  assert.match(worker, /BUSINESS_DATABASE\.idFromName\(accountId\)/);
+  assert.match(database, /BUSINESS_DATABASE\.idFromName\(accountId\)/);
+  assert.match(database, /business-database\.internal/);
   assert.match(workerConfig, /name = "BUSINESS_DATABASE"/);
   assert.match(rootConfig, /name = "BUSINESS_DATABASE"/);
 });
 
 test("signup and TinyCore startup initialize the business database idempotently", () => {
   assert.match(worker, /Provision the account's isolated SQLite business database during signup/);
-  assert.match(worker, /businessDatabase\.fetch\("https:\/\/business-database\.internal\/initialize"/);
+  assert.match(worker, /businessDatabaseFetch\(env, accountId, "initialize"/);
   assert.match(vmPage, /async function initializeBusinessDatabase/);
   assert.match(vmPage, /void initializeBusinessDatabase\(\)/);
   assert.ok(studioJs.includes('stockroomUrl("/initialize")'));
+  assert.match(tinycoreBoot, /persistent volume is not mounted/);
+  assert.match(tinycoreStart, /Persistent Stockroom volume is not mounted/);
 });
 
 test("Stockroom API authenticates private account requests and isolates public catalog fields", () => {
