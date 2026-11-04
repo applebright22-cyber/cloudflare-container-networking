@@ -186,6 +186,8 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     if (!page) return json({ error: "checkout_not_found" }, 404);
     if (page.status === "paid") return json({ ok: true, status: "paid" });
     if (Date.now() > Date.parse(page.expires_at)) return json({ error: "checkout_expired" }, 410);
+    const paymentSettings = await readJson<any>(env.PROJECT_STORAGE, keyFor(page.account_id, "settings"));
+    if (!paymentSettings?.paypal_enabled) return json({ error: "paypal_not_enabled" }, 409);
     const credentials = await getPaypalCredentials(env, page.account_id);
     if (!credentials) return json({ error: "paypal_not_connected" }, 409);
     const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
