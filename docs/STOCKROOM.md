@@ -16,7 +16,7 @@ The first implementation uses Cloudflare SQLite-backed Durable Objects for the b
 
 ## Product schema
 
-The `products` table stores product ID, unique SKU, name, description, category, image URL, selling price, cost price, quantity, status, variations JSON, optional external URL, and timestamps. Prices are stored as integer cents. The `inventory_movements` table records initial stock and quantity adjustments.
+The `products` table stores product ID, unique SKU, name, description, category, image URL, selling price, cost price, quantity, status, variations JSON, optional external URL, and timestamps. Prices are stored as integer cents. The `inventory_movements` table records initial stock, quantity adjustments, and paid-order deductions. The `inventory_consumptions` table makes each checkout deduction idempotent.
 
 ## Authenticated API
 
@@ -28,8 +28,9 @@ All routes require the account ID in the query string and the user's session tok
 - `PUT /api/stockroom/products/:id?account_id=...` — update product details or stock.
 - `DELETE /api/stockroom/products/:id?account_id=...` — archive a product.
 - `GET /api/stockroom/movements?account_id=...` — recent inventory movements.
+- `GET /api/stockroom/public/:published_site_id` — read-only active catalog for that published store.
 
-The Worker validates the session against the existing AccountRegistry before routing to the account's private database object. The Durable Object binding is not exposed to browsers.
+The Worker validates the session against the existing AccountRegistry before routing private requests to the account's database object. Published storefronts receive a separate read-only public catalog containing only active product details; cost prices and exact stock counts are never exposed. PayPal/USDC checkout prices and available quantities are re-read from Stockroom on the server, and confirmed payment triggers an idempotent stock deduction. The Durable Object binding is not exposed to browsers.
 
 ## Deploy
 
