@@ -9,7 +9,8 @@ import { AccountProvisioner } from "./account-provisioner";
 import { WispRelay } from "./wisp-relay";
 import { handleProjectStorageRequest } from "./project-storage";
 import { handlePayments } from "./payments";
-export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay };
+import { BusinessDatabase, handleBusinessDatabaseRequest } from "./business-database";
+export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay, BusinessDatabase };
 
 export interface Env {
   TUNNEL_HUB: DurableObjectNamespace<TunnelHub>;
@@ -18,6 +19,7 @@ export interface Env {
   VM_EXECUTION: DurableObjectNamespace<VmExecution>;
   ACCOUNT_REGISTRY: DurableObjectNamespace<AccountRegistry>;
   ACCOUNT_PROVISIONER: DurableObjectNamespace<AccountProvisioner>;
+  BUSINESS_DATABASE: DurableObjectNamespace<BusinessDatabase>;
   WISP_RELAY: DurableObjectNamespace<WispRelay>;
   VM_BASELINE_ID?: string;
   ADMIN_ACCESS_CODE?: string;
@@ -576,6 +578,22 @@ export default {
           body: JSON.stringify({ username, status: "error" }),
         });
         return json({ error: "account_record_creation_failed" }, 502);
+      }
+
+      // Provision the account's isolated SQLite business database during signup.
+      // Schema creation is idempotent; existing business records are never overwritten.
+      const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
+      const databaseReady = await businessDatabase.fetch("https://business-database.internal/initialize", { method: "POST" });
+      if (!databaseReady.ok) {
+        await accountRegistry.fetch("https://account-registry.internal/account/" + accountId, {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "error", error: "business_database_initialization_failed" }),
+        });
+        await authRegistry.fetch("https://account-registry.internal/auth/status", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, status: "error" }),
+        });
+        return json({ error: "business_database_initialization_failed" }, 503);
       }
 
       // Issue the browser session before marking the auth record ready.
@@ -1244,6 +1262,9 @@ export default {
       return json({ ok: true });
     }
 
+
+    const businessDatabaseResponse = await handleBusinessDatabaseRequest(request, env);
+    if (businessDatabaseResponse) return businessDatabaseResponse;
 
     const paymentResponse = await handlePayments(request, env);
     if (paymentResponse) return paymentResponse;
