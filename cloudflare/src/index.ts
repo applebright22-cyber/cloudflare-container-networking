@@ -42,7 +42,7 @@ function adminIpAllowed(request: Request, env: Env): boolean {
   // CF-Connecting-IP is set by Cloudflare's edge; do not trust client-supplied X-Forwarded-For.
   const clientIp = request.headers.get("cf-connecting-ip")?.trim();
   if (!clientIp || !env.ADMIN_ALLOWED_IPS) return false;
-  const allowed = env.ADMIN_ALLOWED_IPS.split(/[\\s,]+/).map((value) => value.trim()).filter(Boolean);
+  const allowed = env.ADMIN_ALLOWED_IPS.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
   return allowed.includes(clientIp);
 }
 
