@@ -72,6 +72,12 @@ export class BusinessDatabase extends DurableObject {
         initialized_at: meta.find(x => x.key === "initialized_at")?.value ?? null,
         product_count: Number(count?.count ?? 0) });
     }
+    if (url.pathname === "/purge" && request.method === "POST") {
+      this.ctx.storage.sql.exec("DROP TABLE IF EXISTS inventory_movements");
+      this.ctx.storage.sql.exec("DROP TABLE IF EXISTS products");
+      this.ctx.storage.sql.exec("DROP TABLE IF EXISTS business_meta");
+      return json({ ok: true, database_cleared: true });
+    }
     if (url.pathname === "/health" && request.method === "GET") {
       return json({ ok: true, database: "ready", schema_version: 1 });
     }
