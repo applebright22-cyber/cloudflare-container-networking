@@ -1,6 +1,7 @@
 name: Ambassador feature checks
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feature/merchant-ambassador-accounts
