@@ -62,7 +62,7 @@ test("Stockroom API authenticates private account requests and isolates public c
 test("published stores load Stockroom products and checkout validates and consumes inventory", () => {
   assert.match(studioJs, /stockroom-storefront\.js/);
   assert.match(storefront, /\/api\/stockroom\/public\//);
-  assert.match(payments, /BUSINESS_DATABASE: DurableObjectNamespace/);
+  assert.doesNotMatch(payments, /BUSINESS_DATABASE|STOCKROOM_ORIGIN|STOCKROOM_GATEWAY_TOKEN|businessDatabaseFetch/);
   assert.match(payments, /store_catalog_empty/);
   assert.match(payments, /insufficient_stock/);
   assert.match(payments, /inventory-ledger\.internal\/reserve/);
