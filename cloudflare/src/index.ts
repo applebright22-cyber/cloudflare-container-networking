@@ -624,6 +624,79 @@ export default {
         ...(payload ? { headers: { "content-type": "application/json" }, body: JSON.stringify(payload) } : {}),
       });
       const resultBody = await result.json().catch(() => ({ error: "deal_service_failed" })) as Record<string, unknown>;
+      if (request.method === "POST" && body?.action !== "list" && result.ok) {
+        const businessName = typeof body?.business_name === "string" ? body.business_name.trim() : "";
+        const baselineId = env.VM_BASELINE_ID ?? "admin";
+        const markDeal = async (status: "account_created" | "error") => authRegistry.fetch(
+          "https://account-registry.internal/ambassador/deal/status",
+          { method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ambassador_id: ambassadorId, token, deal_id: (resultBody.deal as { deal_id?: string } | undefined)?.deal_id,
+              account_id: merchantAccountId, status }) },
+        );
+        if (!/^[a-zA-Z0-9._-]{1,64}$/.test(baselineId) || baselineId.startsWith("acct-")) {
+          await markDeal("error");
+          return json({ error: "invalid_vm_baseline_id" }, 500);
+        }
+        const baselineObject = await env.VM_SNAPSHOTS.get("vm-snapshots/" + baselineId + "/manifest.json");
+        if (!baselineObject) {
+          await markDeal("error");
+          return json({ error: "admin_baseline_snapshot_not_found", baseline_id: baselineId }, 409);
+        }
+        const baseline = await baselineObject.json().catch(() => null) as { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown } | null;
+        if (!baseline || baseline.version !== 1 || typeof baseline.generation !== "string" ||
+            !/^[a-z0-9-]{1,40}$/.test(baseline.generation) || !Number.isInteger(baseline.chunks) ||
+            (baseline.chunks as number) < 1 || (baseline.chunks as number) > 128 ||
+            !Number.isInteger(baseline.byteLength) || (baseline.byteLength as number) < 1 ||
+            (baseline.byteLength as number) > 536870912 ||
+            baseline.chunks !== Math.ceil((baseline.byteLength as number) / 8388608)) {
+          await markDeal("error");
+          return json({ error: "admin_baseline_manifest_invalid" }, 500);
+        }
+        const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+        const accountApiKey = "acct_" + Array.from(keyBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(accountApiKey));
+        const apiKeyHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+        const allocationResponse = await authRegistry.fetch("https://account-registry.internal/network/allocate", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ account_id: merchantAccountId }),
+        });
+        if (!allocationResponse.ok) {
+          await markDeal("error");
+          return json({ error: "virtual_network_allocation_failed" }, 503);
+        }
+        const allocationBody = await allocationResponse.json() as { allocation?: { virtual_ip?: string; virtual_mac?: string } };
+        const allocation = allocationBody.allocation;
+        if (typeof allocation?.virtual_ip !== "string" || typeof allocation.virtual_mac !== "string") {
+          await markDeal("error");
+          return json({ error: "virtual_network_allocation_invalid" }, 502);
+        }
+        const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(merchantAccountId));
+        const created = await accountRegistry.fetch("https://account-registry.internal/create", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ account_id: merchantAccountId, name: businessName.slice(0, 80), baseline_id: baselineId,
+            snapshot_identity: merchantAccountId, api_key_sha256: apiKeyHash, api_key: accountApiKey,
+            virtual_ip: allocation.virtual_ip, virtual_mac: allocation.virtual_mac, oracle_execution_enabled: true }),
+        });
+        if (!created.ok) {
+          await markDeal("error");
+          return json({ error: "merchant_account_record_creation_failed" }, 502);
+        }
+        const databaseReady = await businessDatabaseFetch(env, merchantAccountId, "initialize", { method: "POST" });
+        if (!databaseReady.ok) {
+          await markDeal("error");
+          return json({ error: "merchant_business_database_initialization_failed" }, 503);
+        }
+        const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(merchantAccountId));
+        const queued = await provisioner.fetch("https://account-provisioner.internal/start", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ identity: merchantAccountId, username: "pending-" + merchantAccountId.slice(5, 17), baseline_id: baselineId }),
+        });
+        if (!queued.ok || queued.status !== 202) {
+          await markDeal("error");
+          return json({ error: "merchant_snapshot_clone_queue_failed" }, 502);
+        }
+        await markDeal("account_created");
+      }
       if (request.method === "POST" && result.ok && typeof resultBody.invitation_token === "string") {
         resultBody.claim_url = new URL("/signup.html?invite=" + encodeURIComponent(resultBody.invitation_token), url.origin).toString();
       }
