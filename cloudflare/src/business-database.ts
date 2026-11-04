@@ -37,6 +37,7 @@ function cents(value: unknown): number | null {
 function safeUrl(value: unknown): string {
   const raw = text(value, 2048);
   if (!raw) return "";
+  if (/^\/api\/media\/acct-[a-f0-9-]{36}\/[a-f0-9-]{36}\/[a-f0-9-]{36}\.(?:jpg|png|webp|gif)$/.test(raw)) return raw;
   try {
     const url = new URL(raw);
     return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
@@ -297,16 +298,59 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
     const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
     let catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
     let catalog = await catalogResponse.json() as { products?: Array<{id:string;sku:string;name:string;description:string;category:string;image_url:string;variations:unknown[];external_url:string;price:number;in_stock:boolean}> };
-    if (catalogResponse.ok && !(catalog.products ?? []).length) {
-      try { await syncInventoryCatalog(env, accountId); } catch { /* Keep the published catalog unavailable until its first successful sync. */ }
-      catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
-      catalog = await catalogResponse.json() as typeof catalog;
-    }
     if (!catalogResponse.ok) return json({ error: "store_catalog_unavailable" }, 503);
     return json({ ok: true, products: (catalog.products ?? []).map(p => ({
       id:p.id, sku:p.sku, name:p.name, description:p.description, category:p.category,
       image_url:p.image_url, price:p.price, in_stock:p.in_stock, variations:p.variations, external_url:p.external_url,
     })) });
+  }
+  const mediaMatch = url.pathname.match(/^\/api\/media\/(acct-[a-f0-9-]{36})\/([a-f0-9-]{36})\/([a-f0-9-]{36})\.(jpg|png|webp|gif)$/);
+  if (mediaMatch) {
+    if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+    const [, accountId, productId, imageId, extension] = mediaMatch;
+    const key = "merchants/" + accountId + "/products/" + productId + "/" + imageId + "." + extension;
+    const object = await env.PROJECT_STORAGE.get(key);
+    if (!object) return json({ error: "media_not_found" }, 404);
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "public, max-age=31536000, immutable");
+    headers.set("x-content-type-options", "nosniff");
+    return new Response(object.body, { headers });
+  }
+  const uploadMatch = url.pathname.match(/^\/api\/stockroom\/media\/([a-f0-9-]{36})$/);
+  if (uploadMatch) {
+    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+    const accountId = url.searchParams.get("account_id") ?? "";
+    const token = request.headers.get("authorization")?.startsWith("Bearer ") ? request.headers.get("authorization")!.slice(7) : "";
+    if (!ACCOUNT_ID.test(accountId) || !/^[a-f0-9]{64}$/.test(token)) return json({ error: "unauthorized" }, 401);
+    const auth = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+    const verified = await auth.fetch("https://account-registry.internal/auth/verify", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account_id: accountId, token }),
+    });
+    if (!verified.ok) return json({ error: "unauthorized" }, 401);
+    const form = await request.formData().catch(() => null);
+    const file = form?.get("image");
+    if (!(file instanceof File) || file.size < 1 || file.size > 5 * 1024 * 1024) return json({ error: "image_must_be_under_5mb" }, 413);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const starts = (...values: number[]) => values.every((value, index) => bytes[index] === value);
+    let extension = "", contentType = "";
+    if (starts(0xff, 0xd8, 0xff)) { extension = "jpg"; contentType = "image/jpeg"; }
+    else if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) { extension = "png"; contentType = "image/png"; }
+    else if (starts(0x52, 0x49, 0x46, 0x46) && bytes.length >= 12 && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") { extension = "webp"; contentType = "image/webp"; }
+    else if (bytes.length >= 6 && ["GIF87a", "GIF89a"].includes(String.fromCharCode(...bytes.slice(0, 6)))) { extension = "gif"; contentType = "image/gif"; }
+    if (!extension || file.type !== contentType) return json({ error: "unsupported_or_mismatched_image_type" }, 415);
+    const productId = uploadMatch[1], imageId = crypto.randomUUID();
+    const prefix = "merchants/" + accountId + "/products/" + productId + "/";
+    const key = prefix + imageId + "." + extension;
+    await env.PROJECT_STORAGE.put(key, bytes, {
+      httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
+      customMetadata: { account_id: accountId, product_id: productId, image_id: imageId },
+    });
+    // Stockroom has one primary image per product; replace older image objects only after the new upload succeeds.
+    const existing = await env.PROJECT_STORAGE.list({ prefix, limit: 100 });
+    const obsolete = existing.objects.filter(item => item.key !== key).map(item => item.key);
+    if (obsolete.length) await env.PROJECT_STORAGE.delete(obsolete);
+    return json({ ok: true, image_url: "/api/media/" + accountId + "/" + productId + "/" + imageId + "." + extension });
   }
   if (!url.pathname.startsWith("/api/stockroom/")) return null;
   if (!["GET", "POST", "PUT", "DELETE"].includes(request.method)) return json({ error: "method_not_allowed" }, 405);
