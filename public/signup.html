@@ -72,7 +72,7 @@ main{width:min(100%,850px);background:linear-gradient(145deg,#121c34f5,#0b1225f5
 const form=document.getElementById('signup-form'),submit=document.getElementById('submit');
 let accountType='merchant';
 const invitationToken=new URLSearchParams(location.search).get('invite')||'';
-if(invitationToken){document.querySelector('.eyebrow').textContent='Complete your business account setup';document.querySelector('h1').textContent='Claim your merchant workspace.';document.getElementById('ambassador-note').hidden=true;document.getElementById('merchant-note').innerHTML='<p class="subtle">You were invited by an ambassador. Create your own merchant login; your TinyCore workspace and Stockroom tools will be provisioned under your account.</p>';}
+if(invitationToken){document.querySelector('[data-choice="ambassador"]').hidden=true;document.querySelector('.eyebrow').textContent='Complete your business account setup';document.querySelector('h1').textContent='Claim your merchant workspace.';document.getElementById('ambassador-note').hidden=true;document.getElementById('merchant-note').innerHTML='<p class="subtle">You were invited by an ambassador. Create your own merchant login; your TinyCore workspace and Stockroom tools will be provisioned under your account.</p>';}
 const merchantNote=document.getElementById('merchant-note'),ambassadorNote=document.getElementById('ambassador-note');
 document.querySelectorAll('[data-select]').forEach(button=>button.addEventListener('click',()=>{
  accountType=button.dataset.select;
