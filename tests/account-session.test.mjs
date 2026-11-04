@@ -21,7 +21,7 @@ test("signup stores server-side PBKDF2 credentials and enforces unique usernames
   assert.doesNotMatch(dashboard, /vm-test-accounts-v1|function readAccounts\(\)/);
   assert.match(worker, /password\.length < 12/);
   assert.match(registry, /password\.length < 12/);
-  assert.match(dashboard, /if\(creating&&pass\.length<4\)/);
+  assert.match(dashboard, /if\(creating&&pass\.length<12\)/);
   assert.match(worker, /virtual_network_allocation_failed/);
   assert.ok(worker.includes("/network/allocate"));
   assert.ok(worker.includes("virtual_ip: allocation.virtual_ip"));
