@@ -268,7 +268,7 @@ export class AccountRegistry extends DurableObject {
       const notes = typeof body?.notes === "string" ? body.notes.trim() : "";
       if (businessName.length < 2 || businessName.length > 120 || !validAccountId(merchantAccountId) ||
           contactName.length > 120 || contactEmail.length > 254 ||
-          (contactEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(contactEmail)) ||
+          (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) ||
           phone.length > 40 || notes.length > 2000) {
         return json({ error: "invalid_deal_fields" }, 400);
       }
