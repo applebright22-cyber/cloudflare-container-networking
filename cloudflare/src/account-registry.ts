@@ -33,6 +33,35 @@ function validAccountId(value: string): boolean {
 export class AccountRegistry extends DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+
+    // Internal Worker-only Admin login throttle. The caller supplies a SHA-256
+    // digest of the source IP, not the raw address. Three attempts are allowed
+    // in a rolling 15-minute window; a successful login clears the counter.
+    if (url.pathname === "/admin/login-attempt" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { key?: unknown; action?: unknown } | null;
+      if (!body || typeof body.key !== "string" || !/^[a-f0-9]{64}$/.test(body.key) ||
+          (body.action !== "consume" && body.action !== "reset")) {
+        return json({ error: "invalid_login_attempt_request" }, 400);
+      }
+      const storageKey = "admin-login-attempt:" + body.key;
+      if (body.action === "reset") {
+        await this.ctx.storage.delete(storageKey);
+        return json({ ok: true });
+      }
+      const now = Date.now();
+      const result = await this.ctx.storage.transaction(async (txn) => {
+        const current = await txn.get<{ attempts: number; expires_at: number }>(storageKey);
+        if (current && current.expires_at > now && current.attempts >= 3) {
+          return { allowed: false, retry_after_ms: current.expires_at - now };
+        }
+        const next = current && current.expires_at > now
+          ? { attempts: current.attempts + 1, expires_at: current.expires_at }
+          : { attempts: 1, expires_at: now + 15 * 60 * 1000 };
+        await txn.put(storageKey, next);
+        return { allowed: true, attempts_remaining: Math.max(0, 3 - next.attempts), expires_at: next.expires_at };
+      });
+      return json(result, result.allowed ? 200 : 429);
+    }
     // Internal-only Worker binding route: list account IDs without changing Durable Object storage.
     if (url.pathname === "/admin/list-accounts" && request.method === "GET") {
       const accounts: Array<{ username: string; account_id: string }> = [];
