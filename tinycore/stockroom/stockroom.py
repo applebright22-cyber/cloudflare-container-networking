@@ -46,6 +46,7 @@ def safe_url(v):
 def db_for(account):
     if not ACCOUNT_RE.fullmatch(account): raise ValueError("invalid_account_id")
     DATA_DIR.mkdir(parents=True,exist_ok=True,mode=0o700)
+    os.chmod(DATA_DIR,0o700)
     path=DATA_DIR/(account+".sqlite3")
     db=sqlite3.connect(str(path),timeout=15,isolation_level=None)
     db.row_factory=sqlite3.Row
