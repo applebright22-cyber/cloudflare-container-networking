@@ -63,7 +63,7 @@ test("published stores load Stockroom products and checkout validates and consum
   assert.match(studioJs, /stockroom-storefront\.js/);
   assert.match(storefront, /\/api\/stockroom\/public\//);
   assert.match(payments, /BUSINESS_DATABASE: DurableObjectNamespace/);
-  assert.match(payments, /products\?status=active/);
+  assert.match(payments, /store_catalog_empty/);
   assert.match(payments, /insufficient_stock/);
   assert.match(payments, /inventory-ledger\.internal\/reserve/);
   assert.match(payments, /commitInventory\(env, page/);
@@ -117,4 +117,33 @@ test("reopening Stockroom applies queued paid orders transactionally before refr
   assert.match(tinycoreApi, /business_orders/);
   assert.match(studioJs, /stockroomUrl\("\/sync\/orders"\)/);
   assert.match(studioJs, /queued online order\(s\) synchronized/);
+});
+
+test("Stockroom requires sign-in and stores product images through authenticated account-scoped R2 media", () => {
+  assert.match(studioHtml, /stockroom-image-file/);
+  assert.doesNotMatch(studioHtml, /Image URL/);
+  assert.match(studioJs, /setStockroomFormAccess\\(false\\)/);
+  assert.match(studioJs, /Sign in before saving products/);
+  assert.match(studioJs, /FormData\\(\\)/);
+  assert.match(database, /api\\/stockroom\\/media/);
+  assert.match(database, /merchants\\/.*products/);
+  assert.match(database, /unsupported_or_mismatched_image_type/);
+  assert.match(database, /api\\/media\\//);
+  assert.match(database, /auth\\/verify/);
+  assert.match(tinycoreApi, /api\\/media/);
+});
+
+test("published store checkout and catalog reads never call TinyCore", () => {
+  const publicCatalog = database.slice(database.indexOf('const publicMatch'), database.indexOf('if (!url.pathname.startsWith("/api/stockroom/"))'));
+  assert.doesNotMatch(publicCatalog, /syncInventoryCatalog/);
+  const publicCheckout = payments.slice(payments.indexOf('const publicStoreMatch'), payments.indexOf('if (paypalCreateMatch || paypalCaptureMatch)'));
+  assert.doesNotMatch(publicCheckout, /businessDatabaseFetch/);
+  assert.match(publicCheckout, /settings.crypto_enabled/);
+});
+
+test("restored TinyCore shell is automatically woken before startup verification", () => {
+  const verifier = vmPage.slice(vmPage.indexOf("async function verifyRestoredGuestShell"), vmPage.indexOf("function startBootMonitor"));
+  assert.match(verifier, /sendVmCommand\\('\\\\n'\\)/);
+  assert.ok(verifier.indexOf("sendVmCommand") < verifier.indexOf("shellPrompt(screenText())"));
+  assert.match(vmPage, /Automatically waking the restored Tiny Core shell/);
 });
