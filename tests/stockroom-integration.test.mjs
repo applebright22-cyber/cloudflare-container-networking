@@ -100,6 +100,7 @@ test("offline POS sales require allocated stock and use idempotent event IDs", (
 
 test("Stockroom product changes synchronize a versioned catalog to the online ledger", () => {
   assert.match(database, /syncInventoryCatalog/);
+  assert.match(database, /const orders = await synchronizePendingOrders/);
   assert.match(database, /INVENTORY_LEDGER/);
   assert.ok(database.includes("inventory-ledger.internal/catalog"));
   assert.match(database, /catalog\/sync/);
