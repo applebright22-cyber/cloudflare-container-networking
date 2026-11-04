@@ -323,6 +323,20 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
   if (internalPath === "/sync/orders" && request.method === "POST") {
     return synchronizePendingOrders(env, accountId);
   }
+  if (internalPath === "/offline-allowance" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
+    return ledger.fetch("https://inventory-ledger.internal/offline/allocate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}),
+    });
+  }
+  if (internalPath === "/offline-sales" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
+    return ledger.fetch("https://inventory-ledger.internal/offline/consume", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}),
+    });
+  }
   const response = await businessDatabaseFetch(env, accountId, internalPath + (url.search ? url.search : ""), request);
   const shouldSync = response.ok && (
     (internalPath === "/initialize" && request.method === "POST") ||
