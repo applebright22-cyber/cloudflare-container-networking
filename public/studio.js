@@ -136,6 +136,16 @@ async function initializeStockroomDatabase(){
   if(!response.ok)throw new Error(data.error||"Database initialization failed ("+response.status+")");
   if(status)status.textContent="DATABASE READY";
   if(message)message.textContent="Your account database is ready. Existing product records are preserved.";
+  // When TinyCore is reachable, apply the durable online order outbox before
+  // displaying stock so the local quantity reflects sales made while offline.
+  try {
+   const syncResponse=await fetch(stockroomUrl("/sync/orders"),{method:"POST",headers:authHeaders(),body:"{}"});
+   const syncData=await syncResponse.json().catch(()=>({}));
+   if(syncResponse.ok&&Number(syncData.synchronized)>0&&message)message.textContent=syncData.synchronized+" queued online order(s) synchronized into local Stockroom.";
+   else if(!syncResponse.ok&&message)message.textContent="Stockroom is ready. Pending online orders will retry when the TinyCore host is reachable.";
+  } catch {
+   if(message)message.textContent="Stockroom is ready. Online order synchronization will retry when the host is reachable.";
+  }
   await loadStockroomProducts();
   return true;
  }catch(error){
