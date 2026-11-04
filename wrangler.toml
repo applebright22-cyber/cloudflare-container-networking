@@ -95,6 +95,3 @@ storage = "sqlite"
 type = "durable-object"
 storage = "sqlite"
 
-[[migrations]]
-tag = "stockroom-sqlite-v1"
-new_sqlite_classes = ["BusinessDatabase"]
