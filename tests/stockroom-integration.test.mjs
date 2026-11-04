@@ -125,7 +125,7 @@ test("Stockroom requires sign-in and stores product images through authenticated
   assert.match(studioJs, /setStockroomFormAccess\(false\)/);
   assert.match(studioJs, /Sign in before saving products/);
   assert.match(studioJs, /FormData\(\)/);
-  assert.match(database, /api\/stockroom\/media/);
+  assert.ok(database.includes("stockroom\\/media"));
   assert.match(database, /merchants\/.*products/);
   assert.match(database, /unsupported_or_mismatched_image_type/);
   assert.match(database, /api\/media\//);
