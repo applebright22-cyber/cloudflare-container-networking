@@ -155,7 +155,7 @@ export class BusinessDatabase extends DurableObject {
           }
           const checked: Array<{ id: string; quantity: number }> = [];
           for (const [productId, quantity] of requested) {
-            const row = sql.exec("SELECT quantity FROM products WHERE id=? AND status='active'", productId).toArray()[0] as { quantity: number } | undefined;
+            const row = sql.exec("SELECT quantity FROM products WHERE id=?", productId).toArray()[0] as { quantity: number } | undefined;
             if (!row || Number(row.quantity) < quantity) throw new Error("local_inventory_conflict:" + productId);
             checked.push({ id: productId, quantity });
           }
