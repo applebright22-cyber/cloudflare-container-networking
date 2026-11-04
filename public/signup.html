@@ -137,9 +137,14 @@ const password=document.getElementById('password').value;
 submit.disabled=true;document.getElementById('password').value='';
 status.hidden=false;status.className='status';title.textContent='Creating your account…';detail.textContent='Sending the signup request to Workerd.';fill.style.width='8%';
 try{
-const response=await fetch('/api/auth/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,password,account_type:accountType})});
+const endpoint=accountType==='ambassador'?'/api/ambassador/signup':'/api/auth/signup';
+const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});
 const data=await response.json().catch(()=>({}));
 if(!response.ok){const retry=Number(data.retry_after_seconds);const retryText=Number.isFinite(retry)&&retry>0?' Try again in about '+Math.ceil(retry/60)+' minute(s).':'';throw new Error((data.error||'Signup failed (HTTP '+response.status+').')+retryText);}
+if(accountType==='ambassador'){
+ title.textContent='Ambassador account created';detail.textContent='Your separate ambassador identity is ready. It does not include TinyCore or merchant workspace access. Ambassador deal tools and merchant invitation workflow are not enabled yet.';
+ status.classList.add('good');fill.style.width='100%';submit.disabled=false;return;
+}
 const session={...data,username,login_time:new Date().toISOString()};
 if(typeof session.account_id!=='string'||typeof session.session_token!=='string')throw new Error('Signup response did not contain a valid account session.');
 sessionStorage.setItem('vm-account-id',session.account_id);
