@@ -733,13 +733,14 @@ export default {
         body: JSON.stringify({ token: inviteToken, account_id: accountId, reservation_id: reservationId }),
       });
       if (!reserved.ok) return json({ error: "invitation_already_claimed_or_in_use" }, 409);
+      const jobObject = await env.VM_SNAPSHOTS.get("runtime-jobs/" + accountId + ".json");
+      const job = jobObject ? await jobObject.json().catch(() => null) as Record<string, unknown> | null : null;
+      if (job?.status === "error") return json({ error: "merchant_workspace_provisioning_failed", detail: job.error ?? "See provisioning diagnostics." }, 503);
       const createdUser = await authRegistry.fetch("https://account-registry.internal/auth/signup", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ username, password, account_id: accountId }),
       });
       if (!createdUser.ok) return json(await createdUser.json().catch(() => ({ error: "merchant_login_creation_failed" })), createdUser.status);
-      const jobObject = await env.VM_SNAPSHOTS.get("runtime-jobs/" + accountId + ".json");
-      const job = jobObject ? await jobObject.json().catch(() => null) as Record<string, unknown> | null : null;
       const isComplete = job?.status === "complete";
       if (isComplete) {
         await authRegistry.fetch("https://account-registry.internal/auth/status", {
