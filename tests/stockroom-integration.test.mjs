@@ -108,7 +108,7 @@ test("Stockroom product changes synchronize a versioned catalog to the online le
 
 test("reopening Stockroom applies queued paid orders transactionally before refreshing local stock", () => {
   assert.match(database, /url\.pathname === "\/apply-orders"/);
-  assert.match(database, /BEGIN IMMEDIATE/);
+  assert.match(database, /transactionSync/);
   assert.match(database, /business_orders/);
   assert.match(database, /local_inventory_conflict/);
   assert.match(database, /internalPath === "\/sync\/orders"/);
