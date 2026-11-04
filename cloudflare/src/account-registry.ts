@@ -339,7 +339,7 @@ export class AccountRegistry extends DurableObject {
       const key = "merchant-invite:" + await this.sha256(body.token);
       const now = Date.now();
       const result = await this.ctx.storage.transaction(async (txn) => {
-        const invite = await txn.get<{ deal_id: string; ambassador_id: string; expires_at: number; status: string; reserved_account_id?: string; reservation_expires_at?: number }>(key);
+        const invite = await txn.get<{ deal_id: string; ambassador_id: string; account_id: string; expires_at: number; status: string; reserved_account_id?: string; reservation_expires_at?: number }>(key);
         if (!invite || invite.expires_at <= now || invite.status === "claimed" || invite.account_id !== body.account_id) return { error: "invitation_invalid_or_expired" };
         if (invite.status === "reserved" && (invite.reservation_expires_at ?? 0) > now &&
             invite.reserved_account_id !== body.account_id) return { error: "invitation_already_in_use" };
