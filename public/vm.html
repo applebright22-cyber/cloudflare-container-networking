@@ -124,7 +124,7 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
  <div class="toolbar-heading"><div><strong>Workspace controls</strong><span>Manage your VM session</span></div><a class="studio-return" href="/studio.html">← Studio</a></div>
  <div class="toolbar-groups">
   <div class="action-group"><span class="action-label">VM STATE</span><div class="action-buttons"><button id="save-vm-state" type="button">Save VM state</button><button id="clear-vm-state" class="danger-action" type="button">Delete saved state</button></div></div>
-  <div class="action-group"><span class="action-label">SHELL</span><div class="action-buttons"><button id="run-bootstrap" type="button">Wake shell</button><button id="paste-terminal" type="button">Paste into VM</button></div></div>
+  <div class="action-group"><span class="action-label">SHELL</span><div class="action-buttons"><button id="run-bootstrap" type="button">Manual shell recovery</button><button id="paste-terminal" type="button">Paste into VM</button></div></div>
   <div class="action-group"><span class="action-label">RESULTS</span><div class="action-buttons"><button id="copy-results" type="button">Copy results</button><button id="clear-results" type="button">Clear results</button></div></div>
  </div>
  <div class="toolbar-status"><span id="state-status" aria-live="polite">Saved state: checking…</span><span id="oracle-bridge-status" role="status" aria-live="polite">Oracle bridge: checking…</span><button id="oracle-terminal-toggle" type="button" hidden>Open Oracle terminal</button><span id="copy-status"></span></div>
@@ -422,7 +422,8 @@ const checks={
 };
 const steps=checks[checkId];
 if(!steps)throw new Error('Unknown diagnostic.');
-if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('Tiny Core guest input is unavailable. Open the terminal and wait for the VM to finish starting.');
+if(!bootComplete)throw new Error('Tiny Core is starting automatically. Network tests will be available as soon as the shell is ready.');
+if(!window.emulator||typeof window.emulator.keyboard_send_text!=='function')throw new Error('Tiny Core guest input is not ready yet. Wait for automatic startup to finish.');
 if(window.vampireSquidRunNetworkCheck.busy)throw new Error('A guest diagnostic is already running.');
 window.vampireSquidRunNetworkCheck.busy=true;
 const results=[];
