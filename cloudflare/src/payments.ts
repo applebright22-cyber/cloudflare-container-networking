@@ -1,12 +1,8 @@
-import { businessDatabaseFetch } from "./business-database";
 import { InventoryLedger } from "./inventory-ledger";
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
-  BUSINESS_DATABASE: DurableObjectNamespace;
   INVENTORY_LEDGER: DurableObjectNamespace<InventoryLedger>;
-  STOCKROOM_ORIGIN?: string;
-  STOCKROOM_GATEWAY_TOKEN?: string;
   PAYMENTS_ENCRYPTION_KEY?: string;
 }
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
