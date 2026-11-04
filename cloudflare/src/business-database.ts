@@ -342,7 +342,7 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
 
 /** Publish a versioned catalog snapshot to the always-online inventory authority. */
 export async function syncInventoryCatalog(env: BusinessDatabaseEnv, accountId: string): Promise<void> {
-  const response = await businessDatabaseFetch(env, accountId, "products?status=active");
+  const response = await businessDatabaseFetch(env, accountId, "products");
   if (!response.ok) throw new Error("stockroom_catalog_unavailable");
   const data = await response.json() as { products?: Array<{id:string;sku:string;name:string;price:number;quantity:number;status:string;updated_at:string}> };
   const products = (data.products ?? []).map(p => ({
