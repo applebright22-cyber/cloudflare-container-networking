@@ -138,8 +138,8 @@ export class BusinessDatabase extends DurableObject {
       if (!Array.isArray(body?.orders) || body.orders.length > 250) return json({ error: "invalid_order_batch" }, 400);
       const applied: string[] = [];
       const sql = this.ctx.storage.sql;
-      sql.exec("BEGIN IMMEDIATE");
       try {
+        this.ctx.storage.transactionSync(() => {
         for (const raw of body.orders) {
           if (!raw || typeof raw !== "object") throw new Error("invalid_order");
           const order = raw as { order_id?: unknown; items?: unknown };
@@ -166,9 +166,8 @@ export class BusinessDatabase extends DurableObject {
           sql.exec("INSERT INTO business_orders(order_id,payload_json,applied_at) VALUES(?,?,?)", orderId, JSON.stringify(raw), now);
           applied.push(orderId);
         }
-        sql.exec("COMMIT");
+        });
       } catch (error) {
-        sql.exec("ROLLBACK");
         const message = String(error);
         if (message === "invalid_order" || message === "invalid_order_item") return json({ error: message }, 400);
         if (message.startsWith("local_inventory_conflict:")) return json({ error: "local_inventory_conflict", product_id: message.split(":")[1] }, 409);
