@@ -30,6 +30,7 @@
 <div><label for="stockroom-image">Image URL</label><input id="stockroom-image" type="url" maxlength="2048" placeholder="https://…"></div>
 <div><label for="stockroom-external-url">External product URL (optional)</label><input id="stockroom-external-url" type="url" maxlength="2048" placeholder="https://…"></div>
 <div style="grid-column:1/-1"><label for="stockroom-description">Description</label><textarea id="stockroom-description" rows="2" maxlength="2000" placeholder="Product details, materials, size, and features"></textarea></div>
+<div style="grid-column:1/-1"><label for="stockroom-variations">Variations (optional JSON)</label><textarea id="stockroom-variations" rows="2" placeholder='[] or [{"name":"Small","sku":"MUG-S","price":12.00}]'></textarea></div>
 <div><label for="stockroom-status">Status</label><select id="stockroom-status"><option value="active">Active</option><option value="draft">Draft</option></select></div>
 <div style="display:flex;align-items:end"><button class="button button-primary full" id="stockroom-save" type="submit">＋ Save product</button></div>
 </form>
