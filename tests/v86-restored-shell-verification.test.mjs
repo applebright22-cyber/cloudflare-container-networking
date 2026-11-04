@@ -22,6 +22,7 @@ function createVerifier({ initialScreen, afterCommand, commandError = null }) {
   const context = {
     Date,
     Math,
+    window: { emulator: { keyboard_set_enabled: () => {} } },
     setTimeout,
     clearTimeout,
     screenText: () => currentScreen,
