@@ -141,7 +141,8 @@ window.startVm=async function(){
 const status=document.getElementById('status'),results=document.getElementById('results'),mystLog=document.getElementById('myst-log'),copyStatus=document.getElementById('copy-status'),stateStatus=document.getElementById('state-status');
 const nodeId='7cbee0e9-da6b-4808-92a7-4a3c2a45a840',apiUrl=window.location.origin;
 // Warm the account's persistent Stockroom database while TinyCore starts; this does not block Linux boot.
-void initializeBusinessDatabase();\nlet reportTimer=null,bootstrapStarted=false,bootComplete=false;
+void initializeBusinessDatabase();
+let reportTimer=null,bootstrapStarted=false,bootComplete=false;
 let manualCommandRunning=false;
 let oracleTerminalMode=false,oracleExecutionAvailable=false,oracleTerminalOutput='',oracleTerminalInput='',oracleTerminalHistory=[],oracleTerminalHistoryIndex=0,oracleTerminalBusy=false;
 
