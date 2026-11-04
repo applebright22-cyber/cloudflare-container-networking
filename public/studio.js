@@ -313,7 +313,7 @@ function previewDoc(p,includeStockroomPreview=true){
   const description=escapeHtml(p.description||files._description||'');
   if(includeStockroomPreview&&p.kind==='Store'){
    const previewProducts=previewStockroomProducts.filter(product=>product.status==='active').map(product=>({id:product.id,sku:product.sku,name:product.name,description:product.description,category:product.category,image_url:product.image_url,price:Number(product.price||0),in_stock:Number(product.quantity||0)>0,variations:product.variations||[]}));
-   const previewScript='<script>window.__VAMPIRESQUID_PREVIEW_PRODUCTS__='+JSON.stringify(previewProducts).replace(/</g,'\\u003c')+';<\\/script>';
+   const previewScript='<script>window.__VAMPIRESQUID_PREVIEW_PRODUCTS__='+JSON.stringify(previewProducts).replace(/</g,'\\u003c')+'</script>';
    doc=doc.replace('</head>',previewScript+'</head>');
   }
   doc=doc.replace(/<title>[\s\S]*?<\/title>/i,'<title>'+title+'</title>');
