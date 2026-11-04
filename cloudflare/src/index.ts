@@ -611,8 +611,10 @@ export default {
         body: JSON.stringify({ ambassador_id: ambassadorId, token }),
       });
       if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      const merchantAccountId = request.method === "POST" && body?.action !== "list"
+        ? "acct-" + crypto.randomUUID() : "";
       const payload = request.method === "POST"
-        ? { ...body, ambassador_id: ambassadorId, token }
+        ? { ...body, ambassador_id: ambassadorId, token, ...(merchantAccountId ? { account_id: merchantAccountId } : {}) }
         : null;
       const path = request.method === "GET"
         ? "/ambassador/deals?ambassador_id=" + encodeURIComponent(ambassadorId) + "&token=" + encodeURIComponent(token)
