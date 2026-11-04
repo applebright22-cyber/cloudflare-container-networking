@@ -292,6 +292,29 @@ export class AccountRegistry extends DurableObject {
       return json({ ok: true, deal, invitation_token: invitationToken }, 201);
     }
 
+    // Provisioner-only internal callback: record the eventual workspace outcome on
+    // the linked deal without exposing merchant credentials or workspace controls.
+    if (url.pathname === "/ambassador/deal/provisioning-status" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as {
+        ambassador_id?: unknown; deal_id?: unknown; account_id?: unknown; workspace_status?: unknown;
+      } | null;
+      if (typeof body?.ambassador_id !== "string" || !/^amb-[a-f0-9-]{36}$/.test(body.ambassador_id) ||
+          typeof body.deal_id !== "string" || !/^deal-[a-f0-9-]{36}$/.test(body.deal_id) ||
+          typeof body.account_id !== "string" || !validAccountId(body.account_id) ||
+          (body.workspace_status !== "ready" && body.workspace_status !== "error")) {
+        return json({ error: "invalid_workspace_status" }, 400);
+      }
+      const key = "ambassador-deal:" + body.ambassador_id + ":" + body.deal_id;
+      const deal = await this.ctx.storage.get<Record<string, unknown>>(key);
+      if (!deal || deal.account_id !== body.account_id) return json({ error: "deal_not_found" }, 404);
+      deal.workspace_status = body.workspace_status;
+      if (body.workspace_status === "error") deal.status = "error";
+      else if (deal.status !== "claimed") deal.status = "workspace_ready";
+      deal.updated_at = new Date().toISOString();
+      await this.ctx.storage.put(key, deal);
+      return json({ ok: true, deal });
+    }
+
     if (url.pathname === "/ambassador/deal/status" && request.method === "POST") {
       const body = await request.json().catch(() => null) as {
         ambassador_id?: unknown; token?: unknown; deal_id?: unknown; account_id?: unknown; status?: unknown;
