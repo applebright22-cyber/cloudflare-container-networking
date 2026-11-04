@@ -643,6 +643,7 @@ function markerResult(text,marker){const at=String(text||'').lastIndexOf(marker)
 async function next(){
 if(i>=commands.length){
 bootComplete=true;
+// Repeat the idempotent check after guest boot in case startup raced database provisioning.
 void initializeBusinessDatabase();
 startOracleBridgeStatus();
 statusText('DHCP, CA, DNS, HTTP, and HTTPS checks complete. Saving the Admin baseline snapshot.');
