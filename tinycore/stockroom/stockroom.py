@@ -137,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
                             requested[item["product_id"]]=requested.get(item["product_id"],0)+item["quantity"]
                         checked=[]
                         for pid,qty in requested.items():
-                            row=db.execute("SELECT quantity FROM products WHERE id=? AND status='active'",(pid,)).fetchone()
+                            row=db.execute("SELECT quantity FROM products WHERE id=?",(pid,)).fetchone()
                             if not row or row["quantity"]<qty: raise LookupError(pid)
                             checked.append((pid,qty))
                         stamp=now()
