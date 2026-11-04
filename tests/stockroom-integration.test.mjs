@@ -143,7 +143,7 @@ test("published store checkout and catalog reads never call TinyCore", () => {
 
 test("restored TinyCore shell is automatically woken before startup verification", () => {
   const verifier = vmPage.slice(vmPage.indexOf("async function verifyRestoredGuestShell"), vmPage.indexOf("function startBootMonitor"));
-  assert.match(verifier, /sendVmCommand\\('\\\\n'\\)/);
+  assert.match(verifier, /sendVmCommand\('\\n'\)/);
   assert.ok(verifier.indexOf("sendVmCommand") < verifier.indexOf("shellPrompt(screenText())"));
   assert.match(vmPage, /Automatically waking the restored Tiny Core shell/);
 });
