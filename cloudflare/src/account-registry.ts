@@ -330,10 +330,11 @@ export class AccountRegistry extends DurableObject {
 
     if (url.pathname === "/merchant-invite/reserve" && request.method === "POST") {
       const body = await request.json().catch(() => null) as {
-        token?: unknown; account_id?: unknown;
+        token?: unknown; account_id?: unknown; reservation_id?: unknown;
       } | null;
       if (typeof body?.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token) ||
-          typeof body.account_id !== "string" || !validAccountId(body.account_id)) {
+          typeof body.account_id !== "string" || !validAccountId(body.account_id) ||
+          typeof body.reservation_id !== "string" || !/^[a-f0-9-]{36}$/.test(body.reservation_id)) {
         return json({ error: "invalid_invitation" }, 400);
       }
       const key = "merchant-invite:" + await this.sha256(body.token);
@@ -342,9 +343,10 @@ export class AccountRegistry extends DurableObject {
         const invite = await txn.get<{ deal_id: string; ambassador_id: string; account_id: string; expires_at: number; status: string; reserved_account_id?: string; reservation_expires_at?: number }>(key);
         if (!invite || invite.expires_at <= now || invite.status === "claimed" || invite.account_id !== body.account_id) return { error: "invitation_invalid_or_expired" };
         if (invite.status === "reserved" && (invite.reservation_expires_at ?? 0) > now &&
-            invite.reserved_account_id !== body.account_id) return { error: "invitation_already_in_use" };
+            invite.reservation_id !== body.reservation_id) return { error: "invitation_already_in_use" };
         invite.status = "reserved";
         invite.reserved_account_id = body.account_id;
+        invite.reservation_id = body.reservation_id;
         invite.reservation_expires_at = now + 15 * 60 * 1000;
         await txn.put(key, invite);
         return { ok: true, deal_id: invite.deal_id };
@@ -354,18 +356,19 @@ export class AccountRegistry extends DurableObject {
 
     if (url.pathname === "/merchant-invite/complete" && request.method === "POST") {
       const body = await request.json().catch(() => null) as {
-        token?: unknown; account_id?: unknown; username?: unknown;
+        token?: unknown; account_id?: unknown; username?: unknown; reservation_id?: unknown;
       } | null;
       if (typeof body?.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token) ||
           typeof body.account_id !== "string" || !validAccountId(body.account_id) ||
-          typeof body.username !== "string" || !/^[a-z0-9][a-z0-9_-]{1,31}$/.test(body.username)) {
+          typeof body.username !== "string" || !/^[a-z0-9][a-z0-9_-]{1,31}$/.test(body.username) ||
+          typeof body.reservation_id !== "string" || !/^[a-f0-9-]{36}$/.test(body.reservation_id)) {
         return json({ error: "invalid_invitation_claim" }, 400);
       }
       const key = "merchant-invite:" + await this.sha256(body.token);
       const result = await this.ctx.storage.transaction(async (txn) => {
         const invite = await txn.get<{ deal_id: string; ambassador_id: string; expires_at: number; status: string; reserved_account_id?: string; reservation_expires_at?: number; claimed_at?: number }>(key);
         if (!invite || invite.expires_at <= Date.now() || invite.status !== "reserved" ||
-            invite.reserved_account_id !== body.account_id ||
+            invite.reserved_account_id !== body.account_id || invite.reservation_id !== body.reservation_id ||
             (invite.reservation_expires_at ?? 0) <= Date.now()) return { error: "invitation_reservation_invalid" };
         const dealKey = "ambassador-deal:" + invite.ambassador_id + ":" + invite.deal_id;
         const deal = await txn.get<Record<string, unknown>>(dealKey);
