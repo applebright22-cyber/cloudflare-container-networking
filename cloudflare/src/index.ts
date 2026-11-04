@@ -146,6 +146,7 @@ export default {
       const failures: Array<{ account_id: string; step: string; error: string }> = [];
       let snapshotsDeleted = 0;
       let projectsDeleted = 0;
+      let productMediaDeleted = 0;
 
       await Promise.all(accounts.map(async (entry) => {
         const accountId = typeof entry.account_id === "string" ? entry.account_id : "";
@@ -208,6 +209,28 @@ export default {
           projectCursor = page.truncated ? page.cursor : undefined;
         } while (projectCursor);
 
+        let mediaCursor: string | undefined;
+        do {
+          const page = await env.PROJECT_STORAGE.list({
+            prefix: "merchants/" + accountId + "/products/", limit: 1000,
+            ...(mediaCursor ? { cursor: mediaCursor } : {}),
+          }).catch(() => null);
+          if (!page) {
+            failures.push({ account_id: accountId, step: "product_media", error: "r2_list_failed" });
+            break;
+          }
+          if (page.objects.length) {
+            try {
+              await env.PROJECT_STORAGE.delete(page.objects.map((object) => object.key));
+              productMediaDeleted += page.objects.length;
+            } catch {
+              failures.push({ account_id: accountId, step: "product_media", error: "r2_delete_failed" });
+              break;
+            }
+          }
+          mediaCursor = page.truncated ? page.cursor : undefined;
+        } while (mediaCursor);
+
         try {
           await env.VM_SNAPSHOTS.delete("runtime-jobs/" + accountId + ".json");
         } catch {
@@ -221,6 +244,7 @@ export default {
         account_records_and_snapshots_processed: accounts.filter((entry) => typeof entry.account_id === "string" && /^acct-[a-f0-9-]{36}$/.test(entry.account_id)).length,
         snapshot_objects_deleted: snapshotsDeleted,
         project_objects_deleted: projectsDeleted,
+        product_media_objects_deleted: productMediaDeleted,
         failures,
         preserved: ["auth-users Durable Object namespace identity", "Admin baseline snapshot"],
       }, failures.length ? 207 : 200);
@@ -259,9 +283,11 @@ export default {
         // Inventory R2 snapshot keys first; never include the Admin baseline prefix.
         const snapshotKeys: string[] = [];
         const projectKeys: string[] = [];
+        const mediaKeys: string[] = [];
         let cursor: string | undefined;
         let listFailed = false;
         let projectListFailed = false;
+        let mediaListFailed = false;
         do {
           const page = await env.VM_SNAPSHOTS.list({
             prefix: "vm-snapshots/" + accountId + "/", limit: 1000, cursor,
@@ -286,8 +312,20 @@ export default {
         } while (projectCursor);
         steps.project_objects_found = projectKeys.length;
         if (projectListFailed) errors.push({ step: "project_list", error: "r2_list_failed" });
+        let mediaCursor: string | undefined;
+        do {
+          const page = await env.PROJECT_STORAGE.list({
+            prefix: "merchants/" + accountId + "/products/", limit: 1000,
+            ...(mediaCursor ? { cursor: mediaCursor } : {}),
+          }).catch(() => null);
+          if (!page) { mediaListFailed = true; break; }
+          mediaKeys.push(...page.objects.map((object) => object.key));
+          mediaCursor = page.truncated ? page.cursor : undefined;
+        } while (mediaCursor);
+        steps.product_media_objects_found = mediaKeys.length;
+        if (mediaListFailed) errors.push({ step: "product_media_list", error: "r2_list_failed" });
 
-        if (!dryRun && !listFailed && !projectListFailed) {
+        if (!dryRun && !listFailed && !projectListFailed && !mediaListFailed) {
           const authPurge = await authRegistry.fetch("https://account-registry.internal/admin/purge-account", {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ account_id: accountId }),
@@ -337,6 +375,15 @@ export default {
             }
           }
           steps.project_objects_deleted = errors.some((entry) => entry.step === "project_objects") ? null : projectKeys.length;
+          for (let offset = 0; offset < mediaKeys.length; offset += 1000) {
+            try {
+              await env.PROJECT_STORAGE.delete(mediaKeys.slice(offset, offset + 1000));
+            } catch {
+              errors.push({ step: "product_media_objects", error: "r2_delete_failed" });
+              break;
+            }
+          }
+          steps.product_media_objects_deleted = errors.some((entry) => entry.step === "product_media_objects") ? null : mediaKeys.length;
           try {
             await env.VM_SNAPSHOTS.delete("runtime-jobs/" + accountId + ".json");
             steps.runtime_job_deleted = true;
@@ -351,11 +398,12 @@ export default {
             "all storage keys and alarm in the account-specific AccountProvisioner object",
             "R2 objects under vm-snapshots/" + accountId + "/",
             "R2 objects under accounts/" + accountId + "/projects/",
+            "R2 objects under merchants/" + accountId + "/products/",
             "R2 object runtime-jobs/" + accountId + ".json",
           ];
         }
 
-        result.ok = dryRun ? !listFailed : errors.length === 0;
+        result.ok = dryRun ? !listFailed && !projectListFailed && !mediaListFailed : errors.length === 0;
         results.push(result);
       }
       return json({

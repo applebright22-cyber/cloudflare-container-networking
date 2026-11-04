@@ -22,6 +22,7 @@ function createVerifier({ initialScreen, afterCommand, commandError = null }) {
   const context = {
     Date,
     Math,
+    window: { emulator: { keyboard_set_enabled: () => {} } },
     setTimeout,
     clearTimeout,
     screenText: () => currentScreen,
@@ -40,6 +41,7 @@ test("restored guest passes only when the shell echo marker returns and the prom
   const guest = createVerifier({
     initialScreen: "tc@box:~$",
     afterCommand: (_screen, command) => {
+      if (command === "\n") return "tc@box:~$";
       const match = command.match(/echo (__V86_RESTORE_SHELL_OK_[a-z0-9]+__)/);
       assert.ok(match, "probe must send a unique echo marker");
       assert.ok(command.endsWith("\n"), "probe must submit the command with Enter");
@@ -49,7 +51,8 @@ test("restored guest passes only when the shell echo marker returns and the prom
   const result = await guest.verify(200, 100);
   assert.equal(result.ok, true);
   assert.match(result.marker, /^__V86_RESTORE_SHELL_OK_[a-z0-9]+__$/);
-  assert.equal(guest.commands.length, 1);
+  assert.equal(guest.commands[0], "\n", "startup must send Enter before probing the shell");
+  assert.equal(guest.commands.length, 2);
 });
 
 test("restored guest fails clearly when no stable shell prompt appears", async () => {
@@ -57,13 +60,14 @@ test("restored guest fails clearly when no stable shell prompt appears", async (
   const result = await guest.verify(25, 25);
   assert.equal(result.ok, false);
   assert.match(result.reason, /no stable Tiny Core shell prompt/);
-  assert.equal(guest.commands.length, 0);
+  assert.equal(guest.commands.length, 1, "startup sends an automatic wake even when no prompt appears");
 });
 
 test("restored guest fails when the echo marker never returns", async () => {
   const guest = createVerifier({
     initialScreen: "tc@box:~$",
     afterCommand: (_screen, command) => {
+      if (command === "\n") return "tc@box:~$";
       const match = command.match(/echo (__V86_RESTORE_SHELL_OK_[a-z0-9]+__)/);
       assert.ok(match);
       return "tc@box:~$ echo " + match[1] + "\ntc@box:~$";

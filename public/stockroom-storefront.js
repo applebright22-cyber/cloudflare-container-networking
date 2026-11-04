@@ -1,6 +1,9 @@
 (() => {
   const match = location.pathname.match(/^\/sites\/([a-f0-9]{32})\/?$/);
-  if (!match) return;
+  const previewProducts = Array.isArray(window.__VAMPIRESQUID_PREVIEW_PRODUCTS__)
+    ? window.__VAMPIRESQUID_PREVIEW_PRODUCTS__
+    : null;
+  if (!match && !previewProducts) return;
   const grid = document.getElementById("products-grid");
   if (!grid) return;
   const message = (value) => {
@@ -10,12 +13,15 @@
     grid.replaceChildren(p);
   };
   message("Loading this business's Stockroom products…");
-  fetch("/api/stockroom/public/" + match[1], { headers: { accept: "application/json" } })
-    .then(async (response) => {
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Catalog unavailable");
-      return Array.isArray(data.products) ? data.products : [];
-    })
+  const catalog = previewProducts
+    ? Promise.resolve(previewProducts)
+    : fetch("/api/stockroom/public/" + match[1], { headers: { accept: "application/json" } })
+        .then(async (response) => {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || "Catalog unavailable");
+          return Array.isArray(data.products) ? data.products : [];
+        });
+  catalog
     .then((products) => {
       grid.replaceChildren();
       if (!products.length) {

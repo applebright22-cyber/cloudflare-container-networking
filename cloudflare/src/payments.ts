@@ -1,12 +1,8 @@
-import { businessDatabaseFetch } from "./business-database";
 import { InventoryLedger } from "./inventory-ledger";
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
-  BUSINESS_DATABASE: DurableObjectNamespace;
   INVENTORY_LEDGER: DurableObjectNamespace<InventoryLedger>;
-  STOCKROOM_ORIGIN?: string;
-  STOCKROOM_GATEWAY_TOKEN?: string;
   PAYMENTS_ENCRYPTION_KEY?: string;
 }
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -56,7 +52,7 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     if (!mapping?.account_id || !accountOk(mapping.account_id)) return json({ error: "site_not_found" }, 404);
     const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(mapping.account_id, "settings"));
     const credentials = await getPaypalCredentials(env, mapping.account_id);
-    if (!settings?.paypal_enabled || !credentials) return json({ error: "merchant_paypal_not_configured" }, 409);
+    if (!settings || (!settings.crypto_enabled && !(settings.paypal_enabled && credentials))) return json({ error: "merchant_payment_method_not_configured" }, 409);
     const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(mapping.account_id));
     let catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
     let catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
@@ -70,21 +66,9 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       }
     };
     loadCatalog();
-    // First-time catalog bootstrap requires TinyCore to be online. Once synced,
-    // checkout reads only from this always-available ledger.
-    if (!catalog.size) {
-      const source = await businessDatabaseFetch(env, mapping.account_id, "products?status=active");
-      if (source.ok) {
-        const local = await source.json() as { products?: Array<{id:string;sku:string;name:string;price:number;quantity:number;status:string;updated_at:string}> };
-        const products = (local.products ?? []).map(p => ({ id:p.id,sku:p.sku,name:p.name,price_cents:Math.round(Number(p.price)*100),quantity:Number(p.quantity),status:p.status,updated_at:p.updated_at }));
-        await ledger.fetch("https://inventory-ledger.internal/catalog/sync", { method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({products}) });
-        catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
-        catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
-        loadCatalog();
-      }
-    }
+    // Checkout reads only the always-online Cloudflare inventory ledger. TinyCore is never contacted here.
     if (!catalogResponse.ok) return json({ error: "inventory_service_unavailable" }, 503);
-    if (!catalog.size) return json({ error: "store_catalog_empty_or_tinycore_offline" }, 409);
+    if (!catalog.size) return json({ error: "store_catalog_empty" }, 409);
     const body = await request.json().catch(() => null) as { items?: unknown } | null;
     if (!Array.isArray(body?.items) || body.items.length < 1 || body.items.length > 20) return json({ error: "invalid_cart" }, 400);
     const quantities = new Map<string, number>();
@@ -198,6 +182,8 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     if (!page) return json({ error: "checkout_not_found" }, 404);
     if (page.status === "paid") return json({ ok: true, status: "paid" });
     if (Date.now() > Date.parse(page.expires_at)) return json({ error: "checkout_expired" }, 410);
+    const paymentSettings = await readJson<any>(env.PROJECT_STORAGE, keyFor(page.account_id, "settings"));
+    if (!paymentSettings?.paypal_enabled) return json({ error: "paypal_not_enabled" }, 409);
     const credentials = await getPaypalCredentials(env, page.account_id);
     if (!credentials) return json({ error: "paypal_not_connected" }, 409);
     const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
