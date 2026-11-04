@@ -33,6 +33,9 @@ export class InventoryLedger extends DurableObject {
       const body = await request.json().catch(() => null) as { products?: unknown } | null;
       if (!Array.isArray(body?.products) || body.products.length > 5000) return json({ error: "invalid_catalog" }, 400);
       let synced = 0;
+      try {
+      this.ctx.storage.transactionSync(() => {
+      this.expireReservations(now);
       for (const raw of body.products) {
         if (!raw || typeof raw !== "object") continue;
         const p = raw as Record<string, unknown>;
@@ -55,10 +58,16 @@ export class InventoryLedger extends DurableObject {
         if (prior && updated <= prior.source_updated_at) continue;
         const reservedRow = sql.exec("SELECT COALESCE(SUM(i.quantity),0) AS held FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=? AND r.status='active'",id).toArray()[0] as {held:number}|undefined;
         const held = Number(prior?.offline_allocated ?? 0) + Number(reservedRow?.held ?? 0);
-        if (quantity < held) return json({ error: "catalog_update_conflicts_with_reserved_stock", product_id: id }, 409);
+        if (quantity < held) throw new Error("catalog_update_conflicts_with_reserved_stock:" + id);
         sql.exec("INSERT INTO inventory_catalog(product_id,sku,name,description,category,image_url,variations_json,external_url,price_cents,on_hand,offline_allocated,status,source_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?) ON CONFLICT(product_id) DO UPDATE SET sku=excluded.sku,name=excluded.name,description=excluded.description,category=excluded.category,image_url=excluded.image_url,variations_json=excluded.variations_json,external_url=excluded.external_url,price_cents=excluded.price_cents,on_hand=excluded.on_hand,status=excluded.status,source_updated_at=excluded.source_updated_at",
           id, sku, name, description, category, imageUrl, variationsJson, externalUrl, price, quantity, status, updated);
         synced++;
+      }
+      });
+      } catch (error) {
+        const message = String(error);
+        if (message.startsWith("catalog_update_conflicts_with_reserved_stock:")) return json({ error: "catalog_update_conflicts_with_reserved_stock", product_id: message.split(":")[1] }, 409);
+        throw error;
       }
       return json({ ok: true, synced });
     }
@@ -100,8 +109,10 @@ export class InventoryLedger extends DurableObject {
       }
       const ttl=Math.min(1800,Math.max(60,Number(body.ttl_seconds)||1800));
       const expires=new Date(Date.now()+ttl*1000).toISOString();
-      sql.exec("INSERT INTO inventory_reservations(id,checkout_id,status,expires_at,created_at) VALUES(?,?,'active',?,?)",crypto.randomUUID(),checkoutId,expires,now);
-      for (const item of selected) sql.exec("INSERT INTO inventory_reservation_items(checkout_id,product_id,quantity,unit_price_cents,name) VALUES(?,?,?,?,?)",checkoutId,item.id,item.quantity,item.price,item.name);
+      this.ctx.storage.transactionSync(() => {
+        sql.exec("INSERT INTO inventory_reservations(id,checkout_id,status,expires_at,created_at) VALUES(?,?,'active',?,?)",crypto.randomUUID(),checkoutId,expires,now);
+        for (const item of selected) sql.exec("INSERT INTO inventory_reservation_items(checkout_id,product_id,quantity,unit_price_cents,name) VALUES(?,?,?,?,?)",checkoutId,item.id,item.quantity,item.price,item.name);
+      });
       return json({ok:true,checkout_id:checkoutId,expires_at:expires,items:selected.map(x=>({product_id:x.id,quantity:x.quantity,unit_amount_usd:(x.price/100).toFixed(2),name:x.name})),
         amount_cents:selected.reduce((sum,x)=>sum+x.price*x.quantity,0)});
     }
@@ -124,17 +135,25 @@ export class InventoryLedger extends DurableObject {
       if (prior.status!=="active" || prior.expires_at<=now) { this.expireReservations(now); return json({error:"reservation_not_active"},409); }
       const items=sql.exec("SELECT product_id,quantity,unit_price_cents,name FROM inventory_reservation_items WHERE checkout_id=?",checkoutId).toArray() as Array<Record<string,unknown>>;
       if (!items.length) return json({error:"reservation_items_missing"},409);
-      for (const item of items) {
-        const row=sql.exec("SELECT on_hand FROM inventory_catalog WHERE product_id=?",String(item.product_id)).toArray()[0] as {on_hand:number}|undefined;
-        if (!row || Number(row.on_hand)<Number(item.quantity)) return json({error:"inventory_commit_conflict",product_id:item.product_id},409);
-      }
-      for (const item of items) sql.exec("UPDATE inventory_catalog SET on_hand=on_hand-? WHERE product_id=?",Number(item.quantity),String(item.product_id));
-      sql.exec("UPDATE inventory_reservations SET status='committed' WHERE checkout_id=?",checkoutId);
       const orderId=crypto.randomUUID();
       const payload={order_id:orderId,checkout_id:checkoutId,items:items.map(x=>({product_id:x.product_id,quantity:x.quantity,unit_price_cents:x.unit_price_cents,name:x.name})),
         payment_reference:typeof body?.payment_reference==="string"?body.payment_reference.slice(0,160):null,
         payment_method:typeof body?.payment_method==="string"?body.payment_method.slice(0,32):"unknown",status:"paid",created_at:now};
-      sql.exec("INSERT INTO inventory_orders(order_id,checkout_id,status,payload_json,created_at) VALUES(?,?,'pending_sync',?,?)",orderId,checkoutId,JSON.stringify(payload),now);
+      try {
+        this.ctx.storage.transactionSync(() => {
+          for (const item of items) {
+            const row=sql.exec("SELECT on_hand FROM inventory_catalog WHERE product_id=?",String(item.product_id)).toArray()[0] as {on_hand:number}|undefined;
+            if (!row || Number(row.on_hand)<Number(item.quantity)) throw new Error("inventory_commit_conflict:" + String(item.product_id));
+          }
+          for (const item of items) sql.exec("UPDATE inventory_catalog SET on_hand=on_hand-? WHERE product_id=?",Number(item.quantity),String(item.product_id));
+          sql.exec("UPDATE inventory_reservations SET status='committed' WHERE checkout_id=?",checkoutId);
+          sql.exec("INSERT INTO inventory_orders(order_id,checkout_id,status,payload_json,created_at) VALUES(?,?,'pending_sync',?,?)",orderId,checkoutId,JSON.stringify(payload),now);
+        });
+      } catch (error) {
+        const message=String(error);
+        if (message.startsWith("inventory_commit_conflict:")) return json({error:"inventory_commit_conflict",product_id:message.split(":")[1]},409);
+        throw error;
+      }
       return json({ok:true,order_id:orderId,status:"pending_sync"});
     }
 
