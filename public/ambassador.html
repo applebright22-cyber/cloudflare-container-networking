@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ambassador portal · Vampirequid</title>
+<style>
+:root{color-scheme:dark;--bg:#080b1a;--panel:#10182d;--line:#2b395b;--muted:#9aa9c6;--text:#f4f6ff;--accent:#a64cff;--good:#65e7c9}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 15% 0%,#25104c 0%,transparent 48%),radial-gradient(ellipse at 100% 100%,#062d48 0%,transparent 42%),var(--bg);color:var(--text);font:14px/1.6 system-ui,sans-serif;padding:24px}
+main{width:min(100%,1000px);margin:auto}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}.brand{font-size:21px;font-weight:800}.gradient{background:linear-gradient(100deg,#ff36b6,#9148ff,#00d5ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.panel{background:linear-gradient(145deg,#121c34f5,#0b1225f5);border:1px solid var(--line);border-radius:16px;padding:24px;margin:20px 0}h1{font-size:clamp(1.8rem,5vw,2.6rem);line-height:1.1;margin:24px 0 8px}h2{margin-top:0}p,.muted{color:var(--muted)}label{display:block;font-weight:700;margin:14px 0 6px}input,textarea{width:100%;background:#080f20;color:var(--text);border:1px solid #3b4b6d;border-radius:9px;padding:12px;font:inherit}textarea{min-height:90px;resize:vertical}button{border:0;border-radius:9px;background:linear-gradient(100deg,#792de5,#187be8);color:white;font:inherit;font-weight:800;padding:12px 18px;margin-top:16px;cursor:pointer}button.secondary{background:#1a2945;border:1px solid #425577}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.status{white-space:pre-wrap;color:var(--good);overflow-wrap:anywhere}.deal{padding:14px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:#080f20}.deal strong{display:block}.hidden{display:none!important}.pill{display:inline-block;padding:2px 9px;border-radius:99px;background:#26334e;color:#cbd5e1;font-size:12px}
+@media(max-width:650px){body{padding:12px}.grid{grid-template-columns:1fr}.panel{padding:17px}}
+</style></head><body><main>
+<div class="top"><div class="brand">Vampire<span class="gradient">quid</span> · Ambassador</div><button id="logout" class="secondary hidden" type="button">Sign out</button></div>
+<h1>Build business <span class="gradient">partnerships.</span></h1><p>Manage your prospects and keep track of the businesses you introduce. Ambassador accounts are separate from merchant accounts and do not provide TinyCore or Stockroom access.</p>
+<section id="login-panel" class="panel"><h2>Ambassador sign in</h2><form id="login-form"><label for="username">Username</label><input id="username" autocomplete="username" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required><button>Sign in</button></form><p id="login-status" class="status" role="status"></p><p class="muted">Need an ambassador account? <a href="/signup.html">Create one here</a> and select Ambassador Account.</p></section>
+<section id="dashboard" class="hidden">
+<div class="grid"><section class="panel"><h2>Register a business prospect</h2><form id="deal-form">
+<label for="business">Business name *</label><input id="business" required maxlength="120">
+<label for="contact">Contact name</label><input id="contact" maxlength="120">
+<label for="email">Contact email</label><input id="email" type="email" maxlength="254">
+<label for="phone">Phone</label><input id="phone" maxlength="40">
+<label for="notes">Notes</label><textarea id="notes" maxlength="2000"></textarea>
+<button type="submit">Save prospect</button></form><p id="deal-status" class="status" role="status"></p></section>
+<section class="panel"><h2>My deals</h2><p class="muted">Only deals created by your ambassador account are shown here.</p><div id="deals"><p class="muted">Loading…</p></div></section></div>
+</section></main>
+<script>
+(()=>{const $=id=>document.getElementById(id);let session=null;
+function showDashboard(){ $('login-panel').classList.add('hidden');$('dashboard').classList.remove('hidden');$('logout').classList.remove('hidden');loadDeals();}
+function saveSession(data){session={ambassador_id:data.ambassador_id,session_token:data.session_token,username:data.username};sessionStorage.setItem('ambassador-session',JSON.stringify(session));showDashboard();}
+async function api(path,options={}){const r=await fetch(path,{...options,headers:{'content-type':'application/json',...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Request failed ('+r.status+')');return d;}
+$('login-form').addEventListener('submit',async e=>{e.preventDefault();$('login-status').textContent='Signing in…';try{const d=await api('/api/ambassador/login',{method:'POST',body:JSON.stringify({username:$('username').value,password:$('password').value})});$('password').value='';saveSession(d);}catch(err){$('login-status').textContent=err.message;}});
+async function loadDeals(){try{const d=await api('/api/ambassador/deals?ambassador_id='+encodeURIComponent(session.ambassador_id)+'&session_token='+encodeURIComponent(session.session_token));$('deals').replaceChildren();if(!d.deals?.length){$('deals').innerHTML='<p class="muted">No prospects yet. Add your first business to get started.</p>';return;}for(const item of d.deals){const card=document.createElement('article');card.className='deal';const name=document.createElement('strong');name.textContent=item.business_name;const status=document.createElement('span');status.className='pill';status.textContent=item.status||'prospect';const meta=document.createElement('p');meta.className='muted';meta.textContent=[item.contact_name,item.contact_email,item.phone].filter(Boolean).join(' · ')||'No contact details added';const id=document.createElement('small');id.textContent=item.deal_id;card.append(name,status,meta,id);$('deals').append(card);}}catch(err){$('deals').textContent=err.message;}}
+$('deal-form').addEventListener('submit',async e=>{e.preventDefault();$('deal-status').textContent='Saving prospect…';const body={ambassador_id:session.ambassador_id,session_token:session.session_token,business_name:$('business').value,contact_name:$('contact').value,contact_email:$('email').value,phone:$('phone').value,notes:$('notes').value};try{await api('/api/ambassador/deals',{method:'POST',body:JSON.stringify(body)});$('deal-form').reset();$('deal-status').textContent='Prospect saved.';await loadDeals();}catch(err){$('deal-status').textContent=err.message;}});
+$('logout').addEventListener('click',()=>{sessionStorage.removeItem('ambassador-session');session=null;location.reload();});
+try{const saved=JSON.parse(sessionStorage.getItem('ambassador-session')||'null');if(saved?.ambassador_id&&saved?.session_token){session=saved;showDashboard();}}catch{}
+})();
+</script></body></html>
