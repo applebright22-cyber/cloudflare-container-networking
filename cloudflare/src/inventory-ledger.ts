@@ -208,7 +208,6 @@ export class InventoryLedger extends DurableObject {
         }
         for (const [productId,qty] of requested) sql.exec("UPDATE inventory_catalog SET offline_allocated=offline_allocated-?,on_hand=on_hand-? WHERE product_id=?",qty,qty,productId);
         sql.exec("INSERT INTO offline_sales(event_id,order_id,payload_json,created_at) VALUES(?,?,?,?)",eventId,orderId,JSON.stringify(payload),now);
-        sql.exec("INSERT OR IGNORE INTO inventory_orders(order_id,checkout_id,status,payload_json,created_at) VALUES(?,?, 'pending_sync',?,?)",orderId,"offline-"+eventId,JSON.stringify(payload),now);
       });
       if (insufficient) return json({error:"offline_allowance_exceeded",product_id:insufficient},409);
       return json({ok:true,queued:true});
