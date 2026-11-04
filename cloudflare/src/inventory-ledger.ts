@@ -14,7 +14,7 @@ const json = (value: unknown, status = 200) => Response.json(value, { status, he
 export class InventoryLedger extends DurableObject {
   private schema() {
     const sql = this.ctx.storage.sql;
-    sql.exec("CREATE TABLE IF NOT EXISTS inventory_catalog (product_id TEXT PRIMARY KEY, sku TEXT NOT NULL, name TEXT NOT NULL, price_cents INTEGER NOT NULL, on_hand INTEGER NOT NULL CHECK(on_hand >= 0), offline_allocated INTEGER NOT NULL DEFAULT 0 CHECK(offline_allocated >= 0), status TEXT NOT NULL DEFAULT 'active', source_updated_at TEXT NOT NULL)");
+    sql.exec("CREATE TABLE IF NOT EXISTS inventory_catalog (product_id TEXT PRIMARY KEY, sku TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', image_url TEXT NOT NULL DEFAULT '', variations_json TEXT NOT NULL DEFAULT '[]', external_url TEXT NOT NULL DEFAULT '', price_cents INTEGER NOT NULL, on_hand INTEGER NOT NULL CHECK(on_hand >= 0), offline_allocated INTEGER NOT NULL DEFAULT 0 CHECK(offline_allocated >= 0), status TEXT NOT NULL DEFAULT 'active', source_updated_at TEXT NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS inventory_reservations (id TEXT PRIMARY KEY, checkout_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL CHECK(status IN ('active','committed','released','expired')), expires_at TEXT NOT NULL, created_at TEXT NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS inventory_reservation_items (checkout_id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity > 0), unit_price_cents INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY(checkout_id, product_id))");
     sql.exec("CREATE TABLE IF NOT EXISTS inventory_orders (order_id TEXT PRIMARY KEY, checkout_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL, acknowledged_at TEXT)");
@@ -39,6 +39,11 @@ export class InventoryLedger extends DurableObject {
         const id = typeof p.id === "string" ? p.id : "";
         const sku = typeof p.sku === "string" ? p.sku.slice(0, 64) : "";
         const name = typeof p.name === "string" ? p.name.slice(0, 120) : "";
+        const description = typeof p.description === "string" ? p.description.slice(0, 2000) : "";
+        const category = typeof p.category === "string" ? p.category.slice(0, 80) : "";
+        const imageUrl = typeof p.image_url === "string" ? p.image_url.slice(0, 2048) : "";
+        const variationsJson = typeof p.variations_json === "string" && p.variations_json.length <= 20000 ? p.variations_json : "[]";
+        const externalUrl = typeof p.external_url === "string" ? p.external_url.slice(0, 2048) : "";
         const price = Number(p.price_cents);
         const quantity = Number(p.quantity);
         const status = p.status === "active" ? "active" : "inactive";
@@ -51,8 +56,8 @@ export class InventoryLedger extends DurableObject {
         const reservedRow = sql.exec("SELECT COALESCE(SUM(i.quantity),0) AS held FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=? AND r.status='active'",id).toArray()[0] as {held:number}|undefined;
         const held = Number(prior?.offline_allocated ?? 0) + Number(reservedRow?.held ?? 0);
         if (quantity < held) return json({ error: "catalog_update_conflicts_with_reserved_stock", product_id: id }, 409);
-        sql.exec("INSERT INTO inventory_catalog(product_id,sku,name,price_cents,on_hand,offline_allocated,status,source_updated_at) VALUES(?,?,?,?,?,0,?,?) ON CONFLICT(product_id) DO UPDATE SET sku=excluded.sku,name=excluded.name,price_cents=excluded.price_cents,on_hand=excluded.on_hand,status=excluded.status,source_updated_at=excluded.source_updated_at",
-          id, sku, name, price, quantity, status, updated);
+        sql.exec("INSERT INTO inventory_catalog(product_id,sku,name,description,category,image_url,variations_json,external_url,price_cents,on_hand,offline_allocated,status,source_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?) ON CONFLICT(product_id) DO UPDATE SET sku=excluded.sku,name=excluded.name,description=excluded.description,category=excluded.category,image_url=excluded.image_url,variations_json=excluded.variations_json,external_url=excluded.external_url,price_cents=excluded.price_cents,on_hand=excluded.on_hand,status=excluded.status,source_updated_at=excluded.source_updated_at",
+          id, sku, name, description, category, imageUrl, variationsJson, externalUrl, price, quantity, status, updated);
         synced++;
       }
       return json({ ok: true, synced });
@@ -60,9 +65,10 @@ export class InventoryLedger extends DurableObject {
 
     if (url.pathname === "/catalog" && request.method === "GET") {
       this.expireReservations(now);
-      const rows = sql.exec("SELECT c.product_id AS id,c.sku,c.name,c.price_cents,c.on_hand,c.offline_allocated,c.status,COALESCE((SELECT SUM(i.quantity) FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=c.product_id AND r.status='active'),0) AS online_reserved FROM inventory_catalog c WHERE c.status='active' ORDER BY c.name LIMIT 500").toArray() as Array<Record<string, unknown>>;
-      return json({ ok: true, products: rows.map(p => ({ id:p.id, sku:p.sku, name:p.name, price:Number(p.price_cents)/100,
-        quantity:Math.max(0,Number(p.on_hand)-Number(p.offline_allocated)-Number(p.online_reserved)),
+      const rows = sql.exec("SELECT c.product_id AS id,c.sku,c.name,c.description,c.category,c.image_url,c.variations_json,c.external_url,c.price_cents,c.on_hand,c.offline_allocated,c.status,COALESCE((SELECT SUM(i.quantity) FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=c.product_id AND r.status='active'),0) AS online_reserved FROM inventory_catalog c WHERE c.status='active' ORDER BY c.name LIMIT 500").toArray() as Array<Record<string, unknown>>;
+      return json({ ok: true, products: rows.map(p => ({ id:p.id, sku:p.sku, name:p.name, description:p.description, category:p.category,
+        image_url:p.image_url, variations:JSON.parse(String(p.variations_json || "[]")), external_url:p.external_url,
+        price:Number(p.price_cents)/100, quantity:Math.max(0,Number(p.on_hand)-Number(p.offline_allocated)-Number(p.online_reserved)),
         in_stock:Number(p.on_hand)-Number(p.offline_allocated)-Number(p.online_reserved)>0 })) });
     }
 
