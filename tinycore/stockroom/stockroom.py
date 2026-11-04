@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
  reason TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS inventory_consumptions (checkout_id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS business_orders (order_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, applied_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS products_status_updated ON products(status, updated_at);
 CREATE INDEX IF NOT EXISTS inventory_product_created ON inventory_movements(product_id, created_at);
 """
@@ -115,6 +116,44 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/v1/public-products" and self.command=="GET":
                 rows=db.execute("SELECT id,sku,name,description,category,image_url,price_cents,quantity,variations_json,external_url FROM products WHERE status='active' ORDER BY name LIMIT 250").fetchall()
                 self.send_json(200,{"ok":True,"products":[{"id":r["id"],"sku":r["sku"],"name":r["name"],"description":r["description"],"category":r["category"],"image_url":r["image_url"],"price":r["price_cents"]/100,"in_stock":r["quantity"]>0,"variations":json.loads(r["variations_json"]),"external_url":r["external_url"]} for r in rows]}); return
+            if path=="/v1/apply-orders" and self.command=="POST":
+                b=self.body(); orders=b.get("orders")
+                if not isinstance(orders,list) or len(orders)>250:
+                    self.send_json(400,{"error":"invalid_order_batch"}); return
+                applied=[]
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    for order in orders:
+                        if not isinstance(order,dict): raise ValueError("invalid_order")
+                        oid=order.get("order_id"); items=order.get("items")
+                        if not isinstance(oid,str) or not UUID_RE.fullmatch(oid) or not isinstance(items,list) or not 1<=len(items)<=20:
+                            raise ValueError("invalid_order")
+                        if db.execute("SELECT 1 FROM business_orders WHERE order_id=?",(oid,)).fetchone():
+                            applied.append(oid); continue
+                        requested={}
+                        for item in items:
+                            if not isinstance(item,dict) or not isinstance(item.get("product_id"),str) or not UUID_RE.fullmatch(item["product_id"]) or type(item.get("quantity")) is not int or not 1<=item["quantity"]<=99:
+                                raise ValueError("invalid_order_item")
+                            requested[item["product_id"]]=requested.get(item["product_id"],0)+item["quantity"]
+                        checked=[]
+                        for pid,qty in requested.items():
+                            row=db.execute("SELECT quantity FROM products WHERE id=? AND status='active'",(pid,)).fetchone()
+                            if not row or row["quantity"]<qty: raise LookupError(pid)
+                            checked.append((pid,qty))
+                        stamp=now()
+                        for pid,qty in checked:
+                            db.execute("UPDATE products SET quantity=quantity-?,updated_at=? WHERE id=?",(qty,stamp,pid))
+                            movement(db,pid,-qty,"synced paid order "+oid)
+                        db.execute("INSERT INTO business_orders(order_id,payload_json,applied_at) VALUES(?,?,?)",(oid,json.dumps(order,separators=(",",":")),stamp))
+                        applied.append(oid)
+                    db.commit()
+                except LookupError as e:
+                    db.rollback(); self.send_json(409,{"error":"local_inventory_conflict","product_id":str(e)}); return
+                except ValueError as e:
+                    db.rollback(); self.send_json(400,{"error":str(e)}); return
+                except Exception:
+                    db.rollback(); raise
+                self.send_json(200,{"ok":True,"applied_order_ids":applied}); return
             if path=="/v1/products" and self.command=="GET":
                 term=clean((q.get("q") or [""])[0],100); status=clean((q.get("status") or [""])[0],16)
                 if term: rows=db.execute("SELECT * FROM products WHERE status!='archived' AND (name LIKE ? OR sku LIKE ? OR category LIKE ?) ORDER BY updated_at DESC LIMIT 250",("%"+term+"%",)*3).fetchall()
