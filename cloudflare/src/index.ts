@@ -744,6 +744,11 @@ export default {
       }).catch(() => new Response("account_data_purge_failed", { status: 500 }));
       if (!accountData.ok) failures.push("account_registry");
 
+      const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
+      const businessDatabasePurge = await businessDatabase.fetch("https://business-database.internal/purge", { method: "POST" })
+        .catch(() => new Response("business_database_purge_failed", { status: 500 }));
+      if (!businessDatabasePurge.ok) failures.push("business_database");
+
       const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(accountId));
       const provisionerData = await provisioner.fetch("https://account-provisioner.internal/purge", { method: "POST" })
         .catch(() => new Response("provisioner_purge_failed", { status: 500 }));
