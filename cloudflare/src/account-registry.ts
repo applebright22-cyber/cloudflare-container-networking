@@ -336,7 +336,7 @@ export class AccountRegistry extends DurableObject {
       // The background clone can finish before the request handler records
       // that the job was queued. Do not let this late acknowledgement downgrade
       // a ready or already-claimed deal.
-      if (body.status === "error" || (deal.status !== "claimed" && deal.workspace_status !== "ready")) {
+      if (body.status === "error" || (deal.status !== "claimed" && deal.workspace_status !== "ready" && deal.workspace_status !== "error")) {
         deal.status = body.status;
       }
       deal.updated_at = new Date().toISOString();
