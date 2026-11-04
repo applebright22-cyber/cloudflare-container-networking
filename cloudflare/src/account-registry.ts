@@ -426,6 +426,31 @@ export class AccountRegistry extends DurableObject {
       return json({ ok: true, account_id: body.account_id }, 201);
     }
 
+    // Provisioning status follows the permanent merchant account ID, not a
+    // temporary display username, so an owner can claim before or after VM setup.
+    if (url.pathname === "/auth/status-by-account" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { account_id?: unknown; status?: unknown } | null;
+      if (typeof body?.account_id !== "string" || !validAccountId(body.account_id) ||
+          (body.status !== "ready" && body.status !== "error")) return json({ error: "invalid_auth_status" }, 400);
+      const updates: string[] = [];
+      let after: string | undefined;
+      do {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({
+          prefix: "auth-user:", limit: 1000, startAfter: after,
+        });
+        const entries = Array.from(page.entries());
+        for (const [key, value] of entries) {
+          if (value.account_id === body.account_id) {
+            value.status = body.status;
+            await this.ctx.storage.put(key, value);
+            updates.push(key);
+          }
+        }
+        after = page.list_complete || entries.length === 0 ? undefined : entries[entries.length - 1][0];
+      } while (after);
+      return json({ ok: true, account_id: body.account_id, updated: updates.length });
+    }
+
     if (url.pathname === "/auth/status" && request.method === "POST") {
       const body = await request.json().catch(() => null) as { username?: unknown; status?: unknown } | null;
       const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
