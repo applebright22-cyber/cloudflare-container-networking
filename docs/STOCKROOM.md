@@ -10,9 +10,15 @@ Stockroom replaces the former Studio Cockpit navigation entry. It is the account
 - The TinyCore VM host page sends the authenticated initialize request as the guest starts. This does not wait for the database before Linux boot continues.
 - Account deletion purges the associated business database along with account project and VM data.
 
-## Storage boundary
+## Storage boundary and TinyCore host mode
 
-The first implementation uses Cloudflare SQLite-backed Durable Objects for the business database. Cloudflare persists this data independently of the browser and TinyCore VM snapshot. It is **not** an Oracle-hosted PostgreSQL service: the existing Oracle executor remains a separate Linux command/runtime service. Moving the SQL engine onto Oracle would require a separately deployed PostgreSQL service and an authenticated provisioning bridge.
+The original Cloudflare SQLite-backed Durable Object remains the default backend until the TinyCore host is configured. A TinyCore-hosted backend is included in `tinycore/stockroom/`: a Python 3 standard-library HTTP API with one SQLite file per business account.
+
+To activate it, configure Worker variable `STOCKROOM_ORIGIN` with the HTTPS origin of the TinyCore service and Worker secret `STOCKROOM_GATEWAY_TOKEN`. Set the same token in the TinyCore host environment. With both values present, signup initialization, Stockroom CRUD, public storefront catalogs, checkout catalog reads, inventory deductions, and account cleanup route to TinyCore. The Worker authenticates user sessions before forwarding. Without both settings, the existing Durable Object backend remains active.
+
+Run this on an always-on TinyCore host, not the browser's temporary v86 session. Install Python 3, copy `tinycore/stockroom/` to `/opt/stockroom`, put the database directory on a persistent mounted disk, and source `bootlocal-stockroom.sh` from `/opt/bootlocal.sh` after the disk is mounted. Keep the service bound to localhost and place a TLS reverse proxy or Cloudflare Tunnel in front of it. Do not expose port 8787 directly.
+
+**Migration warning:** switching on TinyCore mode does not automatically copy existing Durable Object product or inventory records. Back up and migrate existing Stockroom data before configuring the Worker origin. Writes made in TinyCore mode are not synchronized back to the old backend. Removing either Worker setting selects the old backend again.
 
 ## Product schema
 
