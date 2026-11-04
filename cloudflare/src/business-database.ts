@@ -322,23 +322,7 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
   url.searchParams.delete("account_id");
   const internalPath = url.pathname.replace(/^\/api\/stockroom/, "") || "/";
   if (internalPath === "/sync/orders" && request.method === "POST") {
-    const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
-    const pendingResponse = await ledger.fetch("https://inventory-ledger.internal/orders");
-    if (!pendingResponse.ok) return json({ error: "order_queue_unavailable" }, 503);
-    const pending = await pendingResponse.json() as { orders?: Array<{ order_id: string }> };
-    const orders = pending.orders ?? [];
-    if (!orders.length) return json({ ok: true, synchronized: 0, pending: 0 });
-    const applied = await businessDatabaseFetch(env, accountId, "apply-orders", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orders }),
-    });
-    if (!applied.ok) return json({ error: "local_order_sync_failed", detail: await applied.text().catch(() => "") }, applied.status);
-    const result = await applied.json() as { applied_order_ids?: string[] };
-    const orderIds = result.applied_order_ids ?? [];
-    const ack = await ledger.fetch("https://inventory-ledger.internal/orders/ack", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ order_ids: orderIds }),
-    });
-    if (!ack.ok) return json({ error: "order_acknowledgement_failed", synchronized: orderIds.length }, 503);
-    return json({ ok: true, synchronized: orderIds.length, pending: Math.max(0, orders.length - orderIds.length) });
+    return synchronizePendingOrders(env, accountId);
   }
   const response = await businessDatabaseFetch(env, accountId, internalPath + (url.search ? url.search : ""), request);
   const shouldSync = response.ok && (
@@ -347,9 +331,34 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
     (/^\/products\/[a-f0-9-]{36}$/.test(internalPath) && request.method === "DELETE")
   );
   if (shouldSync) {
-    try { await syncInventoryCatalog(env, accountId); } catch { /* Local Stockroom remains authoritative until sync succeeds. */ }
+    // Apply pending paid orders before accepting a newer local quantity snapshot.
+    // Otherwise a stale offline edit could overwrite central sales deductions.
+    const orders = await synchronizePendingOrders(env, accountId);
+    if (orders.ok) {
+      try { await syncInventoryCatalog(env, accountId); } catch { /* Keep the central catalog unchanged until sync succeeds. */ }
+    }
   }
   return response;
+}
+
+async function synchronizePendingOrders(env: BusinessDatabaseEnv, accountId: string): Promise<Response> {
+  const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
+  const pendingResponse = await ledger.fetch("https://inventory-ledger.internal/orders");
+  if (!pendingResponse.ok) return json({ error: "order_queue_unavailable" }, 503);
+  const pending = await pendingResponse.json() as { orders?: Array<{ order_id: string }> };
+  const orders = pending.orders ?? [];
+  if (!orders.length) return json({ ok: true, synchronized: 0, pending: 0 });
+  const applied = await businessDatabaseFetch(env, accountId, "apply-orders", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orders }),
+  });
+  if (!applied.ok) return json({ error: "local_order_sync_failed", detail: await applied.text().catch(() => "") }, applied.status);
+  const result = await applied.json() as { applied_order_ids?: string[] };
+  const orderIds = result.applied_order_ids ?? [];
+  const ack = await ledger.fetch("https://inventory-ledger.internal/orders/ack", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ order_ids: orderIds }),
+  });
+  if (!ack.ok) return json({ error: "order_acknowledgement_failed", synchronized: orderIds.length }, 503);
+  return json({ ok: true, synchronized: orderIds.length, pending: Math.max(0, orders.length - orderIds.length) });
 }
 
 /** Publish a versioned catalog snapshot to the always-online inventory authority. */
