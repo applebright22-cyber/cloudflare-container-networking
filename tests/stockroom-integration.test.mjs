@@ -15,6 +15,7 @@ const workerConfig = read("cloudflare/wrangler.toml");
 const rootConfig = read("wrangler.toml");
 const tinycoreBoot = read("tinycore/stockroom/bootlocal-stockroom.sh");
 const tinycoreStart = read("tinycore/stockroom/start-stockroom.sh");
+const tinycoreApi = read("tinycore/stockroom/stockroom.py");
 
 test("Stockroom replaces the former Cockpit navigation and view", () => {
   assert.match(studioHtml, /data-view="stockroom"/);
@@ -100,4 +101,17 @@ test("Stockroom product changes synchronize a versioned catalog to the online le
   assert.match(database, /syncInventoryCatalog/);
   assert.match(database, /INVENTORY_LEDGER/);
   assert.match(database, /catalog\/sync/);
+});
+
+test("reopening Stockroom applies queued paid orders transactionally before refreshing local stock", () => {
+  assert.match(database, /url\.pathname === "\/apply-orders"/);
+  assert.match(database, /BEGIN IMMEDIATE/);
+  assert.match(database, /business_orders/);
+  assert.match(database, /local_inventory_conflict/);
+  assert.match(database, /url\.pathname === "\/sync\/orders"/);
+  assert.match(tinycoreApi, /path==\"\/v1\/apply-orders\"/);
+  assert.match(tinycoreApi, /BEGIN IMMEDIATE/);
+  assert.match(tinycoreApi, /business_orders/);
+  assert.match(studioJs, /stockroomUrl\("\/sync\/orders"\)/);
+  assert.match(studioJs, /queued online order\(s\) synchronized/);
 });
