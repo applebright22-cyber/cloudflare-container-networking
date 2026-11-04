@@ -356,7 +356,7 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
 export async function syncInventoryCatalog(env: BusinessDatabaseEnv, accountId: string): Promise<void> {
   const response = await businessDatabaseFetch(env, accountId, "products");
   if (!response.ok) throw new Error("stockroom_catalog_unavailable");
-  const data = await response.json() as { products?: Array<{id:string;sku:string;name:string;price:number;quantity:number;status:string;updated_at:string}> };
+  const data = await response.json() as { products?: Array<{id:string;sku:string;name:string;description?:string;category?:string;image_url?:string;variations?:unknown[];external_url?:string;price:number;quantity:number;status:string;updated_at:string}> };
   const products = (data.products ?? []).map(p => ({
     id: p.id, sku: p.sku, name: p.name, description: p.description, category: p.category,
     image_url: p.image_url, variations_json: JSON.stringify(p.variations ?? []), external_url: p.external_url,
