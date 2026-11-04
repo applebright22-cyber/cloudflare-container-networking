@@ -74,11 +74,13 @@ let accountType='merchant';
 const inviteFromUrl=new URLSearchParams(location.search).get('invite')||'';if(inviteFromUrl)sessionStorage.setItem('merchant-invite-token',inviteFromUrl);const invitationToken=inviteFromUrl||sessionStorage.getItem('merchant-invite-token')||'';
 if(invitationToken){history.replaceState(null,'',location.pathname);document.querySelector('[data-choice="ambassador"]').hidden=true;document.querySelector('.eyebrow').textContent='Complete your business account setup';document.querySelector('h1').textContent='Claim your merchant workspace.';document.getElementById('ambassador-note').hidden=true;document.getElementById('merchant-note').innerHTML='<p class="subtle">You were invited by an ambassador. Create your own merchant login; your TinyCore workspace and Stockroom tools will be provisioned under your account.</p>';}
 const merchantNote=document.getElementById('merchant-note'),ambassadorNote=document.getElementById('ambassador-note');
+const accountLoginLink=document.querySelector('main > p.subtle a[href="/vm.html"]');
 document.querySelectorAll('[data-select]').forEach(button=>button.addEventListener('click',()=>{
  accountType=button.dataset.select;
  document.querySelectorAll('.choice').forEach(card=>card.classList.toggle('active',card.dataset.choice===accountType));
  document.querySelectorAll('[data-select]').forEach(item=>item.setAttribute('aria-pressed',String(item.dataset.select===accountType)));
  merchantNote.hidden=accountType!=='merchant';ambassadorNote.hidden=accountType!=='ambassador';
+ if(accountLoginLink){accountLoginLink.href=accountType==='ambassador'?'/ambassador.html':'/vm.html';accountLoginLink.textContent=accountType==='ambassador'?'Open the Ambassador Portal':'Log in to your workspace';}
  submit.textContent=accountType==='merchant'?'Create Merchant Account and prepare TinyCore':'Create Ambassador Account';
 }));
 
