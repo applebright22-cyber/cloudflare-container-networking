@@ -4,6 +4,8 @@ A Cloudflare-first control and tunnel foundation for the larger networking desig
 
 ## Implemented
 
+- Studio Stockroom with a private SQLite-backed business database per account, automatically initialized at signup and when TinyCore launches. See [docs/STOCKROOM.md](docs/STOCKROOM.md).
+
 - Worker health route, authenticated gateway/client tunnel route, and authenticated live-session listing.
 - Hibernatable Durable Object that brokers bounded binary frames between a gateway and client for the same node.
 - Versioned frame codec shared by TypeScript and Python.
