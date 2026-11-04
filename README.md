@@ -19,6 +19,16 @@ Still not implemented: UDP datagram transport, Docker lifecycle management, cont
 
 Cloudflare is the HTTP/WebSocket control and tunnel layer. The gateway at 141.148.53.68 is a separate Linux host and remains responsible for Docker, raw networking, and any eventual TCP/UDP bridge. Workers accept HTTP and WebSockets; Workers can open outbound TCP sockets, but Cloudflare documents inbound direct TCP as not yet supported. Do not assume an HTTP/WebSocket endpoint can accept arbitrary public UDP. No IP spoofing is used.
 
+## Admin ingress IP allowlist
+
+Admin API routes are protected by a fail-closed IP allowlist in addition to the existing admin access code. In the Cloudflare dashboard, open **Workers & Pages → cloudflare-container-networking → Settings → Variables and Secrets**, add a plaintext variable named `ADMIN_ALLOWED_IPS`, and set it to your current public IP address:
+
+```text
+75.251.249.114
+```
+
+To rotate your IP later, edit that variable in the Cloudflare dashboard and replace the value with your new public IP. Multiple trusted IPs may be separated by commas or newlines. Save the change and allow the Worker configuration to propagate. If the variable is missing or the request's Cloudflare-provided `CF-Connecting-IP` does not exactly match an entry, admin ingress is denied. Do not use `X-Forwarded-For` for this check. This allowlist does not replace the admin access code.
+
 ## Deploy the Worker
 
 On a development machine with Node.js, clone this repository, then run:
