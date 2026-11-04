@@ -139,7 +139,7 @@ const password=document.getElementById('password').value;
 submit.disabled=true;document.getElementById('password').value='';
 status.hidden=false;status.className='status';title.textContent='Creating your account…';detail.textContent='Sending the signup request to Workerd.';fill.style.width='8%';
 try{
-const endpoint=accountType==='ambassador'?'/api/ambassador/signup':'/api/auth/signup';
+const endpoint=accountType==='ambassador'?'/api/ambassador/signup':invitationToken?'/api/auth/claim-invitation':'/api/auth/signup';
 const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,password,...(accountType==='merchant'&&invitationToken?{invite_token:invitationToken}:{})})});
 const data=await response.json().catch(()=>({}));
 if(!response.ok){const retry=Number(data.retry_after_seconds);const retryText=Number.isFinite(retry)&&retry>0?' Try again in about '+Math.ceil(retry/60)+' minute(s).':'';throw new Error((data.error||'Signup failed (HTTP '+response.status+').')+retryText);}
