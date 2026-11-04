@@ -22,7 +22,7 @@ Run this on an always-on TinyCore host, not the browser's temporary v86 session.
 
 ## Product schema
 
-The `products` table stores product ID, unique SKU, name, description, category, image URL, selling price, cost price, quantity, status, variations JSON, optional external URL, and timestamps. Prices are stored as integer cents. The `inventory_movements` table records initial stock, quantity adjustments, and paid-order deductions. The `inventory_consumptions` table makes each checkout deduction idempotent.
+The `products` table stores product ID, unique SKU, name, description, category, image URL, selling price, cost price, quantity, status, variations JSON, optional external URL, and timestamps. Prices are stored as integer cents. The `inventory_movements` table records initial stock and quantity adjustments. Online checkout reservations, offline POS allocations, and the durable paid-order outbox are handled by the separate per-business InventoryLedger described in [INVENTORY_SYNC.md](./INVENTORY_SYNC.md).
 
 ## Authenticated API
 
@@ -36,8 +36,9 @@ All routes require the account ID in the query string and the user's session tok
 - `GET /api/stockroom/movements?account_id=...` — recent inventory movements.
 - `GET /api/stockroom/public/:published_site_id` — read-only active catalog for that published store.
 
-The Worker validates the session against the existing AccountRegistry before routing private requests to the account's database object. Published storefronts receive a separate read-only public catalog containing only active product details; cost prices and exact stock counts are never exposed. PayPal/USDC checkout prices and available quantities are re-read from Stockroom on the server, and confirmed payment triggers an idempotent stock deduction. The Durable Object binding is not exposed to browsers.
+The Worker validates the session against the existing AccountRegistry before routing private requests to the account's database object. Published storefronts receive a separate read-only public catalog containing only active product details; cost prices and exact stock counts are never exposed. Stockroom product changes synchronize a versioned catalog snapshot to the per-business online InventoryLedger. Public checkout reads the ledger catalog and reserves stock before issuing a checkout URL. Confirmed PayPal/USDC payment commits that reservation and queues an order for local TinyCore synchronization. The Durable Object binding is not exposed to browsers.
 
 ## Deploy
 
 Both `wrangler.toml` files declare the `BUSINESS_DATABASE` binding and SQLite storage export, following the repository's existing Durable Object configuration style. Deploy through the repository's existing Cloudflare-connected GitHub workflow. Confirm the deployment completes before testing signup or Stockroom.
+\n\n## Online inventory and offline POS\n\nSee [Inventory reservations and offline order queue](./INVENTORY_SYNC.md) for the online reservation authority, offline stock allocations, idempotency rules, and reconnect API. The TinyCore reconnect worker is still a required follow-up before automatic order application to local SQLite can be considered complete.\n
