@@ -689,7 +689,13 @@ export default {
         const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(merchantAccountId));
         const queued = await provisioner.fetch("https://account-provisioner.internal/start", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ identity: merchantAccountId, username: "pending-" + merchantAccountId.slice(5, 17), baseline_id: baselineId }),
+          body: JSON.stringify({
+            identity: merchantAccountId,
+            username: "pending-" + merchantAccountId.slice(5, 17),
+            baseline_id: baselineId,
+            ambassador_id: ambassadorId,
+            deal_id: (resultBody.deal as { deal_id?: string } | undefined)?.deal_id,
+          }),
         });
         if (!queued.ok || queued.status !== 202) {
           await markDeal("error");
