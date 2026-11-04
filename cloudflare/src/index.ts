@@ -706,7 +706,7 @@ export default {
     // Claim a pre-created merchant account using the one-time invitation token.
     // The merchant chooses their own credentials; the ambassador never receives them.
     if (url.pathname === "/api/auth/claim-invitation" && request.method === "POST") {
-      let body: { username?: unknown; password?: unknown };
+      let body: { username?: unknown; password?: unknown; invite_token?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
       const password = typeof body.password === "string" ? body.password : "";
