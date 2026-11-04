@@ -33,4 +33,4 @@ The Worker validates the session against the existing AccountRegistry before rou
 
 ## Deploy
 
-Both `wrangler.toml` files declare the `BUSINESS_DATABASE` binding and the `stockroom-sqlite-v1` SQLite class migration. Deploy through the repository's existing Cloudflare-connected GitHub workflow. Confirm the deployment completes before testing signup or Stockroom.
+Both `wrangler.toml` files declare the `BUSINESS_DATABASE` binding and SQLite storage export, following the repository's existing Durable Object configuration style. Deploy through the repository's existing Cloudflare-connected GitHub workflow. Confirm the deployment completes before testing signup or Stockroom.
