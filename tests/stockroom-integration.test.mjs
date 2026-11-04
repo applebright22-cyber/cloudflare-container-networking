@@ -36,6 +36,7 @@ test("each business gets a persistent SQLite database with product and inventory
   assert.match(database, /BUSINESS_DATABASE\.idFromName\(accountId\)/);
   assert.match(database, /business-database\.internal/);
   assert.match(workerConfig, /name = "BUSINESS_DATABASE"/);
+  assert.match(workerConfig, /name = "INVENTORY_LEDGER"/);
   assert.match(rootConfig, /name = "BUSINESS_DATABASE"/);
 });
 
@@ -100,6 +101,7 @@ test("offline POS sales require allocated stock and use idempotent event IDs", (
 test("Stockroom product changes synchronize a versioned catalog to the online ledger", () => {
   assert.match(database, /syncInventoryCatalog/);
   assert.match(database, /INVENTORY_LEDGER/);
+  assert.match(database, /inventory-ledger\\.internal\\/catalog/);
   assert.match(database, /catalog\/sync/);
 });
 
