@@ -27,14 +27,14 @@
 <div><label for="stockroom-quantity">Quantity in stock</label><input id="stockroom-quantity" type="number" min="0" step="1" value="0" required></div>
 <div><label for="stockroom-price">Selling price ($)</label><input id="stockroom-price" type="number" min="0" step="0.01" value="0.00" required></div>
 <div><label for="stockroom-cost">Cost price ($)</label><input id="stockroom-cost" type="number" min="0" step="0.01" value="0.00" required></div>
-<div><label for="stockroom-image">Image URL</label><input id="stockroom-image" type="url" maxlength="2048" placeholder="https://…"></div>
+<div style="grid-column:1/-1"><label for="stockroom-image-file">Product image</label><input id="stockroom-image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><input id="stockroom-image-ref" type="hidden" value=""><div id="stockroom-image-preview" class="muted" aria-live="polite" style="margin-top:8px">Choose an image from your device. Images are stored securely in R2.</div></div>
 <div><label for="stockroom-external-url">External product URL (optional)</label><input id="stockroom-external-url" type="url" maxlength="2048" placeholder="https://…"></div>
 <div style="grid-column:1/-1"><label for="stockroom-description">Description</label><textarea id="stockroom-description" rows="2" maxlength="2000" placeholder="Product details, materials, size, and features"></textarea></div>
 <div style="grid-column:1/-1"><label for="stockroom-variations">Variations (optional JSON)</label><textarea id="stockroom-variations" rows="2" placeholder='[] or [{"name":"Small","sku":"MUG-S","price":12.00}]'></textarea></div>
 <div><label for="stockroom-status">Status</label><select id="stockroom-status"><option value="active">Active</option><option value="draft">Draft</option></select></div>
 <div style="display:flex;align-items:end"><div style="display:flex;gap:8px;width:100%"><button class="button button-primary full" id="stockroom-save" type="submit">＋ Save product</button><button class="button button-ghost" id="stockroom-cancel-edit" type="button" hidden>Cancel</button></div></div>
 </form>
-<p id="stockroom-message" class="muted" role="status" aria-live="polite" style="margin-top:12px">Preparing your private business database…</p>
+<p id="stockroom-message" class="muted" role="status" aria-live="polite" style="margin-top:12px">Sign in to manage your business products. Images upload directly to secure cloud storage.</p>
 </div>
 <div class="panel">
 <div class="panel-heading"><div><h3>Products & inventory</h3><p>Search and update the products connected to this business.</p></div><input id="stockroom-search" type="search" placeholder="Search name, SKU, category…" style="max-width:300px"></div>
