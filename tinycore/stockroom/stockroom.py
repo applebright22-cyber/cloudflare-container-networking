@@ -42,7 +42,10 @@ def clean(v, limit):
     return v.strip()[:limit] if isinstance(v,str) else ""
 def safe_url(v):
     from urllib.parse import urlparse as _parse
-    s=clean(v,2048); p=_parse(s)
+    s=clean(v,2048)
+    if re.fullmatch(r"/api/media/acct-[a-f0-9-]{36}/[a-f0-9-]{36}/[a-f0-9-]{36}\.(jpg|png|webp|gif)", s):
+        return s
+    p=_parse(s)
     return s if p.scheme in ("http","https") and p.netloc else ""
 def db_for(account):
     if not ACCOUNT_RE.fullmatch(account): raise ValueError("invalid_account_id")
