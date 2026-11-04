@@ -98,9 +98,9 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
     <label for="access-type">Account</label>
     <select id="access-type"><option value="regular">Regular user</option><option value="admin">Admin</option></select>
     <input id="username" type="text" minlength="2" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,31}" title="2–32 characters. Start with a letter or number; use letters, numbers, underscores, or hyphens." autocomplete="username" placeholder="Username (2–32 characters)" required>
-    <input id="user-password" type="password" minlength="12" maxlength="128" autocomplete="current-password" placeholder="Password (12–128 characters)" required>
+    <input id="user-password" type="password" minlength="8" maxlength="128" autocomplete="current-password" placeholder="Password (at least 8 characters)" required>
     <input id="admin-code" type="password" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" autocomplete="off" placeholder="5-digit admin code" hidden>
-    <button id="open-vm" type="submit">Log in</button><button id="create-account" type="button">Create regular account</button><span id="login-message" role="status" aria-live="polite"></span>
+    <button id="open-vm" type="submit">Log in</button><a href="/signup.html" style="display:inline-block;margin-top:12px;color:#8de8ff">Create a business account</a><span id="login-message" role="status" aria-live="polite"></span>
   </form>
 </section>
 <div id="status" class="runtime-status">Starting Linux VM...</div>
@@ -937,12 +937,12 @@ function updateFields(){
   code.hidden=!admin;code.required=admin;
   username.hidden=admin;username.required=!admin;
   password.hidden=admin;password.required=!admin;
-  createButton.hidden=admin;
+  createButton.hidden=true;
   loginButton.textContent=creating?'Create account':'Log in';
   password.autocomplete=creating?'new-password':'current-password';
-  password.minLength=creating?12:1;password.maxLength=128;
-  password.placeholder=creating?'Create password (12–128 characters)':'Password';
-  username.placeholder=creating?'Username (2–32 characters)':'Username';
+  password.minLength=1;password.maxLength=128;
+  password.placeholder='Password (at least 8 characters)';
+  username.placeholder='Username (2–32 characters)';
 }
 function beginAccountSession(data,launchVm=true){
   if(!data||typeof data.account_id!=='string'||!/^acct-[a-f0-9-]{36}$/.test(data.account_id)||typeof data.session_token!=='string'){
@@ -1018,7 +1018,7 @@ form.addEventListener('submit',async function(event){
   }
   const name=username.value.trim().toLowerCase(),pass=password.value;
   if(!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(name)){message.textContent='Username must be 2–32 characters: letters, numbers, _ or -.';return}
-  if(creating&&(pass.length<12||pass.length>128)){message.textContent='Password must be 12–128 characters. Use a longer password to create your account.';password.focus();return}
+  if(!creating&&pass.length<8){message.textContent='Password must be at least 8 characters.';password.focus();return}
    if(!creating&&!pass){message.textContent='Enter your password.';return}
   message.textContent=creating?'Creating your account; the VM snapshot will be saved after its first network test…':'Signing in and loading your saved VM…';
   try{
