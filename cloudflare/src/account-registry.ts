@@ -261,11 +261,12 @@ export class AccountRegistry extends DurableObject {
         return json({ ok: true, deals });
       }
       const businessName = typeof body?.business_name === "string" ? body.business_name.trim() : "";
+      const merchantAccountId = typeof body?.account_id === "string" ? body.account_id : "";
       const contactName = typeof body?.contact_name === "string" ? body.contact_name.trim() : "";
       const contactEmail = typeof body?.contact_email === "string" ? body.contact_email.trim().toLowerCase() : "";
       const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
       const notes = typeof body?.notes === "string" ? body.notes.trim() : "";
-      if (businessName.length < 2 || businessName.length > 120 ||
+      if (businessName.length < 2 || businessName.length > 120 || !validAccountId(merchantAccountId) ||
           contactName.length > 120 || contactEmail.length > 254 ||
           (contactEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(contactEmail)) ||
           phone.length > 40 || notes.length > 2000) {
@@ -280,15 +281,27 @@ export class AccountRegistry extends DurableObject {
       const deal = {
         deal_id: dealId, ambassador_id: ambassadorId, business_name: businessName,
         contact_name: contactName, contact_email: contactEmail, phone, notes,
-        account_id: null, status: "invitation_sent", created_at: now, updated_at: now,
+        account_id: merchantAccountId, status: "provisioning", created_at: now, updated_at: now,
         invitation_expires_at: new Date(invitationExpiresAt).toISOString(),
       };
       await this.ctx.storage.put(prefix + dealId, deal);
       await this.ctx.storage.put("merchant-invite:" + invitationHash, {
-        deal_id: dealId, ambassador_id: ambassadorId, expires_at: invitationExpiresAt,
-        status: "open",
+        deal_id: dealId, ambassador_id: ambassadorId, account_id: merchantAccountId,
+        expires_at: invitationExpiresAt, status: "open",
       });
       return json({ ok: true, deal, invitation_token: invitationToken }, 201);
+    }
+
+    if (url.pathname === "/merchant-invite/lookup" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { token?: unknown } | null;
+      if (typeof body?.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) return json({ error: "invalid_invitation" }, 400);
+      const invite = await this.ctx.storage.get<{ deal_id: string; ambassador_id: string; account_id: string; expires_at: number; status: string }>(
+        "merchant-invite:" + await this.sha256(body.token),
+      );
+      if (!invite || invite.expires_at <= Date.now() || invite.status === "claimed" || !validAccountId(invite.account_id)) {
+        return json({ error: "invitation_invalid_or_expired" }, 404);
+      }
+      return json({ ok: true, account_id: invite.account_id, deal_id: invite.deal_id });
     }
 
     if (url.pathname === "/merchant-invite/reserve" && request.method === "POST") {
@@ -303,7 +316,7 @@ export class AccountRegistry extends DurableObject {
       const now = Date.now();
       const result = await this.ctx.storage.transaction(async (txn) => {
         const invite = await txn.get<{ deal_id: string; ambassador_id: string; expires_at: number; status: string; reserved_account_id?: string; reservation_expires_at?: number }>(key);
-        if (!invite || invite.expires_at <= now || invite.status === "claimed") return { error: "invitation_invalid_or_expired" };
+        if (!invite || invite.expires_at <= now || invite.status === "claimed" || invite.account_id !== body.account_id) return { error: "invitation_invalid_or_expired" };
         if (invite.status === "reserved" && (invite.reservation_expires_at ?? 0) > now &&
             invite.reserved_account_id !== body.account_id) return { error: "invitation_already_in_use" };
         invite.status = "reserved";
@@ -338,7 +351,7 @@ export class AccountRegistry extends DurableObject {
         await txn.put(key, invite);
         deal.account_id = body.account_id;
         deal.merchant_username = body.username;
-        deal.status = "account_created";
+        deal.status = "claimed";
         deal.updated_at = new Date().toISOString();
         await txn.put(dealKey, deal);
         return { ok: true, deal_id: invite.deal_id, account_id: body.account_id };
