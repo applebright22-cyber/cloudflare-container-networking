@@ -1,0 +1,35 @@
+name: Ambassador feature checks
+
+on:
+  push:
+    branches:
+      - feature/merchant-ambassador-accounts
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "cloudflare/**"
+      - "public/ambassador.html"
+      - "public/signup.html"
+
+jobs:
+  worker-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run existing headless tests
+        run: npm run test:headless
+      - name: Build Worker v86 bundle
+        run: npm run build:headless-v86
