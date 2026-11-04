@@ -292,6 +292,30 @@ export class AccountRegistry extends DurableObject {
       return json({ ok: true, deal, invitation_token: invitationToken }, 201);
     }
 
+    if (url.pathname === "/ambassador/deal/status" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as {
+        ambassador_id?: unknown; token?: unknown; deal_id?: unknown; account_id?: unknown; status?: unknown;
+      } | null;
+      if (typeof body?.ambassador_id !== "string" || !/^amb-[a-f0-9-]{36}$/.test(body.ambassador_id) ||
+          typeof body.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token) ||
+          typeof body.deal_id !== "string" || !/^deal-[a-f0-9-]{36}$/.test(body.deal_id) ||
+          typeof body.account_id !== "string" || !validAccountId(body.account_id) ||
+          (body.status !== "account_created" && body.status !== "error")) return json({ error: "invalid_deal_status_update" }, 400);
+      const session = await this.ctx.storage.get<{ ambassador_id: string; expires_at: number }>(
+        "ambassador-session:" + await this.sha256(body.token),
+      );
+      if (!session || session.ambassador_id !== body.ambassador_id || session.expires_at <= Date.now()) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const key = "ambassador-deal:" + body.ambassador_id + ":" + body.deal_id;
+      const deal = await this.ctx.storage.get<Record<string, unknown>>(key);
+      if (!deal || deal.account_id !== body.account_id) return json({ error: "deal_not_found" }, 404);
+      deal.status = body.status;
+      deal.updated_at = new Date().toISOString();
+      await this.ctx.storage.put(key, deal);
+      return json({ ok: true, deal });
+    }
+
     if (url.pathname === "/merchant-invite/lookup" && request.method === "POST") {
       const body = await request.json().catch(() => null) as { token?: unknown } | null;
       if (typeof body?.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) return json({ error: "invalid_invitation" }, 400);
