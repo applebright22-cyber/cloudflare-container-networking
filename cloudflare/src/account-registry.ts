@@ -333,7 +333,12 @@ export class AccountRegistry extends DurableObject {
       const key = "ambassador-deal:" + body.ambassador_id + ":" + body.deal_id;
       const deal = await this.ctx.storage.get<Record<string, unknown>>(key);
       if (!deal || deal.account_id !== body.account_id) return json({ error: "deal_not_found" }, 404);
-      deal.status = body.status;
+      // The background clone can finish before the request handler records
+      // that the job was queued. Do not let this late acknowledgement downgrade
+      // a ready or already-claimed deal.
+      if (body.status === "error" || (deal.status !== "claimed" && deal.workspace_status !== "ready")) {
+        deal.status = body.status;
+      }
       deal.updated_at = new Date().toISOString();
       await this.ctx.storage.put(key, deal);
       return json({ ok: true, deal });
