@@ -220,14 +220,14 @@ export async function businessDatabaseFetch(env: BusinessDatabaseEnv, accountId:
     let origin: URL;
     try { origin = new URL(env.STOCKROOM_ORIGIN); } catch { return json({ error: "stockroom_origin_invalid" }, 503); }
     if (origin.protocol !== "https:") return json({ error: "stockroom_origin_must_use_https" }, 503);
-    const target = new URL("/v1/" + path.replace(/^\\/+/, ""), origin);
+    const target = new URL("/v1/" + (path.startsWith("/") ? path.slice(1) : path), origin);
     const outgoing = init instanceof Request ? new Request(target, init) : new Request(target, init);
     outgoing.headers.set("x-stockroom-gateway-token", env.STOCKROOM_GATEWAY_TOKEN);
     outgoing.headers.set("x-stockroom-account-id", accountId);
     try { return await fetch(outgoing); } catch { return json({ error: "tinycore_stockroom_unavailable" }, 503); }
   }
   const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
-  return database.fetch("https://business-database.internal/" + path.replace(/^\\/+/, ""));
+  return database.fetch("https://business-database.internal/" + (path.startsWith("/") ? path.slice(1) : path));
 }
 
 /** Authenticates account requests before routing to that account's private SQL database. */
