@@ -9,7 +9,7 @@ import { AccountProvisioner } from "./account-provisioner";
 import { WispRelay } from "./wisp-relay";
 import { handleProjectStorageRequest } from "./project-storage";
 import { handlePayments } from "./payments";
-import { BusinessDatabase, handleBusinessDatabaseRequest } from "./business-database";
+import { BusinessDatabase, businessDatabaseFetch, handleBusinessDatabaseRequest } from "./business-database";
 export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay, BusinessDatabase };
 
 export interface Env {
@@ -30,6 +30,8 @@ export interface Env {
   TUNNEL_TOKEN: string;
   CLIENT_TOKEN: string;
   ORACLE_ACCOUNT_EXEC_ENABLED?: string;
+  STOCKROOM_ORIGIN?: string;
+  STOCKROOM_GATEWAY_TOKEN?: string;
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -582,8 +584,7 @@ export default {
 
       // Provision the account's isolated SQLite business database during signup.
       // Schema creation is idempotent; existing business records are never overwritten.
-      const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
-      const databaseReady = await businessDatabase.fetch("https://business-database.internal/initialize", { method: "POST" });
+      const databaseReady = await businessDatabaseFetch(env, accountId, "initialize", { method: "POST" });
       if (!databaseReady.ok) {
         await accountRegistry.fetch("https://account-registry.internal/account/" + accountId, {
           method: "PATCH", headers: { "content-type": "application/json" },
