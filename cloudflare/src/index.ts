@@ -554,7 +554,235 @@ export default {
     }
 
 
-    // Signup clones the verified Admin baseline; it never starts a Linux boot.
+    if (url.pathname === "/api/ambassador/signup" && request.method === "POST") {
+      let body: { username?: unknown; password?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 8 || password.length > 128) {
+        return json({ error: "username_must_be_2_to_32_chars_and_password_8_to_128_chars" }, 400);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ip: request.headers.get("cf-connecting-ip") ?? "unknown", action: "signup" }),
+      });
+      if (!rateLimit.ok) return json(await rateLimit.json(), rateLimit.status);
+      const response = await authRegistry.fetch("https://account-registry.internal/ambassador/signup", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }),
+      });
+      return json(await response.json(), response.status);
+    }
+
+    if (url.pathname === "/api/ambassador/login" && request.method === "POST") {
+      let body: { username?: unknown; password?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || !password || password.length > 128) return json({ error: "invalid_credentials" }, 401);
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ip: request.headers.get("cf-connecting-ip") ?? "unknown", action: "login" }),
+      });
+      if (!rateLimit.ok) return json({ error: "rate_limited" }, 429);
+      const response = await authRegistry.fetch("https://account-registry.internal/ambassador/login", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }),
+      });
+      return json(await response.json(), response.status);
+    }
+
+    if (url.pathname === "/api/ambassador/deals" && (request.method === "GET" || request.method === "POST")) {
+      const body = request.method === "POST"
+        ? await request.json().catch(() => null) as Record<string, unknown> | null
+        : null;
+      const ambassadorId = request.method === "GET"
+        ? url.searchParams.get("ambassador_id") ?? ""
+        : (typeof body?.ambassador_id === "string" ? body.ambassador_id : "");
+      const token = request.method === "GET"
+        ? url.searchParams.get("session_token") ?? ""
+        : (typeof body?.session_token === "string" ? body.session_token : "");
+      if (!/^amb-[a-f0-9-]{36}$/.test(ambassadorId) || !/^[a-f0-9]{64}$/.test(token)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const verified = await authRegistry.fetch("https://account-registry.internal/ambassador/verify", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ambassador_id: ambassadorId, token }),
+      });
+      if (!verified.ok) return json({ error: "unauthorized" }, 401);
+      const merchantAccountId = request.method === "POST" && body?.action !== "list"
+        ? "acct-" + crypto.randomUUID() : "";
+      const payload = request.method === "POST"
+        ? { ...body, ambassador_id: ambassadorId, token, ...(merchantAccountId ? { account_id: merchantAccountId } : {}) }
+        : null;
+      const path = request.method === "GET"
+        ? "/ambassador/deals?ambassador_id=" + encodeURIComponent(ambassadorId) + "&token=" + encodeURIComponent(token)
+        : "/ambassador/deals";
+      const result = await authRegistry.fetch("https://account-registry.internal" + path, {
+        method: request.method,
+        ...(payload ? { headers: { "content-type": "application/json" }, body: JSON.stringify(payload) } : {}),
+      });
+      const resultBody = await result.json().catch(() => ({ error: "deal_service_failed" })) as Record<string, unknown>;
+      if (request.method === "POST" && body?.action !== "list" && result.ok) {
+        const businessName = typeof body?.business_name === "string" ? body.business_name.trim() : "";
+        const baselineId = env.VM_BASELINE_ID ?? "admin";
+        const markDeal = async (status: "account_created" | "error") => authRegistry.fetch(
+          "https://account-registry.internal/ambassador/deal/status",
+          { method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ambassador_id: ambassadorId, token, deal_id: (resultBody.deal as { deal_id?: string } | undefined)?.deal_id,
+              account_id: merchantAccountId, status }) },
+        );
+        if (!/^[a-zA-Z0-9._-]{1,64}$/.test(baselineId) || baselineId.startsWith("acct-")) {
+          await markDeal("error");
+          return json({ error: "invalid_vm_baseline_id" }, 500);
+        }
+        const baselineObject = await env.VM_SNAPSHOTS.get("vm-snapshots/" + baselineId + "/manifest.json");
+        if (!baselineObject) {
+          await markDeal("error");
+          return json({ error: "admin_baseline_snapshot_not_found", baseline_id: baselineId }, 409);
+        }
+        const baseline = await baselineObject.json().catch(() => null) as { version?: unknown; generation?: unknown; chunks?: unknown; byteLength?: unknown } | null;
+        if (!baseline || baseline.version !== 1 || typeof baseline.generation !== "string" ||
+            !/^[a-z0-9-]{1,40}$/.test(baseline.generation) || !Number.isInteger(baseline.chunks) ||
+            (baseline.chunks as number) < 1 || (baseline.chunks as number) > 128 ||
+            !Number.isInteger(baseline.byteLength) || (baseline.byteLength as number) < 1 ||
+            (baseline.byteLength as number) > 536870912 ||
+            baseline.chunks !== Math.ceil((baseline.byteLength as number) / 8388608)) {
+          await markDeal("error");
+          return json({ error: "admin_baseline_manifest_invalid" }, 500);
+        }
+        const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+        const accountApiKey = "acct_" + Array.from(keyBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(accountApiKey));
+        const apiKeyHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+        const allocationResponse = await authRegistry.fetch("https://account-registry.internal/network/allocate", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ account_id: merchantAccountId }),
+        });
+        if (!allocationResponse.ok) {
+          await markDeal("error");
+          return json({ error: "virtual_network_allocation_failed" }, 503);
+        }
+        const allocationBody = await allocationResponse.json() as { allocation?: { virtual_ip?: string; virtual_mac?: string } };
+        const allocation = allocationBody.allocation;
+        if (typeof allocation?.virtual_ip !== "string" || typeof allocation.virtual_mac !== "string") {
+          await markDeal("error");
+          return json({ error: "virtual_network_allocation_invalid" }, 502);
+        }
+        const accountRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(merchantAccountId));
+        const created = await accountRegistry.fetch("https://account-registry.internal/create", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ account_id: merchantAccountId, name: businessName.slice(0, 80), baseline_id: baselineId,
+            snapshot_identity: merchantAccountId, api_key_sha256: apiKeyHash, api_key: accountApiKey,
+            virtual_ip: allocation.virtual_ip, virtual_mac: allocation.virtual_mac, oracle_execution_enabled: true }),
+        });
+        if (!created.ok) {
+          await markDeal("error");
+          return json({ error: "merchant_account_record_creation_failed" }, 502);
+        }
+        const databaseReady = await businessDatabaseFetch(env, merchantAccountId, "initialize", { method: "POST" });
+        if (!databaseReady.ok) {
+          await markDeal("error");
+          return json({ error: "merchant_business_database_initialization_failed" }, 503);
+        }
+        const provisioner = env.ACCOUNT_PROVISIONER.get(env.ACCOUNT_PROVISIONER.idFromName(merchantAccountId));
+        const queued = await provisioner.fetch("https://account-provisioner.internal/start", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            identity: merchantAccountId,
+            username: "pending-" + merchantAccountId.slice(5, 17),
+            baseline_id: baselineId,
+            ambassador_id: ambassadorId,
+            deal_id: (resultBody.deal as { deal_id?: string } | undefined)?.deal_id,
+          }),
+        });
+        if (!queued.ok || queued.status !== 202) {
+          await markDeal("error");
+          return json({ error: "merchant_snapshot_clone_queue_failed" }, 502);
+        }
+        await markDeal("account_created");
+      }
+      if (request.method === "POST" && result.ok && typeof resultBody.invitation_token === "string") {
+        resultBody.claim_url = new URL("/signup.html?invite=" + encodeURIComponent(resultBody.invitation_token), url.origin).toString();
+      }
+      return json(resultBody, result.status);
+    }
+
+    // Claim a pre-created merchant account using the one-time invitation token.
+    // The merchant chooses their own credentials; the ambassador never receives them.
+    if (url.pathname === "/api/auth/claim-invitation" && request.method === "POST") {
+      let body: { username?: unknown; password?: unknown; invite_token?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      const inviteToken = typeof body.invite_token === "string" ? body.invite_token : "";
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 8 || password.length > 128 ||
+          !/^[a-f0-9]{64}$/.test(inviteToken)) return json({ error: "invalid_merchant_claim_fields" }, 400);
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ip: request.headers.get("cf-connecting-ip") ?? "unknown", action: "signup" }),
+      });
+      if (!rateLimit.ok) return json(await rateLimit.json(), rateLimit.status);
+      const lookup = await authRegistry.fetch("https://account-registry.internal/merchant-invite/lookup", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: inviteToken }),
+      });
+      if (!lookup.ok) return json({ error: "invitation_invalid_or_expired" }, 404);
+      const invitation = await lookup.json() as { account_id?: unknown; deal_id?: unknown };
+      const accountId = typeof invitation.account_id === "string" ? invitation.account_id : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId)) return json({ error: "invitation_account_invalid" }, 409);
+      const reservationId = crypto.randomUUID();
+      const jobObject = await env.VM_SNAPSHOTS.get("runtime-jobs/" + accountId + ".json");
+      const job = jobObject ? await jobObject.json().catch(() => null) as Record<string, unknown> | null : null;
+      if (job?.status === "error") return json({ error: "merchant_workspace_provisioning_failed", detail: job.error ?? "See provisioning diagnostics." }, 503);
+      const reserved = await authRegistry.fetch("https://account-registry.internal/merchant-invite/reserve", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: inviteToken, account_id: accountId, reservation_id: reservationId }),
+      });
+      if (!reserved.ok) return json({ error: "invitation_already_claimed_or_in_use" }, 409);
+      const createdUser = await authRegistry.fetch("https://account-registry.internal/auth/signup", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username, password, account_id: accountId }),
+      });
+      if (!createdUser.ok) return json(await createdUser.json().catch(() => ({ error: "merchant_login_creation_failed" })), createdUser.status);
+      const isComplete = job?.status === "complete";
+      if (isComplete) {
+        await authRegistry.fetch("https://account-registry.internal/auth/status", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, status: "ready" }),
+        });
+      }
+      let sessionResponse = await authRegistry.fetch(
+        "https://account-registry.internal/" + (isComplete ? "auth/login" : "auth/provisioning-session"),
+        { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, password }) },
+      );
+      // The provisioner may finish between the progress read and session issue.
+      if (!sessionResponse.ok && !isComplete) {
+        sessionResponse = await authRegistry.fetch("https://account-registry.internal/auth/login", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+      }
+      if (!sessionResponse.ok) return json({ error: "merchant_claim_session_failed" }, 502);
+      const linked = await authRegistry.fetch("https://account-registry.internal/merchant-invite/complete", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: inviteToken, account_id: accountId, username, reservation_id: reservationId }),
+      });
+      if (!linked.ok) return json({ error: "merchant_login_created_but_invitation_link_failed" }, 502);
+      const session = await sessionResponse.json() as { account_id: string; session_token: string; expires_at: string };
+      const identityRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      const identityResponse = await identityRegistry.fetch("https://account-registry.internal/network/identity/" + accountId);
+      const identity = identityResponse.ok ? await identityResponse.json() as { virtual_ip?: string; virtual_mac?: string } : {};
+      return json({ ...session, username, status: isComplete ? "complete" : "provisioning",
+        snapshot_identity: accountId, virtual_ip: identity.virtual_ip, virtual_mac: identity.virtual_mac,
+        snapshot_cloned: isComplete, baseline_id: env.VM_BASELINE_ID ?? "admin",
+        progress_endpoint: "/api/auth/registration-status" }, 202);
+    }
+
+    // Ordinary merchant signup provisions a new merchant account directly.
     if (url.pathname === "/api/auth/signup" && request.method === "POST") {
       let body: { username?: unknown; password?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
