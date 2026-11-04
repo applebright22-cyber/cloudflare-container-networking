@@ -140,7 +140,7 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
 window.startVm=async function(){
 const status=document.getElementById('status'),results=document.getElementById('results'),mystLog=document.getElementById('myst-log'),copyStatus=document.getElementById('copy-status'),stateStatus=document.getElementById('state-status');
 const nodeId='7cbee0e9-da6b-4808-92a7-4a3c2a45a840',apiUrl=window.location.origin;
-let reportTimer=null,bootstrapStarted=false,bootComplete=false;
+// Warm the account's persistent Stockroom database while TinyCore starts; this does not block Linux boot.\nvoid initializeBusinessDatabase();\nlet reportTimer=null,bootstrapStarted=false,bootComplete=false;
 let manualCommandRunning=false;
 let oracleTerminalMode=false,oracleExecutionAvailable=false,oracleTerminalOutput='',oracleTerminalInput='',oracleTerminalHistory=[],oracleTerminalHistoryIndex=0,oracleTerminalBusy=false;
 
@@ -151,6 +151,17 @@ const SNAPSHOT_CHUNK_BYTES=8*1024*1024;
 function snapshotUrl(){if(!window.snapshotIdentity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(window.snapshotIdentity)}
 function snapshotUrlFor(identity){if(!identity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(identity)}
 function snapshotHeaders(contentType='application/octet-stream'){const headers={'content-type':contentType};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;return headers}
+async function initializeBusinessDatabase(){
+if(!String(window.snapshotIdentity||'').startsWith('acct-')||!window.snapshotAuthToken)return;
+try{
+const response=await fetch('/api/stockroom/initialize?account_id='+encodeURIComponent(window.snapshotIdentity),{
+method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+window.snapshotAuthToken},body:'{}'
+});
+const result=await response.json().catch(()=>({}));
+if(!response.ok)throw new Error(result.error||'database initialization failed');
+report('\\nSTOCKROOM_DATABASE_READY schema='+String(result.schema_version||1)+' products='+String(result.product_count||0)+'\\n');
+}catch(error){report('\\nSTOCKROOM_DATABASE_STARTUP_PENDING '+(error&&error.message?error.message:String(error))+'\\n');}
+}
 async function saveVmState(manual=true){
 if(!bootComplete){if(manual)stateText('Startup must finish before saving a snapshot.');return false}
 if(snapshotLoadFailed){stateText('Snapshot load failed; refusing to overwrite server state. Reload and retry.');return false}
