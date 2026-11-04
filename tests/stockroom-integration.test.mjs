@@ -4,6 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const database = read("cloudflare/src/business-database.ts");
+const inventoryLedger = read("cloudflare/src/inventory-ledger.ts");
 const worker = read("cloudflare/src/index.ts");
 const payments = read("cloudflare/src/payments.ts");
 const studioHtml = read("public/studio.html");
@@ -62,11 +63,41 @@ test("published stores load Stockroom products and checkout validates and consum
   assert.match(payments, /BUSINESS_DATABASE: DurableObjectNamespace/);
   assert.match(payments, /products\?status=active/);
   assert.match(payments, /insufficient_stock/);
-  assert.match(payments, /consumeInventory\(env, page\)/);
+  assert.match(payments, /inventory-ledger\.internal\/reserve/);
+  assert.match(payments, /commitInventory\(env, page/);
+  assert.match(payments, /queued_for_tinycore_sync/);
   assert.match(database, /paid checkout/);
 });
 
 test("account deletion purges the business database", () => {
   assert.match(worker, /businessDatabasePurge/);
   assert.match(database, /DROP TABLE IF EXISTS products/);
+});
+
+test("central inventory ledger reserves stock before payment and commits to a durable order outbox", () => {
+  assert.match(inventoryLedger, /class InventoryLedger extends DurableObject/);
+  assert.match(inventoryLedger, /CREATE TABLE IF NOT EXISTS inventory_catalog/);
+  assert.match(inventoryLedger, /CREATE TABLE IF NOT EXISTS inventory_reservations/);
+  assert.match(inventoryLedger, /CREATE TABLE IF NOT EXISTS inventory_reservation_items/);
+  assert.match(inventoryLedger, /CREATE TABLE IF NOT EXISTS inventory_orders/);
+  assert.match(inventoryLedger, /url\.pathname === "\/reserve"/);
+  assert.match(inventoryLedger, /url\.pathname === "\/commit"/);
+  assert.match(inventoryLedger, /url\.pathname === "\/orders"/);
+  assert.match(inventoryLedger, /url\.pathname === "\/orders\/ack"/);
+  assert.match(inventoryLedger, /online_reserved/);
+  assert.match(inventoryLedger, /catalog_update_conflicts_with_reserved_stock/);
+});
+
+test("offline POS sales require allocated stock and use idempotent event IDs", () => {
+  assert.match(inventoryLedger, /url\.pathname === "\/offline\/allocate"/);
+  assert.match(inventoryLedger, /url\.pathname === "\/offline\/consume"/);
+  assert.match(inventoryLedger, /offline_allowance_exceeded/);
+  assert.match(inventoryLedger, /offline_sales/);
+  assert.match(inventoryLedger, /offline_order_already_recorded/);
+});
+
+test("Stockroom product changes synchronize a versioned catalog to the online ledger", () => {
+  assert.match(database, /syncInventoryCatalog/);
+  assert.match(database, /INVENTORY_LEDGER/);
+  assert.match(database, /catalog\/sync/);
 });
