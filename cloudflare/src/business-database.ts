@@ -57,6 +57,7 @@ export class BusinessDatabase extends DurableObject {
     sql.exec("CREATE TABLE IF NOT EXISTS business_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, sku TEXT NOT NULL COLLATE NOCASE UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', image_url TEXT NOT NULL DEFAULT '', price_cents INTEGER NOT NULL DEFAULT 0, cost_cents INTEGER NOT NULL DEFAULT 0, quantity INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','draft','archived')), variations_json TEXT NOT NULL DEFAULT '[]', external_url TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS inventory_movements (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, quantity_delta INTEGER NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL)");
+    sql.exec("CREATE TABLE IF NOT EXISTS inventory_consumptions (checkout_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)");
     sql.exec("CREATE INDEX IF NOT EXISTS products_status_updated ON products(status, updated_at)");
     sql.exec("CREATE INDEX IF NOT EXISTS inventory_product_created ON inventory_movements(product_id, created_at)");
     sql.exec("INSERT OR IGNORE INTO business_meta(key, value) VALUES('schema_version', '1')");
@@ -74,6 +75,7 @@ export class BusinessDatabase extends DurableObject {
         product_count: Number(count?.count ?? 0) });
     }
     if (url.pathname === "/purge" && request.method === "POST") {
+      this.ctx.storage.sql.exec("DROP TABLE IF EXISTS inventory_consumptions");
       this.ctx.storage.sql.exec("DROP TABLE IF EXISTS inventory_movements");
       this.ctx.storage.sql.exec("DROP TABLE IF EXISTS products");
       this.ctx.storage.sql.exec("DROP TABLE IF EXISTS business_meta");
@@ -93,6 +95,38 @@ export class BusinessDatabase extends DurableObject {
           image_url: row.image_url, price: row.price_cents / 100, in_stock: row.quantity > 0,
           variations, external_url: row.external_url };
       }) });
+    }
+    if (url.pathname === "/consume" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { checkout_id?: unknown; items?: unknown } | null;
+      const checkoutId = typeof body?.checkout_id === "string" ? body.checkout_id : "";
+      if (!/^[a-f0-9-]{36}$/.test(checkoutId) || !Array.isArray(body?.items) || body.items.length < 1 || body.items.length > 20) {
+        return json({ error: "invalid_inventory_consumption" }, 400);
+      }
+      const prior = this.ctx.storage.sql.exec("SELECT checkout_id FROM inventory_consumptions WHERE checkout_id=?", checkoutId).toArray()[0];
+      if (prior) return json({ ok: true, already_consumed: true });
+      const requested = new Map<string, number>();
+      for (const item of body.items) {
+        if (!item || typeof item !== "object") return json({ error: "invalid_inventory_item" }, 400);
+        const value = item as { product_id?: unknown; quantity?: unknown };
+        if (typeof value.product_id !== "string" || !/^[a-f0-9-]{36}$/.test(value.product_id) ||
+            !Number.isInteger(value.quantity) || Number(value.quantity) < 1 || Number(value.quantity) > 99) {
+          return json({ error: "invalid_inventory_item" }, 400);
+        }
+        requested.set(value.product_id, (requested.get(value.product_id) ?? 0) + Number(value.quantity));
+      }
+      const checked: Array<{id:string;quantity:number;delta:number}> = [];
+      for (const [productId, quantity] of requested) {
+        const row = this.ctx.storage.sql.exec("SELECT id,quantity FROM products WHERE id=? AND status='active'", productId).toArray()[0] as {id:string;quantity:number} | undefined;
+        if (!row || Number(row.quantity) < quantity) return json({ error: "insufficient_stock", product_id: productId }, 409);
+        checked.push({ id: row.id, quantity: Number(row.quantity), delta: quantity });
+      }
+      const now = new Date().toISOString();
+      for (const item of checked) {
+        this.ctx.storage.sql.exec("UPDATE products SET quantity=?,updated_at=? WHERE id=?", item.quantity - item.delta, now, item.id);
+        this.recordMovement(item.id, -item.delta, "paid checkout " + checkoutId);
+      }
+      this.ctx.storage.sql.exec("INSERT INTO inventory_consumptions(checkout_id,created_at) VALUES(?,?)", checkoutId, now);
+      return json({ ok: true, consumed: checked.length });
     }
     if (url.pathname === "/products" && request.method === "GET") {
       const query = text(url.searchParams.get("q"), 100);
