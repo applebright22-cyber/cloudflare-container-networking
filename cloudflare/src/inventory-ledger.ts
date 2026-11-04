@@ -45,9 +45,11 @@ export class InventoryLedger extends DurableObject {
         const updated = typeof p.updated_at === "string" ? p.updated_at : now;
         if (!UUID.test(id) || !sku || !name || !Number.isSafeInteger(price) || price < 0 ||
             !Number.isSafeInteger(quantity) || quantity < 0 || quantity > 1000000000) continue;
-        const prior = sql.exec("SELECT source_updated_at FROM inventory_catalog WHERE product_id=?", id).toArray()[0] as { source_updated_at: string } | undefined;
+        const prior = sql.exec("SELECT source_updated_at,offline_allocated FROM inventory_catalog WHERE product_id=?", id).toArray()[0] as { source_updated_at: string; offline_allocated: number } | undefined;
         // Never let an older local snapshot overwrite newer central inventory state.
         if (prior && updated <= prior.source_updated_at) continue;
+        const held = Number(prior?.offline_allocated ?? 0) + Number(sql.exec("SELECT COALESCE(SUM(i.quantity),0) AS held FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=? AND r.status='active'",id).toArray()[0] && (sql.exec("SELECT COALESCE(SUM(i.quantity),0) AS held FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=? AND r.status='active'",id).toArray()[0] as {held:number}).held);
+        if (quantity < held) return json({ error: "catalog_update_conflicts_with_reserved_stock", product_id: id }, 409);
         sql.exec("INSERT INTO inventory_catalog(product_id,sku,name,price_cents,on_hand,offline_allocated,status,source_updated_at) VALUES(?,?,?,?,?,0,?,?) ON CONFLICT(product_id) DO UPDATE SET sku=excluded.sku,name=excluded.name,price_cents=excluded.price_cents,on_hand=excluded.on_hand,status=excluded.status,source_updated_at=excluded.source_updated_at",
           id, sku, name, price, quantity, status, updated);
         synced++;
@@ -68,7 +70,13 @@ export class InventoryLedger extends DurableObject {
       const checkoutId = typeof body?.checkout_id === "string" ? body.checkout_id : "";
       if (!UUID.test(checkoutId) || !Array.isArray(body?.items) || body.items.length < 1 || body.items.length > 20) return json({ error:"invalid_reservation" },400);
       const prior = sql.exec("SELECT status,expires_at FROM inventory_reservations WHERE checkout_id=?",checkoutId).toArray()[0] as {status:string;expires_at:string}|undefined;
-      if (prior) return prior.status === "active" && prior.expires_at > now ? json({ok:true,already_reserved:true}) : json({error:"reservation_not_active"},409);
+      if (prior) {
+        if (prior.status !== "active" || prior.expires_at <= now) return json({error:"reservation_not_active"},409);
+        const saved = sql.exec("SELECT product_id,quantity,unit_price_cents,name FROM inventory_reservation_items WHERE checkout_id=?",checkoutId).toArray() as Array<Record<string,unknown>>;
+        return json({ok:true,already_reserved:true,checkout_id:checkoutId,expires_at:prior.expires_at,
+          items:saved.map(x=>({product_id:x.product_id,quantity:x.quantity,unit_amount_usd:(Number(x.unit_price_cents)/100).toFixed(2),name:x.name})),
+          amount_cents:saved.reduce((sum,x)=>sum+Number(x.unit_price_cents)*Number(x.quantity),0)});
+      }
       const requested = new Map<string,number>();
       for (const item of body.items) {
         if (!item || typeof item !== "object") return json({error:"invalid_inventory_item"},400);
@@ -102,11 +110,11 @@ export class InventoryLedger extends DurableObject {
       const body=await request.json().catch(()=>null) as {checkout_id?:unknown;payment_reference?:unknown;payment_method?:unknown}|null;
       const checkoutId=typeof body?.checkout_id==="string"?body.checkout_id:"";
       if (!UUID.test(checkoutId)) return json({error:"invalid_checkout_id"},400);
-      const prior=sql.exec("SELECT status FROM inventory_reservations WHERE checkout_id=?",checkoutId).toArray()[0] as {status:string}|undefined;
+      const prior=sql.exec("SELECT status,expires_at FROM inventory_reservations WHERE checkout_id=?",checkoutId).toArray()[0] as {status:string;expires_at:string}|undefined;
       if (!prior) return json({error:"reservation_not_found"},404);
       const existing=sql.exec("SELECT order_id FROM inventory_orders WHERE checkout_id=?",checkoutId).toArray()[0] as {order_id:string}|undefined;
       if (existing) return json({ok:true,already_committed:true,order_id:existing.order_id});
-      if (prior.status!=="active") return json({error:"reservation_not_active"},409);
+      if (prior.status!=="active" || prior.expires_at<=now) { this.expireReservations(now); return json({error:"reservation_not_active"},409); }
       const items=sql.exec("SELECT product_id,quantity,unit_price_cents,name FROM inventory_reservation_items WHERE checkout_id=?",checkoutId).toArray() as Array<Record<string,unknown>>;
       if (!items.length) return json({error:"reservation_items_missing"},409);
       for (const item of items) {
@@ -148,6 +156,7 @@ export class InventoryLedger extends DurableObject {
       if (!UUID.test(eventId)||!UUID.test(orderId)||!Array.isArray(body?.items)||body.items.length<1||body.items.length>20) return json({error:"invalid_offline_sale"},400);
       const prior=sql.exec("SELECT event_id FROM offline_sales WHERE event_id=?",eventId).toArray()[0];
       if (prior) return json({ok:true,duplicate:true});
+      if (sql.exec("SELECT order_id FROM offline_sales WHERE order_id=?",orderId).toArray()[0]) return json({error:"offline_order_already_recorded"},409);
       const requested=new Map<string,number>();
       for (const raw of body.items) {
         if (!raw||typeof raw!=="object") return json({error:"invalid_inventory_item"},400);
