@@ -39,7 +39,7 @@ test("signup and TinyCore startup initialize the business database idempotently"
   assert.match(worker, /businessDatabase\.fetch\("https:\/\/business-database\.internal\/initialize"/);
   assert.match(vmPage, /async function initializeBusinessDatabase/);
   assert.match(vmPage, /void initializeBusinessDatabase\(\)/);
-  assert.match(studioJs, /POST.*initialize/s);
+  assert.match(studioJs, /stockroomUrl\("\\/initialize"\)/);
 });
 
 test("Stockroom API authenticates private account requests and isolates public catalog fields", () => {
