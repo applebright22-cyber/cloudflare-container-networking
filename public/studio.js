@@ -231,6 +231,7 @@ async function saveStockroomProduct(event){
    if(!createResponse.ok)throw new Error(created.error==="sku_already_exists"?"That SKU is already in your Stockroom.":created.error||"Product could not be saved");
    savedId=created.product?.id;
    if(typeof savedId!=="string")throw new Error("Product was saved but the server did not return its product ID.");
+   editingStockroomProductId=savedId;
   }
   const file=$("#stockroom-image-file")?.files?.[0];
   if(file){
