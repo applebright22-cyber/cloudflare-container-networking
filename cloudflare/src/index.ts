@@ -767,10 +767,9 @@ export default {
         progress_endpoint: "/api/auth/registration-status" }, 202);
     }
 
-    // Signup clones the verified Admin baseline; an ambassador invitation is
-    // reserved for this new account and linked only after provisioning succeeds.
+    // Ordinary merchant signup provisions a new merchant account directly.
     if (url.pathname === "/api/auth/signup" && request.method === "POST") {
-      let body: { username?: unknown; password?: unknown; invite_token?: unknown };
+      let body: { username?: unknown; password?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
       const password = typeof body.password === "string" ? body.password : "";
