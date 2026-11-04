@@ -4,6 +4,8 @@ export interface BusinessDatabaseEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   BUSINESS_DATABASE: DurableObjectNamespace<BusinessDatabase>;
   PROJECT_STORAGE: R2Bucket;
+  STOCKROOM_ORIGIN?: string;
+  STOCKROOM_GATEWAY_TOKEN?: string;
 }
 type ProductStatus = "active" | "draft" | "archived";
 interface ProductInput {
@@ -211,6 +213,23 @@ export class BusinessDatabase extends DurableObject {
   }
 }
 
+
+/** Route Stockroom operations to persistent TinyCore SQLite when configured; otherwise retain the DO backend. */
+export async function businessDatabaseFetch(env: BusinessDatabaseEnv, accountId: string, path: string, init?: RequestInit | Request): Promise<Response> {
+  if (env.STOCKROOM_ORIGIN && env.STOCKROOM_GATEWAY_TOKEN) {
+    let origin: URL;
+    try { origin = new URL(env.STOCKROOM_ORIGIN); } catch { return json({ error: "stockroom_origin_invalid" }, 503); }
+    if (origin.protocol !== "https:") return json({ error: "stockroom_origin_must_use_https" }, 503);
+    const target = new URL("/v1/" + path.replace(/^\\/+/, ""), origin);
+    const outgoing = init instanceof Request ? new Request(target, init) : new Request(target, init);
+    outgoing.headers.set("x-stockroom-gateway-token", env.STOCKROOM_GATEWAY_TOKEN);
+    outgoing.headers.set("x-stockroom-account-id", accountId);
+    try { return await fetch(outgoing); } catch { return json({ error: "tinycore_stockroom_unavailable" }, 503); }
+  }
+  const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
+  return database.fetch("https://business-database.internal/" + path.replace(/^\\/+/, ""));
+}
+
 /** Authenticates account requests before routing to that account's private SQL database. */
 export async function handleBusinessDatabaseRequest(request: Request, env: BusinessDatabaseEnv): Promise<Response | null> {
   const url = new URL(request.url);
@@ -222,8 +241,7 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
     const mapping = await mappingObject.json<{ account_id?: unknown }>().catch(() => null);
     const accountId = typeof mapping?.account_id === "string" ? mapping.account_id : "";
     if (!ACCOUNT_ID.test(accountId)) return json({ error: "site_not_found" }, 404);
-    const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
-    return database.fetch("https://business-database.internal/public-products");
+    return businessDatabaseFetch(env, accountId, "public-products");
   }
   if (!url.pathname.startsWith("/api/stockroom/")) return null;
   if (!["GET", "POST", "PUT", "DELETE"].includes(request.method)) return json({ error: "method_not_allowed" }, 405);
@@ -237,7 +255,5 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
   if (!verified.ok) return json({ error: "unauthorized" }, 401);
   url.searchParams.delete("account_id");
   const internalPath = url.pathname.replace(/^\/api\/stockroom/, "") || "/";
-  const internalUrl = "https://business-database.internal" + internalPath + (url.search ? url.search : "");
-  const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
-  return database.fetch(new Request(internalUrl, request));
+  return businessDatabaseFetch(env, accountId, internalPath + (url.search ? url.search : ""), request);
 }
