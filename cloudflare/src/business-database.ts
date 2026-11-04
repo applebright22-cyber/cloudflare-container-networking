@@ -3,6 +3,7 @@ import { DurableObject } from "cloudflare:workers";
 export interface BusinessDatabaseEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   BUSINESS_DATABASE: DurableObjectNamespace<BusinessDatabase>;
+  PROJECT_STORAGE: R2Bucket;
 }
 type ProductStatus = "active" | "draft" | "archived";
 interface ProductInput {
@@ -80,6 +81,18 @@ export class BusinessDatabase extends DurableObject {
     }
     if (url.pathname === "/health" && request.method === "GET") {
       return json({ ok: true, database: "ready", schema_version: 1 });
+    }
+    if (url.pathname === "/public-products" && request.method === "GET") {
+      const rows = this.ctx.storage.sql.exec(
+        "SELECT id,sku,name,description,category,image_url,price_cents,quantity,variations_json,external_url FROM products WHERE status='active' ORDER BY name LIMIT 250",
+      ).toArray() as Array<{id:string;sku:string;name:string;description:string;category:string;image_url:string;price_cents:number;quantity:number;variations_json:string;external_url:string}>;
+      return json({ ok: true, products: rows.map(row => {
+        let variations: unknown[] = [];
+        try { const parsed = JSON.parse(row.variations_json); if (Array.isArray(parsed)) variations = parsed; } catch {}
+        return { id: row.id, sku: row.sku, name: row.name, description: row.description, category: row.category,
+          image_url: row.image_url, price: row.price_cents / 100, in_stock: row.quantity > 0,
+          variations, external_url: row.external_url };
+      }) });
     }
     if (url.pathname === "/products" && request.method === "GET") {
       const query = text(url.searchParams.get("q"), 100);
@@ -167,6 +180,17 @@ export class BusinessDatabase extends DurableObject {
 /** Authenticates account requests before routing to that account's private SQL database. */
 export async function handleBusinessDatabaseRequest(request: Request, env: BusinessDatabaseEnv): Promise<Response | null> {
   const url = new URL(request.url);
+  const publicMatch = url.pathname.match(/^\/api\/stockroom\/public\/([a-f0-9]{32})$/);
+  if (publicMatch) {
+    if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+    const mappingObject = await env.PROJECT_STORAGE.get("published-sites/index/" + publicMatch[1] + ".json");
+    if (!mappingObject) return json({ error: "site_not_found" }, 404);
+    const mapping = await mappingObject.json<{ account_id?: unknown }>().catch(() => null);
+    const accountId = typeof mapping?.account_id === "string" ? mapping.account_id : "";
+    if (!ACCOUNT_ID.test(accountId)) return json({ error: "site_not_found" }, 404);
+    const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
+    return database.fetch("https://business-database.internal/public-products");
+  }
   if (!url.pathname.startsWith("/api/stockroom/")) return null;
   if (!["GET", "POST", "PUT", "DELETE"].includes(request.method)) return json({ error: "method_not_allowed" }, 405);
   const accountId = url.searchParams.get("account_id") ?? "";
