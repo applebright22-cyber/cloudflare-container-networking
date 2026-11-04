@@ -62,6 +62,7 @@ export class BusinessDatabase extends DurableObject {
     sql.exec("CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, sku TEXT NOT NULL COLLATE NOCASE UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', image_url TEXT NOT NULL DEFAULT '', price_cents INTEGER NOT NULL DEFAULT 0, cost_cents INTEGER NOT NULL DEFAULT 0, quantity INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','draft','archived')), variations_json TEXT NOT NULL DEFAULT '[]', external_url TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS inventory_movements (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, quantity_delta INTEGER NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS inventory_consumptions (checkout_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)");
+    sql.exec("CREATE TABLE IF NOT EXISTS business_orders (order_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, applied_at TEXT NOT NULL)");
     sql.exec("CREATE INDEX IF NOT EXISTS products_status_updated ON products(status, updated_at)");
     sql.exec("CREATE INDEX IF NOT EXISTS inventory_product_created ON inventory_movements(product_id, created_at)");
     sql.exec("INSERT OR IGNORE INTO business_meta(key, value) VALUES('schema_version', '1')");
@@ -131,6 +132,49 @@ export class BusinessDatabase extends DurableObject {
       }
       this.ctx.storage.sql.exec("INSERT INTO inventory_consumptions(checkout_id,created_at) VALUES(?,?)", checkoutId, now);
       return json({ ok: true, consumed: checked.length });
+    }
+    if (url.pathname === "/apply-orders" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { orders?: unknown } | null;
+      if (!Array.isArray(body?.orders) || body.orders.length > 250) return json({ error: "invalid_order_batch" }, 400);
+      const applied: string[] = [];
+      const sql = this.ctx.storage.sql;
+      sql.exec("BEGIN IMMEDIATE");
+      try {
+        for (const raw of body.orders) {
+          if (!raw || typeof raw !== "object") throw new Error("invalid_order");
+          const order = raw as { order_id?: unknown; items?: unknown };
+          const orderId = typeof order.order_id === "string" ? order.order_id : "";
+          if (!/^[a-f0-9-]{36}$/.test(orderId) || !Array.isArray(order.items) || order.items.length < 1 || order.items.length > 20) throw new Error("invalid_order");
+          if (sql.exec("SELECT order_id FROM business_orders WHERE order_id=?", orderId).toArray().length) { applied.push(orderId); continue; }
+          const requested = new Map<string, number>();
+          for (const item of order.items) {
+            if (!item || typeof item !== "object") throw new Error("invalid_order_item");
+            const value = item as { product_id?: unknown; quantity?: unknown };
+            if (typeof value.product_id !== "string" || !/^[a-f0-9-]{36}$/.test(value.product_id) || !Number.isInteger(value.quantity) || Number(value.quantity) < 1 || Number(value.quantity) > 99) throw new Error("invalid_order_item");
+            requested.set(value.product_id, (requested.get(value.product_id) ?? 0) + Number(value.quantity));
+          }
+          const checked: Array<{ id: string; quantity: number }> = [];
+          for (const [productId, quantity] of requested) {
+            const row = sql.exec("SELECT quantity FROM products WHERE id=? AND status='active'", productId).toArray()[0] as { quantity: number } | undefined;
+            if (!row || Number(row.quantity) < quantity) throw new Error("local_inventory_conflict:" + productId);
+            checked.push({ id: productId, quantity });
+          }
+          for (const item of checked) {
+            sql.exec("UPDATE products SET quantity=quantity-?,updated_at=? WHERE id=?", item.quantity, now, item.id);
+            this.recordMovement(item.id, -item.quantity, "synced paid order " + orderId);
+          }
+          sql.exec("INSERT INTO business_orders(order_id,payload_json,applied_at) VALUES(?,?,?)", orderId, JSON.stringify(raw), now);
+          applied.push(orderId);
+        }
+        sql.exec("COMMIT");
+      } catch (error) {
+        sql.exec("ROLLBACK");
+        const message = String(error);
+        if (message === "invalid_order" || message === "invalid_order_item") return json({ error: message }, 400);
+        if (message.startsWith("local_inventory_conflict:")) return json({ error: "local_inventory_conflict", product_id: message.split(":")[1] }, 409);
+        throw error;
+      }
+      return json({ ok: true, applied_order_ids: applied });
     }
     if (url.pathname === "/products" && request.method === "GET") {
       const query = text(url.searchParams.get("q"), 100);
@@ -265,6 +309,25 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
   if (!verified.ok) return json({ error: "unauthorized" }, 401);
   url.searchParams.delete("account_id");
   const internalPath = url.pathname.replace(/^\/api\/stockroom/, "") || "/";
+  if (internalPath === "/sync/orders" && request.method === "POST") {
+    const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
+    const pendingResponse = await ledger.fetch("https://inventory-ledger.internal/orders");
+    if (!pendingResponse.ok) return json({ error: "order_queue_unavailable" }, 503);
+    const pending = await pendingResponse.json() as { orders?: Array<{ order_id: string }> };
+    const orders = pending.orders ?? [];
+    if (!orders.length) return json({ ok: true, synchronized: 0, pending: 0 });
+    const applied = await businessDatabaseFetch(env, accountId, "apply-orders", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orders }),
+    });
+    if (!applied.ok) return json({ error: "local_order_sync_failed", detail: await applied.text().catch(() => "") }, applied.status);
+    const result = await applied.json() as { applied_order_ids?: string[] };
+    const orderIds = result.applied_order_ids ?? [];
+    const ack = await ledger.fetch("https://inventory-ledger.internal/orders/ack", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ order_ids: orderIds }),
+    });
+    if (!ack.ok) return json({ error: "order_acknowledgement_failed", synchronized: orderIds.length }, 503);
+    return json({ ok: true, synchronized: orderIds.length, pending: Math.max(0, orders.length - orderIds.length) });
+  }
   const response = await businessDatabaseFetch(env, accountId, internalPath + (url.search ? url.search : ""), request);
   const shouldSync = response.ok && (
     (internalPath === "/initialize" && request.method === "POST") ||
