@@ -19,9 +19,9 @@ test("signup stores server-side PBKDF2 credentials and enforces unique usernames
   assert.match(worker, /url\.pathname === "\/api\/auth\/signup"/);
   assert.match(worker, /url\.pathname === "\/api\/auth\/login"/);
   assert.doesNotMatch(dashboard, /vm-test-accounts-v1|function readAccounts\(\)/);
-  assert.match(worker, /password\.length < 4/);
-  assert.match(registry, /password\.length < 4/);
-  assert.match(dashboard, /if\(creating&&pass\.length<4\)/);
+  assert.match(worker, /password\.length < 12/);
+  assert.match(registry, /password\.length < 12/);
+  assert.match(dashboard, /if\(creating&&pass\.length<12\)/);
   assert.match(worker, /virtual_network_allocation_failed/);
   assert.ok(worker.includes("/network/allocate"));
   assert.ok(worker.includes("virtual_ip: allocation.virtual_ip"));
@@ -66,11 +66,11 @@ test("missing or unreadable account snapshots fail closed instead of booting a f
 
 test("public auth routes are rate-limited and browser credentials are not persisted in localStorage", () => {
   assert.match(registry, /auth-rate:/);
-  assert.match(registry, /body\.action === "signup" \? 500 : 2000/);
+  assert.match(registry, /body\.action === "signup" \? 60 \* 60 \* 1000 : 15 \* 60 \* 1000/);
   assert.match(worker, /auth\/rate-limit/);
   assert.match(dashboard, /sessionStorage\.setItem\('vm-session-token'/);
   assert.doesNotMatch(dashboard, /localStorage\.setItem\(ACCOUNTS_KEY/);
-  assert.match(dashboard, /mysterium-network-test-results:\x27\+\(window\.snapshotIdentity\|\|\x27admin\x27\)/);
+  assert.ok(dashboard.includes("function legacyReportStorageKey()"));
 });
 
 test("restored VMs prove shell responsiveness without running extra network diagnostics", () => {

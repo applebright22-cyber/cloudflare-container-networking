@@ -1,6 +1,7 @@
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
+  BUSINESS_DATABASE: DurableObjectNamespace;
   PAYMENTS_ENCRYPTION_KEY?: string;
 }
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -18,6 +19,19 @@ async function authenticate(request: Request, env: PaymentEnv, accountId: string
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account_id: accountId, token }),
   });
   return response.ok;
+}
+async function consumeInventory(env: PaymentEnv, checkout: { id: string; account_id: string; items?: unknown }): Promise<"deducted" | "not_applicable" | "needs_review"> {
+  if (!Array.isArray(checkout.items) || checkout.items.length === 0) return "not_applicable";
+  try {
+    const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(checkout.account_id));
+    const response = await database.fetch("https://business-database.internal/consume", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: checkout.id, items: checkout.items }),
+    });
+    return response.ok ? "deducted" : "needs_review";
+  } catch {
+    return "needs_review";
+  }
 }
 async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
   const obj = await bucket.get(key); if (!obj) return null;
@@ -38,16 +52,17 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(mapping.account_id, "settings"));
     const credentials = await getPaypalCredentials(env, mapping.account_id);
     if (!settings?.paypal_enabled || !credentials) return json({ error: "merchant_paypal_not_configured" }, 409);
-    const page = await env.PROJECT_STORAGE.get("published-sites/" + siteId + "/index.html");
-    if (!page) return json({ error: "published_site_missing" }, 404);
-    const html = await page.text();
-    const catalog = new Map<string, { name: string; price: number }>();
-    const buttonPattern = /<button\b(?=[^>]*\bdata-product-id=["']([a-z0-9-]{2,64})["'])(?=[^>]*\bdata-name=["']([^"']{1,100})["'])(?=[^>]*\bdata-price=["'](\d{1,7}(?:\.\d{1,2})?)["'])[^>]*>/gi;
-    for (const match of html.matchAll(buttonPattern)) {
-      const price = Number(match[3]);
-      if (Number.isFinite(price) && price > 0) catalog.set(match[1], { name: match[2].trim(), price });
+    const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(mapping.account_id));
+    const catalogResponse = await businessDatabase.fetch("https://business-database.internal/products?status=active");
+    if (!catalogResponse.ok) return json({ error: "store_catalog_unavailable" }, 503);
+    const catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
+    const catalog = new Map<string, { name: string; price: number; quantity: number }>();
+    for (const product of catalogData.products ?? []) {
+      if (typeof product.id === "string" && Number.isFinite(product.price) && product.price > 0) {
+        catalog.set(product.id, { name: product.name, price: product.price, quantity: Number(product.quantity) || 0 });
+      }
     }
-    if (!catalog.size) return json({ error: "store_catalog_not_found" }, 409);
+    if (!catalog.size) return json({ error: "store_catalog_empty" }, 409);
     const body = await request.json().catch(() => null) as { items?: unknown } | null;
     if (!Array.isArray(body?.items) || body.items.length < 1 || body.items.length > 20) return json({ error: "invalid_cart" }, 400);
     const quantities = new Map<string, number>();
@@ -56,7 +71,9 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       const productId = (item as { product_id?: unknown }).product_id;
       const quantity = (item as { quantity?: unknown }).quantity;
       if (typeof productId !== "string" || !catalog.has(productId) || !Number.isInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 99) return json({ error: "invalid_cart_item" }, 400);
-      quantities.set(productId, (quantities.get(productId) ?? 0) + Number(quantity));
+      const requested = (quantities.get(productId) ?? 0) + Number(quantity);
+      if (requested > catalog.get(productId)!.quantity) return json({ error: "insufficient_stock", product_id: productId }, 409);
+      quantities.set(productId, requested);
     }
     let amount = 0;
     const lineItems = Array.from(quantities, ([product_id, quantity]) => {
@@ -164,9 +181,10 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       if (!captured.ok) return json({ error: "paypal_capture_failed", paypal_status: captured.status }, 502);
       const capture = result.purchase_units?.[0]?.payments?.captures?.[0];
       if (result.status !== "COMPLETED" || capture?.status !== "COMPLETED" || capture.amount?.currency_code !== "USD" || Number(capture.amount.value) !== Number(page.amount_usd)) return json({ error: "paypal_payment_not_completed" }, 409);
-      const updated = { ...page, status: "paid", payment_method: "paypal", paypal_order_id: saved.order_id, paypal_capture_id: capture.id ?? null, paid_at: new Date().toISOString() };
+      const inventory_status = await consumeInventory(env, page);
+      const updated = { ...page, status: "paid", inventory_status, payment_method: "paypal", paypal_order_id: saved.order_id, paypal_capture_id: capture.id ?? null, paid_at: new Date().toISOString() };
       await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
-      return json({ ok: true, status: "paid", capture_id: capture.id ?? null });
+      return json({ ok: true, status: "paid", inventory_status, capture_id: capture.id ?? null });
     }
     return json({ error: "method_not_allowed" }, 405);
   }
@@ -229,10 +247,11 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const expected = BigInt(Math.round(Number(page.amount_usd) * 1_000_000));
     const paid = (receipt.logs ?? []).some(log => log.address?.toLowerCase() === USDC_BASE.toLowerCase() && log.topics?.[0]?.toLowerCase() === TRANSFER_TOPIC && log.topics?.[2]?.toLowerCase() === recipientTopic && typeof log.data === "string" && BigInt(log.data) >= expected);
     if (!paid) return json({ error: "matching_usdc_transfer_not_found" }, 400);
-    const updated = { ...page, status: "paid", transaction_hash: hash, paid_at: new Date().toISOString(), network: "Base", token: "USDC" };
+    const inventory_status = await consumeInventory(env, page);
+    const updated = { ...page, status: "paid", inventory_status, transaction_hash: hash, paid_at: new Date().toISOString(), network: "Base", token: "USDC" };
     await env.PROJECT_STORAGE.put(usedKey, JSON.stringify({ checkout_id: id, account_id: page.account_id }), { httpMetadata: { contentType: "application/json" } });
     await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
-    return json({ ok: true, status: "paid", transaction_hash: hash });
+    return json({ ok: true, status: "paid", inventory_status, transaction_hash: hash });
   }
   return json({ error: "method_not_allowed" }, 405);
 }
