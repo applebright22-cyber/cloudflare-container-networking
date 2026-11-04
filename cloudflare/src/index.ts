@@ -554,6 +554,44 @@ export default {
     }
 
 
+    if (url.pathname === "/api/ambassador/signup" && request.method === "POST") {
+      let body: { username?: unknown; password?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 8 || password.length > 128) {
+        return json({ error: "username_must_be_2_to_32_chars_and_password_8_to_128_chars" }, 400);
+      }
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ip: request.headers.get("cf-connecting-ip") ?? "unknown", action: "signup" }),
+      });
+      if (!rateLimit.ok) return json(await rateLimit.json(), rateLimit.status);
+      const response = await authRegistry.fetch("https://account-registry.internal/ambassador/signup", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }),
+      });
+      return json(await response.json(), response.status);
+    }
+
+    if (url.pathname === "/api/ambassador/login" && request.method === "POST") {
+      let body: { username?: unknown; password?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || !password || password.length > 128) return json({ error: "invalid_credentials" }, 401);
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ip: request.headers.get("cf-connecting-ip") ?? "unknown", action: "login" }),
+      });
+      if (!rateLimit.ok) return json({ error: "rate_limited" }, 429);
+      const response = await authRegistry.fetch("https://account-registry.internal/ambassador/login", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }),
+      });
+      return json(await response.json(), response.status);
+    }
+
     // Signup clones the verified Admin baseline; it never starts a Linux boot.
     if (url.pathname === "/api/auth/signup" && request.method === "POST") {
       let body: { username?: unknown; password?: unknown };
