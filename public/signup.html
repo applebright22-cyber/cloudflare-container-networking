@@ -71,6 +71,8 @@ main{width:min(100%,850px);background:linear-gradient(145deg,#121c34f5,#0b1225f5
 (function(){
 const form=document.getElementById('signup-form'),submit=document.getElementById('submit');
 let accountType='merchant';
+const invitationToken=new URLSearchParams(location.search).get('invite')||'';
+if(invitationToken){document.querySelector('.eyebrow').textContent='Complete your business account setup';document.querySelector('h1').textContent='Claim your merchant workspace.';document.getElementById('ambassador-note').hidden=true;document.getElementById('merchant-note').innerHTML='<p class="subtle">You were invited by an ambassador. Create your own merchant login; your TinyCore workspace and Stockroom tools will be provisioned under your account.</p>';}
 const merchantNote=document.getElementById('merchant-note'),ambassadorNote=document.getElementById('ambassador-note');
 document.querySelectorAll('[data-select]').forEach(button=>button.addEventListener('click',()=>{
  accountType=button.dataset.select;
@@ -138,7 +140,7 @@ submit.disabled=true;document.getElementById('password').value='';
 status.hidden=false;status.className='status';title.textContent='Creating your account…';detail.textContent='Sending the signup request to Workerd.';fill.style.width='8%';
 try{
 const endpoint=accountType==='ambassador'?'/api/ambassador/signup':'/api/auth/signup';
-const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});
+const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,password,...(accountType==='merchant'&&invitationToken?{invite_token:invitationToken}:{})})});
 const data=await response.json().catch(()=>({}));
 if(!response.ok){const retry=Number(data.retry_after_seconds);const retryText=Number.isFinite(retry)&&retry>0?' Try again in about '+Math.ceil(retry/60)+' minute(s).':'';throw new Error((data.error||'Signup failed (HTTP '+response.status+').')+retryText);}
 if(accountType==='ambassador'){
