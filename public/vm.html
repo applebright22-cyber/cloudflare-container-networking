@@ -99,7 +99,7 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
     <select id="access-type"><option value="regular">Regular user</option><option value="admin">Admin</option></select>
     <input id="username" type="text" minlength="2" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,31}" title="2–32 characters. Start with a letter or number; use letters, numbers, underscores, or hyphens." autocomplete="username" placeholder="Username (2–32 characters)" required>
     <input id="user-password" type="password" minlength="8" maxlength="128" autocomplete="current-password" placeholder="Password (at least 8 characters)" required>
-    <input id="admin-code" type="password" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" autocomplete="off" placeholder="5-digit admin code" hidden>
+    <input id="admin-key" type="password" inputmode="text" pattern="[A-Za-z0-9]{15,128}" minlength="15" maxlength="128" autocomplete="off" placeholder="Admin access key (15+ letters/numbers)" hidden>
     <button id="open-vm" type="submit">Log in</button><a href="/signup.html" style="display:inline-block;margin-top:12px;color:#8de8ff">Create a business account</a><span id="login-message" role="status" aria-live="polite"></span>
   </form>
 </section>
@@ -152,7 +152,7 @@ function stateText(t){stateStatus.textContent=t}
 const SNAPSHOT_CHUNK_BYTES=8*1024*1024;
 function snapshotUrl(){if(!window.snapshotIdentity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(window.snapshotIdentity)}
 function snapshotUrlFor(identity){if(!identity)throw new Error('Choose an account before opening the VM.');return '/api/vm-snapshots/'+encodeURIComponent(identity)}
-function snapshotHeaders(contentType='application/octet-stream'){const headers={'content-type':contentType};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;return headers}
+function snapshotHeaders(contentType='application/octet-stream'){const headers={'content-type':contentType};if(window.snapshotAdminKey)headers['x-admin-key']=window.snapshotAdminKey;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;return headers}
 async function initializeBusinessDatabase(){
 if(!String(window.snapshotIdentity||'').startsWith('acct-')||!window.snapshotAuthToken)return;
 try{
@@ -195,7 +195,7 @@ async function loadVmState(){
 try{
 const requestedIdentity=window.snapshotIdentity;
 const candidates=requestedIdentity==='user-usera'?['user-usera','regular-user-a']:requestedIdentity==='user-userb'?['user-userb','regular-user-b']:[requestedIdentity];
-const headers={};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;
+const headers={};if(window.snapshotAdminKey)headers['x-admin-key']=window.snapshotAdminKey;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;
 for(const identity of candidates){
 const response=await fetch(snapshotUrlFor(identity),{headers,cache:'no-store'});
 if(response.status===404){if(identity.startsWith('acct-')){let pending=window.snapshotNeedsInitialSave===true;try{pending=pending||sessionStorage.getItem('vm-initial-snapshot-pending')===identity}catch(e){}if(pending){window.snapshotNeedsInitialSave=true;continue}throw new Error('No saved VM snapshot exists for this account; refusing to boot a fresh VM over missing user data.')}continue;}
@@ -225,7 +225,7 @@ document.getElementById('save-vm-state').onclick=()=>saveVmState(true);
 document.getElementById('clear-vm-state').onclick=async()=>{
 if(!bootComplete){stateText('Startup must finish before changing the saved snapshot.');return}
 if(!confirm('Delete this account’s saved VM snapshot from the server? This cannot be undone.'))return;
-try{const headers={};if(window.snapshotAdminCode)headers['x-admin-code']=window.snapshotAdminCode;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;const response=await fetch(snapshotUrl(),{method:'DELETE',headers});if(!response.ok)throw new Error('server returned HTTP '+response.status);stateText('Server snapshot deleted. The current VM keeps running.')}
+try{const headers={};if(window.snapshotAdminKey)headers['x-admin-key']=window.snapshotAdminKey;if(window.snapshotAuthToken)headers.authorization='Bearer '+window.snapshotAuthToken;const response=await fetch(snapshotUrl(),{method:'DELETE',headers});if(!response.ok)throw new Error('server returned HTTP '+response.status);stateText('Server snapshot deleted. The current VM keeps running.')}
 catch(e){stateText('Could not delete snapshot: '+(e&&e.message?e.message:String(e)))}
 };
 function reportStorageKey(){return 'vampiresquid-network-test-results:'+(window.snapshotIdentity||'admin')}
@@ -239,7 +239,7 @@ function drawOracleTerminal(){
   mystLog.scrollTop=mystLog.scrollHeight;
 }
 function activateOracleTerminal(){
-  const isAdmin=window.snapshotIdentity==='admin'&&Boolean(window.snapshotAdminCode);
+  const isAdmin=window.snapshotIdentity==='admin'&&Boolean(window.snapshotAdminKey);
   const isAccount=/^acct-[a-f0-9-]{36}$/.test(String(window.snapshotIdentity||''))&&Boolean(window.snapshotAuthToken);
   if((!isAdmin&&!isAccount)||oracleTerminalMode)return;
   oracleTerminalMode=true;
@@ -259,7 +259,7 @@ async function checkAccountExecution(){
   const toggle=document.getElementById('oracle-terminal-toggle');
   oracleExecutionAvailable=false;
   toggle.hidden=true;
-  if(window.snapshotIdentity==='admin'&&window.snapshotAdminCode){
+  if(window.snapshotIdentity==='admin'&&window.snapshotAdminKey){
     try{
       const response=await fetch('/api/vm/oracle-status',{method:'GET',cache:'no-store'});
       const data=await response.json().catch(()=>({}));
@@ -320,7 +320,7 @@ async function runOracleTerminalCommand(raw){
   try{
     const isAdmin=window.snapshotIdentity==='admin';
     const headers={'content-type':'application/json'};
-    if(isAdmin)headers['x-admin-code']=window.snapshotAdminCode;
+    if(isAdmin)headers['x-admin-key']=window.snapshotAdminKey;
     const endpoint=isAdmin?'/api/admin/oracle-exec':'/api/account/exec';
     const payload=isAdmin?{command,timeout_ms:15000}:{account_id:window.snapshotIdentity,session_token:window.snapshotAuthToken,command,timeout_ms:15000};
     const response=await fetch(endpoint,{method:'POST',headers,cache:'no-store',body:JSON.stringify(payload)});
@@ -556,11 +556,11 @@ function startOracleBridgeStatus(){
   oracleStatusTimer=setInterval(checkOracleBridge,15000);
 }
 async function connectApiAgent(){
-if(window.snapshotIdentity!=='admin'||!window.snapshotAdminCode||apiAgentConnecting)return;
+if(window.snapshotIdentity!=='admin'||!window.snapshotAdminKey||apiAgentConnecting)return;
 if(apiAgentSocket&&apiAgentSocket.readyState<=1)return;
 apiAgentConnecting=true;
 try{
-const ticketResponse=await fetch('/api/vm/agent-ticket',{method:'POST',headers:{'x-admin-code':window.snapshotAdminCode}});
+const ticketResponse=await fetch('/api/vm/agent-ticket',{method:'POST',headers:{'x-admin-key':window.snapshotAdminKey}});
 if(!ticketResponse.ok)throw new Error('agent ticket HTTP '+ticketResponse.status);
 const ticket=await ticketResponse.json();
 const wsUrl=new URL('/api/vm/agent',window.location.href);
@@ -696,7 +696,7 @@ window.snapshotVirtualMac=virtualMac;
 window.snapshotRouterIp=routerIp;
 let networkTicket='';
 try{
-  const ticketBody=networkIdentity==='admin'?{account_id:'admin',admin_code:window.snapshotAdminCode}:{account_id:networkIdentity,session_token:window.snapshotAuthToken};
+  const ticketBody=networkIdentity==='admin'?{account_id:'admin',admin_key:window.snapshotAdminKey}:{account_id:networkIdentity,session_token:window.snapshotAuthToken};
   const ticketResponse=await fetch(apiUrl+'/api/network/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(ticketBody)});
   const ticketData=await ticketResponse.json().catch(()=>({}));
   if(!ticketResponse.ok||typeof ticketData.ticket!=='string'||!/^[a-f0-9]{64}$/.test(ticketData.ticket))throw new Error(ticketData.error||'network_ticket_failed');
@@ -917,14 +917,14 @@ keyCopy.addEventListener('click',async()=>{
 });
 keyHide.addEventListener('click',()=>{clearDisplayedApiKey();keyMessage.textContent='Key hidden from this page.';});
 const panel=document.getElementById('login-panel'),form=document.getElementById('login-form'),access=document.getElementById('access-type');
-const code=document.getElementById('admin-code'),username=document.getElementById('username'),password=document.getElementById('user-password');
+const adminKey=document.getElementById('admin-key'),username=document.getElementById('username'),password=document.getElementById('user-password');
 const message=document.getElementById('login-message'),createButton=document.getElementById('create-account'),loginButton=document.getElementById('open-vm');
 const adminAccountsPanel=document.getElementById('admin-accounts'),adminAccountList=document.getElementById('admin-account-list'),adminAccountCount=document.getElementById('admin-account-count'),adminAccountsRefresh=document.getElementById('admin-accounts-refresh');
 async function loadAdminAccounts(){
-  if(!window.snapshotAdminCode||!adminAccountsPanel)return;
+  if(!window.snapshotAdminKey||!adminAccountsPanel)return;
   adminAccountsRefresh.disabled=true;adminAccountCount.textContent='Loading…';
   try{
-    const response=await fetch('/api/admin/accounts',{method:'GET',headers:{authorization:'Bearer '+window.snapshotAdminCode},cache:'no-store'});
+    const response=await fetch('/api/admin/accounts',{method:'GET',headers:{authorization:'Bearer '+window.snapshotAdminKey},cache:'no-store'});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||'HTTP '+response.status);
     const accounts=Array.isArray(data.accounts)?data.accounts:[];
@@ -944,7 +944,7 @@ adminAccountsRefresh?.addEventListener('click',loadAdminAccounts);
 let creating=false;
 function updateFields(){
   const admin=access.value==='admin';
-  code.hidden=!admin;code.required=admin;
+  adminKey.hidden=!admin;adminKey.required=admin;
   username.hidden=admin;username.required=!admin;
   password.hidden=admin;password.required=!admin;
   if(createButton)createButton.hidden=true;
@@ -1012,20 +1012,21 @@ createButton?.addEventListener('click',()=>{
 form.addEventListener('submit',async function(event){
   event.preventDefault();message.textContent='';
   if(access.value==='admin'){
-    const adminCode=code.value.trim();
-    if(!/^[0-9]{5}$/.test(adminCode)){message.textContent='Enter the five-digit admin code.';return}
-    message.textContent='Checking admin code…';
+    const adminKeyValue=adminKey.value.trim();
+    if(!/^[A-Za-z0-9]{15,128}$/.test(adminKeyValue)){message.textContent='Enter an admin key containing at least 15 letters or numbers.';return}
+    message.textContent='Checking admin key…';
     try{
-      const response=await fetch('/api/admin/access',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:adminCode}),cache:'no-store'});
+      const response=await fetch('/api/admin/access',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key:adminKeyValue}),cache:'no-store'});
       const result=await response.json().catch(()=>({}));
       if(!response.ok){
-        const reason=result.error==='admin_ingress_ip_denied'?'This connection IP is not on ADMIN_ALLOWED_IPS.':
-          result.error==='admin_access_not_configured'?'ADMIN_ACCESS_CODE is not available to the deployed Worker.':
-          result.error==='invalid_admin_code'?'The five-digit code does not match ADMIN_ACCESS_CODE.':
+        const reason=result.error==='admin_login_locked'?'Too many attempts. Try again in 15 minutes.':
+          result.error==='admin_login_rate_limit_unavailable'?'The login protection service is temporarily unavailable. Try again shortly.':
+          result.error==='admin_access_key_not_configured'?'ADMIN_ACCESS_KEY is not available to the deployed Worker.':
+          result.error==='invalid_admin_key'?'The admin key is incorrect. '+String(result.attempts_remaining??0)+' attempts remaining.':
           (result.error||('HTTP '+response.status));
         throw new Error('Admin login failed: '+reason);
       }
-      window.snapshotAdminCode=adminCode;
+      window.snapshotAdminKey=adminKeyValue;
       adminAccountsPanel.hidden=false;void loadAdminAccounts();
     }catch(error){message.textContent=error.message||'Admin access check failed.';return}
     window.snapshotIdentity='admin';

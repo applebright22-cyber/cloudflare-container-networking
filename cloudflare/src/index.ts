@@ -24,9 +24,7 @@ export interface Env {
   INVENTORY_LEDGER: DurableObjectNamespace<InventoryLedger>;
   WISP_RELAY: DurableObjectNamespace<WispRelay>;
   VM_BASELINE_ID?: string;
-  ADMIN_ACCESS_CODE?: string;
-  // Comma- or newline-separated public client IPs. Configure/rotate in Cloudflare Worker Variables.
-  ADMIN_ALLOWED_IPS?: string;
+  ADMIN_ACCESS_KEY?: string;
   VM_SNAPSHOTS: R2Bucket;
   PROJECT_STORAGE: R2Bucket;
   PAYMENTS_ENCRYPTION_KEY?: string;
@@ -36,14 +34,6 @@ export interface Env {
   ORACLE_ACCOUNT_EXEC_ENABLED?: string;
   STOCKROOM_ORIGIN?: string;
   STOCKROOM_GATEWAY_TOKEN?: string;
-}
-
-function adminIpAllowed(request: Request, env: Env): boolean {
-  // CF-Connecting-IP is set by Cloudflare's edge; do not trust client-supplied X-Forwarded-For.
-  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
-  if (!clientIp || !env.ADMIN_ALLOWED_IPS) return false;
-  const allowed = env.ADMIN_ALLOWED_IPS.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
-  return allowed.includes(clientIp);
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -121,17 +111,11 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // Fail closed for every admin API route unless the Cloudflare-managed IP allowlist matches.
-    // This is evaluated before admin credentials or destructive handlers are processed.
-    if (url.pathname.startsWith("/api/admin/") && !adminIpAllowed(request, env)) {
-      return json({ error: "admin_ingress_ip_denied" }, 403);
-    }
-
     // Read-only account ID inventory from the shared AccountRegistry Durable Object.
     // Uses the existing /api/admin/accounts path with GET; does not delete or modify accounts.
     if (url.pathname === "/api/admin/accounts" && request.method === "GET") {
-      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_code_not_configured" }, 503);
-      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_CODE)) {
+      if (!env.ADMIN_ACCESS_KEY) return json({ error: "admin_access_key_not_configured" }, 503);
+      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_KEY)) {
         return json({ error: "unauthorized" }, 401);
       }
       const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
@@ -149,8 +133,8 @@ export default {
     // Permanently clear all user accounts, sessions, per-account snapshots, and queued provisioning jobs.
     // The shared auth registry and Admin baseline snapshot are preserved.
     if (url.pathname === "/api/admin/accounts" && request.method === "DELETE") {
-      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_code_not_configured" }, 503);
-      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_CODE)) {
+      if (!env.ADMIN_ACCESS_KEY) return json({ error: "admin_access_key_not_configured" }, 503);
+      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_KEY)) {
         return json({ error: "unauthorized" }, 401);
       }
 
@@ -269,8 +253,8 @@ export default {
     // Targeted, authenticated purge for explicitly supplied account IDs only.
     // This is separate from DELETE /api/admin/accounts, which clears all registered accounts.
     if (url.pathname === "/api/admin/purge-accounts" && request.method === "POST") {
-      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_code_not_configured" }, 503);
-      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_CODE)) {
+      if (!env.ADMIN_ACCESS_KEY) return json({ error: "admin_access_key_not_configured" }, 503);
+      if (!authorized(request.headers.get("authorization"), env.ADMIN_ACCESS_KEY)) {
         return json({ error: "unauthorized" }, 401);
       }
       const body = await request.json().catch(() => null) as {
@@ -1110,12 +1094,11 @@ export default {
     }
 
     if (url.pathname === "/api/network/ticket" && request.method === "POST") {
-      let body: { account_id?: unknown; session_token?: unknown; admin_code?: unknown };
+      let body: { account_id?: unknown; session_token?: unknown; admin_key?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       const accountId = typeof body.account_id === "string" ? body.account_id : "";
       if (accountId === "admin") {
-        if (!adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
-        if (!env.ADMIN_ACCESS_CODE || typeof body.admin_code !== "string" || body.admin_code !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
+                if (!env.ADMIN_ACCESS_KEY || typeof body.admin_key !== "string" || !authorized("Bearer " + body.admin_key, env.ADMIN_ACCESS_KEY)) return json({ error: "unauthorized" }, 401);
       } else {
         if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || typeof body.session_token !== "string") return json({ error: "unauthorized" }, 401);
         const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
@@ -1259,7 +1242,7 @@ export default {
 
     if (url.pathname === "/api/admin/reset-snapshots") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      if (!env.ADMIN_ACCESS_CODE || request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
+      if (!env.ADMIN_ACCESS_KEY || !authorized("Bearer " + (request.headers.get("x-admin-key") ?? ""), env.ADMIN_ACCESS_KEY)) return json({ error: "unauthorized" }, 401);
       let body: { confirm?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       if (body.confirm !== "DELETE_ALL_VM_SNAPSHOTS") return json({ error: "confirmation_required", expected: "DELETE_ALL_VM_SNAPSHOTS" }, 400);
@@ -1282,11 +1265,42 @@ export default {
 
     if (url.pathname === "/api/admin/access") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      let body: { code?: unknown };
-      try { body = (await request.json()) as { code?: unknown }; }
+      let body: { key?: unknown };
+      try { body = (await request.json()) as { key?: unknown }; }
       catch { return json({ error: "invalid_json" }, 400); }
-      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
-      if (typeof body.code !== "string" || body.code !== env.ADMIN_ACCESS_CODE) return json({ error: "invalid_admin_code" }, 401);
+      if (!env.ADMIN_ACCESS_KEY || !/^[A-Za-z0-9]{15,128}$/.test(env.ADMIN_ACCESS_KEY)) {
+        return json({ error: "admin_access_key_not_configured" }, 503);
+      }
+
+      // Three attempts per source IP in a rolling 15-minute window. The IP is
+      // SHA-256 hashed before it is persisted; it is used only as a rate-limit key,
+      // never as an allowlist or an authorization factor.
+      const clientIp = request.headers.get("cf-connecting-ip")?.trim() || "unknown";
+      const ipDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(clientIp));
+      const rateLimitKey = Array.from(new Uint8Array(ipDigest), (b) => b.toString(16).padStart(2, "0")).join("");
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const attemptResponse = await authRegistry.fetch("https://account-registry.internal/admin/login-attempt", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: rateLimitKey, action: "consume" }),
+      }).catch(() => new Response(null, { status: 503 }));
+      if (!attemptResponse.ok && attemptResponse.status !== 429) {
+        return json({ error: "admin_login_rate_limit_unavailable" }, 503);
+      }
+      const attempt = await attemptResponse.json().catch(() => ({})) as {
+        allowed?: boolean; attempts_remaining?: number; retry_after_ms?: number;
+      };
+      if (!attemptResponse.ok || attempt.allowed !== true) {
+        return json({ error: "admin_login_locked", retry_after_ms: attempt.retry_after_ms ?? 900000 }, 429);
+      }
+      if (typeof body.key !== "string" || !/^[A-Za-z0-9]{15,128}$/.test(body.key) ||
+          !authorized("Bearer " + body.key, env.ADMIN_ACCESS_KEY)) {
+        return json({ error: "invalid_admin_key", attempts_remaining: attempt.attempts_remaining ?? 0 }, 401);
+      }
+      const resetResponse = await authRegistry.fetch("https://account-registry.internal/admin/login-attempt", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: rateLimitKey, action: "reset" }),
+      }).catch(() => new Response(null, { status: 503 }));
+      if (!resetResponse.ok) return json({ error: "admin_login_state_reset_failed" }, 503);
       return json({ ok: true });
     }
 
@@ -1294,7 +1308,7 @@ export default {
     // terminal UI without granting regular accounts host-shell access.
     if (url.pathname === "/api/admin/oracle-exec") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      if (!env.ADMIN_ACCESS_CODE || request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) {
+      if (!env.ADMIN_ACCESS_KEY || !authorized("Bearer " + (request.headers.get("x-admin-key") ?? ""), env.ADMIN_ACCESS_KEY)) {
         return json({ error: "unauthorized" }, 401);
       }
       let body: { command?: unknown; timeout_ms?: unknown };
@@ -1404,9 +1418,8 @@ export default {
 
     if (url.pathname === "/api/vm/agent-ticket") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-      if (!adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
-      if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
-      if (request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
+            if (!env.ADMIN_ACCESS_KEY) return json({ error: "admin_access_key_not_configured" }, 503);
+      if (!authorized("Bearer " + (request.headers.get("x-admin-key") ?? ""), env.ADMIN_ACCESS_KEY)) return json({ error: "unauthorized" }, 401);
       const requestedIdentity = request.headers.get("x-agent-identity") ?? "admin";
       if (requestedIdentity !== "admin" && requestedIdentity !== "oracle") {
         return json({ error: "unknown_agent_identity", supported_identities: ["admin", "oracle"] }, 400);
@@ -1429,8 +1442,7 @@ export default {
         return json({ error: "websocket_upgrade_required" }, 426);
       }
       const identity = url.searchParams.get("identity") ?? "admin";
-      if (identity === "admin" && !adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
-      if (identity !== "admin" && identity !== "oracle") {
+            if (identity !== "admin" && identity !== "oracle") {
         return json({ error: "unknown_agent_identity" }, 400);
       }
       const coordinator = env.VM_EXECUTION.get(env.VM_EXECUTION.idFromName(identity));
@@ -1466,9 +1478,8 @@ export default {
     if (snapshotIdentity) {
       const identity = snapshotIdentity.toLowerCase();
       const isAdmin = identity === "admin";
-      if (isAdmin && !adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
-      if (isAdmin && !env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
-      if (isAdmin && request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
+            if (isAdmin && !env.ADMIN_ACCESS_KEY) return json({ error: "admin_access_key_not_configured" }, 503);
+      if (isAdmin && !authorized("Bearer " + (request.headers.get("x-admin-key") ?? ""), env.ADMIN_ACCESS_KEY)) return json({ error: "unauthorized" }, 401);
 
       // Account snapshots accept either the one-time provisioning API key or a
       // short-lived login session bound to this exact account ID.
@@ -1495,7 +1506,7 @@ export default {
         if (!accountAuthorized) return json({ error: "unauthorized" }, 401);
       }
 
-      // Non-Admin baselines are managed with the provisioning token; the Admin baseline uses ADMIN_ACCESS_CODE.
+      // Non-Admin baselines are managed with the provisioning token; the Admin baseline uses ADMIN_ACCESS_KEY.
       if (identity === (env.VM_BASELINE_ID ?? "admin") && identity !== "admin") {
         const vmApiToken = await getVmApiToken(env);
         if (!vmApiToken) return json({ error: "vm_api_not_configured" }, 503);

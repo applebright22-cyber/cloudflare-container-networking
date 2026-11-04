@@ -45,8 +45,8 @@ test("the existing terminal surface routes regular-account commands to Oracle wi
   assert.ok(!dashboard.includes("if(data.enabled===true){\n      activateOracleTerminal();"), "an enabled account must not automatically replace the Tiny Core shell");
   assert.ok(dashboard.includes(":'/api/account/exec'"), "regular terminal commands use the authenticated Cloudflare endpoint");
   assert.ok(dashboard.includes("const endpoint=isAdmin?'/api/admin/oracle-exec':'/api/account/exec'"), "admin terminal commands use the existing admin Oracle endpoint");
-  assert.ok(dashboard.includes("headers['x-admin-code']=window.snapshotAdminCode"), "admin commands use the validated admin code");
-  assert.ok(dashboard.includes("window.snapshotIdentity==='admin'&&Boolean(window.snapshotAdminCode)"), "admin terminal switches only with admin credentials");
+  assert.ok(dashboard.includes("headers['x-admin-key']=window.snapshotAdminKey"), "admin commands use the validated admin access key");
+  assert.ok(dashboard.includes("window.snapshotIdentity==='admin'&&Boolean(window.snapshotAdminKey)"), "admin terminal switches only with admin credentials");
   assert.ok(dashboard.includes("session_token:window.snapshotAuthToken"), "the account session token accompanies each command");
   assert.ok(dashboard.includes("document.body.classList.add('oracle-terminal-mode')"), "regular account mode hides guest-shell input");
   assert.ok(dashboard.includes("if(oracleTerminalMode)return;"), "TinyCore screen mirroring does not overwrite Oracle output");
@@ -75,4 +75,16 @@ test("Oracle coordinator registers pending work before sending and leaves delive
   assert.notEqual(sendAt, -1);
   assert.ok(registerAt < sendAt, "fast Oracle responses must have a registered pending request");
   assert.ok(coordinator.includes("}, timeout + 5000);"), "coordinator leaves time for Oracle to return a timeout result");
+});
+
+test("Admin login uses a rotating alphanumeric key, removes the IP allowlist, and limits attempts", () => {
+  const registry = fs.readFileSync(new URL("../cloudflare/src/account-registry.ts", import.meta.url), "utf8");
+  assert.ok(index.includes("ADMIN_ACCESS_KEY?: string"), "the Worker reads the dedicated Admin key secret");
+  assert.ok(index.includes("/^[A-Za-z0-9]{15,128}$/"), "the configured and supplied key must be at least 15 alphanumeric characters");
+  assert.ok(index.includes("/admin/login-attempt"), "login attempts are persisted in the AccountRegistry Durable Object");
+  assert.ok(registry.includes("current.attempts >= 3"), "the fourth attempt is blocked");
+  assert.ok(registry.includes("15 * 60 * 1000"), "the attempt window expires after 15 minutes");
+  assert.ok(!index.includes("ADMIN_ALLOWED_IPS") && !index.includes("adminIpAllowed"), "Admin access no longer depends on an IP allowlist");
+  assert.ok(dashboard.includes("[A-Za-z0-9]{15,128}"), "the login form accepts the long alphanumeric key");
+  assert.ok(dashboard.includes("x-admin-key"), "subsequent Admin requests use the validated key header");
 });
