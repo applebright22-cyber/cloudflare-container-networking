@@ -172,9 +172,9 @@ export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
         method: "PATCH", headers: { "content-type": "application/json" },
         body: JSON.stringify({ status: "ready" }),
       });
-      const authReady = await auth.fetch("https://account-registry.internal/auth/status", {
+      const authReady = await auth.fetch("https://account-registry.internal/auth/status-by-account", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username: job.username, status: "ready" }),
+        body: JSON.stringify({ account_id: job.identity, status: "ready" }),
       });
       if (!accountReady.ok || !authReady.ok) throw new Error("account_ready_transition_failed");
 
@@ -207,9 +207,9 @@ export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
         method: "PATCH", headers: { "content-type": "application/json" },
         body: JSON.stringify({ status: "error", error: message }),
       });
-      await auth.fetch("https://account-registry.internal/auth/status", {
+      await auth.fetch("https://account-registry.internal/auth/status-by-account", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username: job.username, status: "error" }),
+        body: JSON.stringify({ account_id: job.identity, status: "error" }),
       });
       await this.writeProgress(job, "error", "failed", { error: message, snapshot_cloned: false });
       await this.ctx.storage.deleteAlarm();
