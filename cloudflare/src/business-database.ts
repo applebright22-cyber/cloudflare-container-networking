@@ -1,8 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
+import { InventoryLedger } from "./inventory-ledger";
 
 export interface BusinessDatabaseEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   BUSINESS_DATABASE: DurableObjectNamespace<BusinessDatabase>;
+  INVENTORY_LEDGER: DurableObjectNamespace<InventoryLedger>;
   PROJECT_STORAGE: R2Bucket;
   STOCKROOM_ORIGIN?: string;
   STOCKROOM_GATEWAY_TOKEN?: string;
@@ -263,5 +265,30 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
   if (!verified.ok) return json({ error: "unauthorized" }, 401);
   url.searchParams.delete("account_id");
   const internalPath = url.pathname.replace(/^\/api\/stockroom/, "") || "/";
-  return businessDatabaseFetch(env, accountId, internalPath + (url.search ? url.search : ""), request);
+  const response = await businessDatabaseFetch(env, accountId, internalPath + (url.search ? url.search : ""), request);
+  const shouldSync = response.ok && (
+    (internalPath === "/initialize" && request.method === "POST") ||
+    (internalPath === "/products" && ["POST", "PUT"].includes(request.method)) ||
+    (/^\/products\/[a-f0-9-]{36}$/.test(internalPath) && request.method === "DELETE")
+  );
+  if (shouldSync) {
+    try { await syncInventoryCatalog(env, accountId); } catch { /* Local Stockroom remains authoritative until sync succeeds. */ }
+  }
+  return response;
+}
+
+/** Publish a versioned catalog snapshot to the always-online inventory authority. */
+export async function syncInventoryCatalog(env: BusinessDatabaseEnv, accountId: string): Promise<void> {
+  const response = await businessDatabaseFetch(env, accountId, "products?status=active");
+  if (!response.ok) throw new Error("stockroom_catalog_unavailable");
+  const data = await response.json() as { products?: Array<{id:string;sku:string;name:string;price:number;quantity:number;status:string;updated_at:string}> };
+  const products = (data.products ?? []).map(p => ({
+    id: p.id, sku: p.sku, name: p.name, price_cents: Math.round(Number(p.price) * 100),
+    quantity: Number(p.quantity), status: p.status, updated_at: p.updated_at,
+  }));
+  const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
+  const synced = await ledger.fetch("https://inventory-ledger.internal/catalog/sync", {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ products }),
+  });
+  if (!synced.ok) throw new Error("inventory_catalog_sync_failed");
 }
