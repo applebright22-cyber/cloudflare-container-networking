@@ -209,7 +209,7 @@ export class AccountRegistry extends DurableObject {
       const body = await request.json().catch(() => null) as { username?: unknown; password?: unknown; account_id?: unknown } | null;
       const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
       const password = typeof body?.password === "string" ? body.password : "";
-      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 12 || password.length > 128 ||
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 8 || password.length > 128 ||
           typeof body?.account_id !== "string" || !validAccountId(body.account_id)) {
         return json({ error: "invalid_signup_fields" }, 400);
       }

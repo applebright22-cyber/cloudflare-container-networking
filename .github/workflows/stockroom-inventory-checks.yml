@@ -1,0 +1,40 @@
+name: Stockroom inventory checks
+
+on:
+  pull_request:
+    paths:
+      - "cloudflare/src/business-database.ts"
+      - "cloudflare/src/inventory-ledger.ts"
+      - "cloudflare/src/payments.ts"
+      - "cloudflare/src/index.ts"
+      - "wrangler.toml"
+      - "cloudflare/wrangler.toml"
+      - "cloudflare/wrangler.toml"
+      - "tinycore/stockroom/**"
+      - "public/studio.js"
+      - "public/vm.html"
+      - "tests/account-session.test.mjs"
+      - "cloudflare/src/account-registry.ts"
+      - "tests/stockroom-integration.test.mjs"
+      - "docs/INVENTORY_SYNC.md"
+      - ".github/workflows/stockroom-inventory-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stockroom-inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run Stockroom integration checks
+        run: node --test tests/stockroom-integration.test.mjs
+      - name: Compile TinyCore API
+        run: python -m py_compile tinycore/stockroom/stockroom.py

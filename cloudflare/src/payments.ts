@@ -1,7 +1,12 @@
+import { businessDatabaseFetch } from "./business-database";
+import { InventoryLedger } from "./inventory-ledger";
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
   BUSINESS_DATABASE: DurableObjectNamespace;
+  INVENTORY_LEDGER: DurableObjectNamespace<InventoryLedger>;
+  STOCKROOM_ORIGIN?: string;
+  STOCKROOM_GATEWAY_TOKEN?: string;
   PAYMENTS_ENCRYPTION_KEY?: string;
 }
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -20,17 +25,17 @@ async function authenticate(request: Request, env: PaymentEnv, accountId: string
   });
   return response.ok;
 }
-async function consumeInventory(env: PaymentEnv, checkout: { id: string; account_id: string; items?: unknown }): Promise<"deducted" | "not_applicable" | "needs_review"> {
-  if (!Array.isArray(checkout.items) || checkout.items.length === 0) return "not_applicable";
+async function commitInventory(env: PaymentEnv, checkout: { id: string; account_id: string }, paymentReference: string, paymentMethod: string): Promise<{ ok: boolean; order_id?: string }> {
   try {
-    const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(checkout.account_id));
-    const response = await database.fetch("https://business-database.internal/consume", {
+    const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(checkout.account_id));
+    const response = await ledger.fetch("https://inventory-ledger.internal/commit", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ checkout_id: checkout.id, items: checkout.items }),
+      body: JSON.stringify({ checkout_id: checkout.id, payment_reference: paymentReference, payment_method: paymentMethod }),
     });
-    return response.ok ? "deducted" : "needs_review";
+    const result = await response.json() as { order_id?: string };
+    return { ok: response.ok, order_id: result.order_id };
   } catch {
-    return "needs_review";
+    return { ok: false };
   }
 }
 async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
@@ -52,17 +57,34 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(mapping.account_id, "settings"));
     const credentials = await getPaypalCredentials(env, mapping.account_id);
     if (!settings?.paypal_enabled || !credentials) return json({ error: "merchant_paypal_not_configured" }, 409);
-    const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(mapping.account_id));
-    const catalogResponse = await businessDatabase.fetch("https://business-database.internal/products?status=active");
-    if (!catalogResponse.ok) return json({ error: "store_catalog_unavailable" }, 503);
-    const catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
-    const catalog = new Map<string, { name: string; price: number; quantity: number }>();
-    for (const product of catalogData.products ?? []) {
-      if (typeof product.id === "string" && Number.isFinite(product.price) && product.price > 0) {
-        catalog.set(product.id, { name: product.name, price: product.price, quantity: Number(product.quantity) || 0 });
+    const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(mapping.account_id));
+    let catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
+    let catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
+    let catalog = new Map<string, { name: string; price: number; quantity: number }>();
+    const loadCatalog = () => {
+      catalog = new Map();
+      for (const product of catalogData.products ?? []) {
+        if (typeof product.id === "string" && Number.isFinite(product.price) && product.price > 0) {
+          catalog.set(product.id, { name: product.name, price: product.price, quantity: Number(product.quantity) || 0 });
+        }
+      }
+    };
+    loadCatalog();
+    // First-time catalog bootstrap requires TinyCore to be online. Once synced,
+    // checkout reads only from this always-available ledger.
+    if (!catalog.size) {
+      const source = await businessDatabaseFetch(env, mapping.account_id, "products?status=active");
+      if (source.ok) {
+        const local = await source.json() as { products?: Array<{id:string;sku:string;name:string;price:number;quantity:number;status:string;updated_at:string}> };
+        const products = (local.products ?? []).map(p => ({ id:p.id,sku:p.sku,name:p.name,price_cents:Math.round(Number(p.price)*100),quantity:Number(p.quantity),status:p.status,updated_at:p.updated_at }));
+        await ledger.fetch("https://inventory-ledger.internal/catalog/sync", { method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({products}) });
+        catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
+        catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
+        loadCatalog();
       }
     }
-    if (!catalog.size) return json({ error: "store_catalog_empty" }, 409);
+    if (!catalogResponse.ok) return json({ error: "inventory_service_unavailable" }, 503);
+    if (!catalog.size) return json({ error: "store_catalog_empty_or_tinycore_offline" }, 409);
     const body = await request.json().catch(() => null) as { items?: unknown } | null;
     if (!Array.isArray(body?.items) || body.items.length < 1 || body.items.length > 20) return json({ error: "invalid_cart" }, 400);
     const quantities = new Map<string, number>();
@@ -84,9 +106,26 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     amount = Math.round(amount * 100) / 100;
     if (!Number.isFinite(amount) || amount <= 0 || amount > 9999999) return json({ error: "cart_total_invalid" }, 400);
     const id = crypto.randomUUID();
-    const record = { id, account_id: mapping.account_id, site_id: siteId, amount_usd: amount.toFixed(2), description: lineItems.map(x => x.quantity + " × " + x.name).join(", ").slice(0, 120), items: lineItems, status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
-    await env.PROJECT_STORAGE.put(keyFor(mapping.account_id, "checkout-" + id), JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
-    await env.PROJECT_STORAGE.put("payment-index/" + id + ".json", JSON.stringify({ account_id: mapping.account_id }), { httpMetadata: { contentType: "application/json" } });
+    const reservedResponse = await ledger.fetch("https://inventory-ledger.internal/reserve", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: id, items: Array.from(quantities, ([product_id, quantity]) => ({ product_id, quantity })), ttl_seconds: 1800 }),
+    });
+    const reserved = await reservedResponse.json() as { amount_cents?: number; expires_at?: string; items?: Array<{product_id:string;name:string;quantity:number;unit_amount_usd:string}> };
+    if (!reservedResponse.ok || !Array.isArray(reserved.items) || !Number.isSafeInteger(reserved.amount_cents)) return json({ error: "inventory_reservation_failed", detail: (reserved as any).error ?? "reservation_unavailable" }, 409);
+    amount = Number(reserved.amount_cents) / 100;
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 9999999) {
+      await ledger.fetch("https://inventory-ledger.internal/release", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({checkout_id:id})});
+      return json({error:"cart_total_invalid"},400);
+    }
+    const reservedLineItems = reserved.items.map(x => ({ product_id:x.product_id,name:x.name,quantity:x.quantity,unit_amount_usd:x.unit_amount_usd }));
+    const record = { id, account_id: mapping.account_id, site_id: siteId, amount_usd: amount.toFixed(2), description: reservedLineItems.map(x => x.quantity + " × " + x.name).join(", ").slice(0, 120), items: reservedLineItems, status: "pending", created_at: new Date().toISOString(), expires_at: reserved.expires_at ?? new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+    try {
+      await env.PROJECT_STORAGE.put(keyFor(mapping.account_id, "checkout-" + id), JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
+      await env.PROJECT_STORAGE.put("payment-index/" + id + ".json", JSON.stringify({ account_id: mapping.account_id }), { httpMetadata: { contentType: "application/json" } });
+    } catch (error) {
+      await ledger.fetch("https://inventory-ledger.internal/release", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({checkout_id:id})});
+      throw error;
+    }
     return json({ ok: true, checkout: record, url: new URL("/checkout.html?id=" + id, url.origin).toString() }, 201);
   }
   if (!url.pathname.startsWith("/api/payments/")) return null;
@@ -181,10 +220,11 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       if (!captured.ok) return json({ error: "paypal_capture_failed", paypal_status: captured.status }, 502);
       const capture = result.purchase_units?.[0]?.payments?.captures?.[0];
       if (result.status !== "COMPLETED" || capture?.status !== "COMPLETED" || capture.amount?.currency_code !== "USD" || Number(capture.amount.value) !== Number(page.amount_usd)) return json({ error: "paypal_payment_not_completed" }, 409);
-      const inventory_status = await consumeInventory(env, page);
-      const updated = { ...page, status: "paid", inventory_status, payment_method: "paypal", paypal_order_id: saved.order_id, paypal_capture_id: capture.id ?? null, paid_at: new Date().toISOString() };
+      const committed = await commitInventory(env, page, saved.order_id, "paypal");
+      const inventory_status = committed.ok ? "queued_for_tinycore_sync" : "needs_review";
+      const updated = { ...page, status: "paid", inventory_status, order_id: committed.order_id ?? null, payment_method: "paypal", paypal_order_id: saved.order_id, paypal_capture_id: capture.id ?? null, paid_at: new Date().toISOString() };
       await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
-      return json({ ok: true, status: "paid", inventory_status, capture_id: capture.id ?? null });
+      return json({ ok: true, status: "paid", inventory_status, order_id: committed.order_id ?? null, capture_id: capture.id ?? null });
     }
     return json({ error: "method_not_allowed" }, 405);
   }
@@ -247,8 +287,9 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const expected = BigInt(Math.round(Number(page.amount_usd) * 1_000_000));
     const paid = (receipt.logs ?? []).some(log => log.address?.toLowerCase() === USDC_BASE.toLowerCase() && log.topics?.[0]?.toLowerCase() === TRANSFER_TOPIC && log.topics?.[2]?.toLowerCase() === recipientTopic && typeof log.data === "string" && BigInt(log.data) >= expected);
     if (!paid) return json({ error: "matching_usdc_transfer_not_found" }, 400);
-    const inventory_status = await consumeInventory(env, page);
-    const updated = { ...page, status: "paid", inventory_status, transaction_hash: hash, paid_at: new Date().toISOString(), network: "Base", token: "USDC" };
+    const committed = await commitInventory(env, page, hash, "usdc");
+    const inventory_status = committed.ok ? "queued_for_tinycore_sync" : "needs_review";
+    const updated = { ...page, status: "paid", inventory_status, order_id: committed.order_id ?? null, transaction_hash: hash, paid_at: new Date().toISOString(), network: "Base", token: "USDC" };
     await env.PROJECT_STORAGE.put(usedKey, JSON.stringify({ checkout_id: id, account_id: page.account_id }), { httpMetadata: { contentType: "application/json" } });
     await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
     return json({ ok: true, status: "paid", inventory_status, transaction_hash: hash });

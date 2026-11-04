@@ -136,6 +136,16 @@ async function initializeStockroomDatabase(){
   if(!response.ok)throw new Error(data.error||"Database initialization failed ("+response.status+")");
   if(status)status.textContent="DATABASE READY";
   if(message)message.textContent="Your account database is ready. Existing product records are preserved.";
+  // When TinyCore is reachable, apply the durable online order outbox before
+  // displaying stock so the local quantity reflects sales made while offline.
+  try {
+   const syncResponse=await fetch(stockroomUrl("/sync/orders"),{method:"POST",headers:authHeaders(),body:"{}"});
+   const syncData=await syncResponse.json().catch(()=>({}));
+   if(syncResponse.ok&&Number(syncData.synchronized)>0&&message)message.textContent=syncData.synchronized+" queued online order(s) synchronized into local Stockroom.";
+   else if(!syncResponse.ok&&message)message.textContent="Stockroom is ready. Pending online orders will retry when the TinyCore host is reachable.";
+  } catch {
+   if(message)message.textContent="Stockroom is ready. Online order synchronization will retry when the host is reachable.";
+  }
   await loadStockroomProducts();
   return true;
  }catch(error){
@@ -156,6 +166,16 @@ async function loadStockroomProducts(){
   renderStockroomProducts(data);
  }catch(error){if(tbody)tbody.innerHTML='<tr><td colspan="8">'+escapeHtml(error.message)+'</td></tr>';const message=$("#stockroom-message");if(message)message.textContent="Product loading failed: "+error.message}
 }
+let editingStockroomProductId=null;
+function resetStockroomEditor(){
+ const form=$("#stockroom-product-form");if(form)form.reset();
+ $("#stockroom-quantity").value="0";$("#stockroom-price").value="0.00";$("#stockroom-cost").value="0.00";$("#stockroom-status").value="active";
+ editingStockroomProductId=null;
+ $("#stockroom-form-title").textContent="Add a product";
+ $("#stockroom-form-help").textContent="Create a product record. You can edit it later without leaving Stockroom.";
+ $("#stockroom-save").textContent="＋ Save product";
+ $("#stockroom-cancel-edit").hidden=true;
+}
 function renderStockroomProducts(data){
  const products=Array.isArray(data.products)?data.products:[];
  const summary=data.summary||{};
@@ -164,8 +184,15 @@ function renderStockroomProducts(data){
  if(units)units.textContent=Number(summary.units||0).toLocaleString();
  if(low)low.textContent=Number(summary.low_stock||0).toLocaleString();
  if(!tbody)return;
- if(!products.length){tbody.innerHTML='<tr><td colspan="8">No products yet. Add your first product above.</td></tr>';return}
- tbody.innerHTML=products.map(p=>'<tr><td><b>'+escapeHtml(p.name)+'</b><div class="muted">'+escapeHtml(p.description||"")+'</div></td><td>'+escapeHtml(p.sku)+'</td><td>'+escapeHtml(p.category||"—")+'</td><td>$'+Number(p.price||0).toFixed(2)+'</td><td>$'+Number(p.cost||0).toFixed(2)+'</td><td>'+Number(p.quantity||0).toLocaleString()+'</td><td>'+escapeHtml(p.status)+'</td><td><button type="button" class="button button-ghost" data-stockroom-edit="'+escapeHtml(p.id)+'">Edit</button> <button type="button" class="button button-ghost" data-stockroom-delete="'+escapeHtml(p.id)+'">Archive</button></td></tr>').join("");
+ if(!products.length){
+  tbody.innerHTML='<tr><td colspan="8" style="padding:28px;text-align:center"><strong>Your Stockroom is empty</strong><p class="muted">Add your first product above to start tracking SKUs, prices, and inventory. You can change or archive products at any time.</p><button type="button" class="button button-primary" data-stockroom-empty-add>＋ Add your first product</button></td></tr>';
+  return;
+ }
+ tbody.innerHTML=products.map(p=>{
+  const qty=Number(p.quantity||0),stock=qty===0?'<span class="status-chip" style="color:#ff9aa8">Out of stock</span>':qty<=5?'<span class="status-chip" style="color:#ffd18a">Low stock</span>':'<span class="status-chip" style="color:#76e8c5">In stock</span>';
+  const status=p.status==='draft'?'Draft':'Active';
+  return '<tr><td><b>'+escapeHtml(p.name)+'</b><div class="muted">'+escapeHtml(p.description||"")+'</div></td><td>'+escapeHtml(p.sku)+'</td><td>'+escapeHtml(p.category||"—")+'</td><td>$'+Number(p.price||0).toFixed(2)+'</td><td>$'+Number(p.cost||0).toFixed(2)+'</td><td>'+qty.toLocaleString()+'<div>'+stock+'</div></td><td>'+status+'</td><td><button type="button" class="button button-ghost" data-stockroom-edit="'+escapeHtml(p.id)+'">Edit</button> <button type="button" class="button button-ghost" data-stockroom-delete="'+escapeHtml(p.id)+'">Archive</button></td></tr>';
+ }).join("");
 }
 async function saveStockroomProduct(event){
  event.preventDefault();
@@ -179,36 +206,37 @@ async function saveStockroomProduct(event){
   image_url:$("#stockroom-image").value.trim(),external_url:$("#stockroom-external-url").value.trim(),
   description:$("#stockroom-description").value.trim(),status:$("#stockroom-status").value,variations
  };
- button.disabled=true;button.textContent="Saving…";
+ button.disabled=true;button.textContent=editingStockroomProductId?"Saving changes…":"Saving…";
  try{
-  const response=await fetch(stockroomUrl("/products"),{method:"POST",headers:authHeaders(),body:JSON.stringify(payload)});
+  const editing=Boolean(editingStockroomProductId);
+  const response=await fetch(stockroomUrl(editing?"/products/"+encodeURIComponent(editingStockroomProductId):"/products"),{method:editing?"PUT":"POST",headers:authHeaders(),body:JSON.stringify(payload)});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error==="sku_already_exists"?"That SKU is already in your Stockroom.":data.error||"Product could not be saved");
-  form.reset();$("#stockroom-quantity").value="0";$("#stockroom-price").value="0.00";$("#stockroom-cost").value="0.00";$("#stockroom-status").value="active";
-  if(message)message.textContent=payload.name+" was saved to your business database.";
-  await loadStockroomProducts();
+  if(message)message.textContent=payload.name+(editing?" was updated.":" was saved to your business database.");
+  resetStockroomEditor();await loadStockroomProducts();
  }catch(error){if(message)message.textContent="Save failed: "+error.message}
- finally{button.disabled=false;button.textContent="＋ Save product"}
+ finally{button.disabled=false;if(!editingStockroomProductId)button.textContent="＋ Save product";else button.textContent="Save changes"}
 }
 async function editStockroomProduct(productId){
- const response=await fetch(stockroomUrl("/products"),{headers:authHeaders()});
- const data=await response.json().catch(()=>({}));
- const product=(data.products||[]).find(item=>item.id===productId);
- if(!product)return;
- const name=prompt("Product name:",product.name);if(name===null)return;
- const sku=prompt("SKU:",product.sku);if(sku===null)return;
- const category=prompt("Category:",product.category||"");if(category===null)return;
- const price=prompt("Selling price ($):",String(product.price));if(price===null)return;
- const cost=prompt("Cost price ($):",String(product.cost));if(cost===null)return;
- const quantity=prompt("Quantity in stock:",String(product.quantity));if(quantity===null)return;
- const status=prompt("Status (active or draft):",product.status);if(status===null)return;
- const payload={...product,name,sku,category,price:Number(price),cost:Number(cost),quantity:Number(quantity),status:status==="draft"?"draft":"active"};
  try{
-  const saved=await fetch(stockroomUrl("/products/"+encodeURIComponent(productId)),{method:"PUT",headers:authHeaders(),body:JSON.stringify(payload)});
-  const result=await saved.json().catch(()=>({}));
-  if(!saved.ok)throw new Error(result.error==="sku_already_exists"?"That SKU is already in use.":result.error||"Update failed");
-  $("#stockroom-message").textContent="Product updated.";await loadStockroomProducts();
- }catch(error){$("#stockroom-message").textContent="Update failed: "+error.message}
+  const response=await fetch(stockroomUrl("/products"),{headers:authHeaders()});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||"Could not load product");
+  const product=(data.products||[]).find(item=>item.id===productId);
+  if(!product)throw new Error("Product was not found.");
+  editingStockroomProductId=productId;
+  $("#stockroom-name").value=product.name||"";$("#stockroom-sku").value=product.sku||"";
+  $("#stockroom-category").value=product.category||"";$("#stockroom-quantity").value=product.quantity??0;
+  $("#stockroom-price").value=Number(product.price||0).toFixed(2);$("#stockroom-cost").value=Number(product.cost||0).toFixed(2);
+  $("#stockroom-image").value=product.image_url||"";$("#stockroom-external-url").value=product.external_url||"";
+  $("#stockroom-description").value=product.description||"";$("#stockroom-variations").value=JSON.stringify(product.variations||[],null,2);
+  $("#stockroom-status").value=product.status==="draft"?"draft":"active";
+  $("#stockroom-form-title").textContent="Edit product";
+  $("#stockroom-form-help").textContent="Update the fields below, then save your changes.";
+  $("#stockroom-save").textContent="Save changes";$("#stockroom-cancel-edit").hidden=false;
+  $("#stockroom-product-form").scrollIntoView({behavior:"smooth",block:"center"});
+  $("#stockroom-name").focus();
+ }catch(error){$("#stockroom-message").textContent="Could not open product: "+error.message}
 }
 async function archiveStockroomProduct(productId){
  if(!confirm("Archive this product? It will no longer appear in the active product list."))return;
@@ -374,7 +402,7 @@ async function publishProject(){
  finally{button.disabled=false}
 }
 
-function bind(){ $('#publish-site')?.addEventListener('click',publishProject);$('#publish-project')?.addEventListener('change',()=>{const p=projects.find(x=>x.id===$('#publish-project').value);updatePublishedAddress(p);updateViewWebsite(p)});$('#view-website')?.addEventListener('click',e=>{const project=projects.find(p=>p.id===$('#publish-project')?.value);const url=safePublishedUrl(project&&project.publishedUrl);if(!url){e.preventDefault();toast('Publish this project before opening its website.');return}e.currentTarget.href=url;});$('#payment-paypal-connect')?.addEventListener('click',connectPaypal);$('#payment-paypal-mode')?.addEventListener('change',loadPaymentSettings);$('#payment-paypal-disconnect')?.addEventListener('click',disconnectPaypal);$('#payment-save-crypto')?.addEventListener('click',saveCryptoSettings);$$('[data-view]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.view)));$$('[data-go]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.go)));['#new-project','#new-project-top','#empty-create','#projects-create','#projects-empty-create'].forEach(s=>$(s)?.addEventListener('click',()=>openModal()));$('#modal-close').addEventListener('click',closeModal);$('#new-modal').addEventListener('click',e=>{if(e.target.id==='new-modal')closeModal()});$('#new-form').addEventListener('submit',e=>{e.preventDefault();const name=$('#project-name').value.trim();if(name)createProject(name,$('#project-kind').value)});document.addEventListener('click',e=>{const section=e.target.closest('[data-select-section]');if(section){selectedSectionId=section.dataset.selectSection;renderSectionList();syncPreview();return}const edit=e.target.closest('[data-edit]');if(edit){activeId=edit.dataset.edit;openView('editor');return}const duplicate=e.target.closest('[data-duplicate]');if(duplicate){duplicateProject(duplicate.dataset.duplicate);return}const remove=e.target.closest('[data-delete]');if(remove)deleteProject(remove.dataset.delete)});$$('[data-template]').forEach(b=>b.addEventListener('click',()=>{const kind=b.dataset.template;createProject(kind+' Website',kind)}));$('#stockroom-product-form')?.addEventListener('submit',saveStockroomProduct);$('#stockroom-refresh')?.addEventListener('click',initializeStockroomDatabase);$('#stockroom-search')?.addEventListener('input',()=>loadStockroomProducts());$('#stockroom-products')?.addEventListener('click',e=>{const edit=e.target.closest('[data-stockroom-edit]');if(edit)void editStockroomProduct(edit.dataset.stockroomEdit);const remove=e.target.closest('[data-stockroom-delete]');if(remove)void archiveStockroomProduct(remove.dataset.stockroomDelete)});$('#editor-project').addEventListener('change',e=>{activeId=e.target.value;loadEditor()});['#site-title','#site-description','#site-button','#site-color','#site-bg'].forEach(s=>$(s).addEventListener('input',syncPreview));$('#save-project').addEventListener('click',saveEditor);$('#download-site').addEventListener('click',download);$$('[data-add-section]').forEach(b=>b.addEventListener('click',()=>{addSection(b.dataset.addSection);toast('Section added. Customize it and save your page.')}));$('#section-title').addEventListener('input',syncPreview);$('#section-body').addEventListener('input',syncPreview);$('#remove-section').addEventListener('click',()=>{const p=activeProject();if(!p)return;p.sections=(p.sections||[]).filter(x=>x.id!==selectedSectionId);selectedSectionId=p.sections[0]?.id||null;renderSectionList();syncPreview()});$$('[data-device]').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.device==='desktop'?'true':'false');b.addEventListener('click',()=>{$$('[data-device]').forEach(x=>{const active=x===b;x.classList.toggle('active',active);x.setAttribute('aria-pressed',active?'true':'false')});const mobile=b.dataset.device==='mobile';$('#canvas-wrap').classList.toggle('mobile-preview',mobile);const frame=$('#site-canvas');if(frame){frame.style.width=mobile?'min(375px, 100%)':'100%';frame.title=mobile?'Mobile website preview (375px viewport)':'Desktop website preview'};})});$('#workspace-name').addEventListener('change',e=>{try{localStorage.setItem('vampiresquid-workspace-name',e.target.value)}catch{}});$('#logout')?.addEventListener('click',()=>{try{if(sessionToken&&accountId!=='guest')fetch('/api/auth/logout',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken}),keepalive:true}).catch(()=>{})}catch{}try{['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}location.replace('/vm.html?logged_out=1')});$('#delete-account')?.addEventListener('click',async()=>{if(!sessionToken||!accountId||accountId==='guest'){toast('Sign in to a regular account before deleting it.');return}const confirmation=prompt('This permanently deletes your account, projects, and saved VM. Type DELETE to continue.');if(confirmation!=='DELETE')return;const button=$('#delete-account');button.disabled=true;button.textContent='Deleting account…';try{const response=await fetch('/api/account/delete',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error((data.error||'Account deletion failed')+(Array.isArray(data.failures)?': '+data.failures.join(', '):''));try{localStorage.removeItem(KEY);localStorage.removeItem(DELETED_KEY);['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}alert('Your VampireSquid account and account data have been deleted.');location.assign('/vm.html')}catch(error){toast('Could not delete account: '+error.message);button.disabled=false;button.textContent='Delete my account'}})}
+function bind(){ $('#publish-site')?.addEventListener('click',publishProject);$('#publish-project')?.addEventListener('change',()=>{const p=projects.find(x=>x.id===$('#publish-project').value);updatePublishedAddress(p);updateViewWebsite(p)});$('#view-website')?.addEventListener('click',e=>{const project=projects.find(p=>p.id===$('#publish-project')?.value);const url=safePublishedUrl(project&&project.publishedUrl);if(!url){e.preventDefault();toast('Publish this project before opening its website.');return}e.currentTarget.href=url;});$('#payment-paypal-connect')?.addEventListener('click',connectPaypal);$('#payment-paypal-mode')?.addEventListener('change',loadPaymentSettings);$('#payment-paypal-disconnect')?.addEventListener('click',disconnectPaypal);$('#payment-save-crypto')?.addEventListener('click',saveCryptoSettings);$$('[data-view]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.view)));$$('[data-go]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.go)));['#new-project','#new-project-top','#empty-create','#projects-create','#projects-empty-create'].forEach(s=>$(s)?.addEventListener('click',()=>openModal()));$('#modal-close').addEventListener('click',closeModal);$('#new-modal').addEventListener('click',e=>{if(e.target.id==='new-modal')closeModal()});$('#new-form').addEventListener('submit',e=>{e.preventDefault();const name=$('#project-name').value.trim();if(name)createProject(name,$('#project-kind').value)});document.addEventListener('click',e=>{const section=e.target.closest('[data-select-section]');if(section){selectedSectionId=section.dataset.selectSection;renderSectionList();syncPreview();return}const edit=e.target.closest('[data-edit]');if(edit){activeId=edit.dataset.edit;openView('editor');return}const duplicate=e.target.closest('[data-duplicate]');if(duplicate){duplicateProject(duplicate.dataset.duplicate);return}const remove=e.target.closest('[data-delete]');if(remove)deleteProject(remove.dataset.delete)});$$('[data-template]').forEach(b=>b.addEventListener('click',()=>{const kind=b.dataset.template;createProject(kind+' Website',kind)}));$('#stockroom-product-form')?.addEventListener('submit',saveStockroomProduct);$('#stockroom-cancel-edit')?.addEventListener('click',resetStockroomEditor);$('#stockroom-refresh')?.addEventListener('click',initializeStockroomDatabase);$('#stockroom-search')?.addEventListener('input',()=>loadStockroomProducts());$('#stockroom-products')?.addEventListener('click',e=>{if(e.target.closest('[data-stockroom-empty-add]')){$('#stockroom-name').focus();$('#stockroom-product-form').scrollIntoView({behavior:'smooth',block:'center'});return}const edit=e.target.closest('[data-stockroom-edit]');if(edit)void editStockroomProduct(edit.dataset.stockroomEdit);const remove=e.target.closest('[data-stockroom-delete]');if(remove)void archiveStockroomProduct(remove.dataset.stockroomDelete)});$('#editor-project').addEventListener('change',e=>{activeId=e.target.value;loadEditor()});['#site-title','#site-description','#site-button','#site-color','#site-bg'].forEach(s=>$(s).addEventListener('input',syncPreview));$('#save-project').addEventListener('click',saveEditor);$('#download-site').addEventListener('click',download);$$('[data-add-section]').forEach(b=>b.addEventListener('click',()=>{addSection(b.dataset.addSection);toast('Section added. Customize it and save your page.')}));$('#section-title').addEventListener('input',syncPreview);$('#section-body').addEventListener('input',syncPreview);$('#remove-section').addEventListener('click',()=>{const p=activeProject();if(!p)return;p.sections=(p.sections||[]).filter(x=>x.id!==selectedSectionId);selectedSectionId=p.sections[0]?.id||null;renderSectionList();syncPreview()});$$('[data-device]').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.device==='desktop'?'true':'false');b.addEventListener('click',()=>{$$('[data-device]').forEach(x=>{const active=x===b;x.classList.toggle('active',active);x.setAttribute('aria-pressed',active?'true':'false')});const mobile=b.dataset.device==='mobile';$('#canvas-wrap').classList.toggle('mobile-preview',mobile);const frame=$('#site-canvas');if(frame){frame.style.width=mobile?'min(375px, 100%)':'100%';frame.title=mobile?'Mobile website preview (375px viewport)':'Desktop website preview'};})});$('#workspace-name').addEventListener('change',e=>{try{localStorage.setItem('vampiresquid-workspace-name',e.target.value)}catch{}});$('#logout')?.addEventListener('click',()=>{try{if(sessionToken&&accountId!=='guest')fetch('/api/auth/logout',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken}),keepalive:true}).catch(()=>{})}catch{}try{['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}location.replace('/vm.html?logged_out=1')});$('#delete-account')?.addEventListener('click',async()=>{if(!sessionToken||!accountId||accountId==='guest'){toast('Sign in to a regular account before deleting it.');return}const confirmation=prompt('This permanently deletes your account, projects, and saved VM. Type DELETE to continue.');if(confirmation!=='DELETE')return;const button=$('#delete-account');button.disabled=true;button.textContent='Deleting account…';try{const response=await fetch('/api/account/delete',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error((data.error||'Account deletion failed')+(Array.isArray(data.failures)?': '+data.failures.join(', '):''));try{localStorage.removeItem(KEY);localStorage.removeItem(DELETED_KEY);['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}alert('Your VampireSquid account and account data have been deleted.');location.assign('/vm.html')}catch(error){toast('Could not delete account: '+error.message);button.disabled=false;button.textContent='Delete my account'}})}
 bind();renderProjects();
 
 if(!accountId||accountId==='guest'||!sessionToken){const label=$('#session-user');if(label)label.textContent='Not signed in';toast('Preview mode: log in to your account before using account-connected features.');}

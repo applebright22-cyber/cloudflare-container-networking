@@ -9,8 +9,9 @@ import { AccountProvisioner } from "./account-provisioner";
 import { WispRelay } from "./wisp-relay";
 import { handleProjectStorageRequest } from "./project-storage";
 import { handlePayments } from "./payments";
-import { BusinessDatabase, handleBusinessDatabaseRequest } from "./business-database";
-export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay, BusinessDatabase };
+import { BusinessDatabase, businessDatabaseFetch, handleBusinessDatabaseRequest } from "./business-database";
+import { InventoryLedger } from "./inventory-ledger";
+export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay, BusinessDatabase, InventoryLedger };
 
 export interface Env {
   TUNNEL_HUB: DurableObjectNamespace<TunnelHub>;
@@ -20,6 +21,7 @@ export interface Env {
   ACCOUNT_REGISTRY: DurableObjectNamespace<AccountRegistry>;
   ACCOUNT_PROVISIONER: DurableObjectNamespace<AccountProvisioner>;
   BUSINESS_DATABASE: DurableObjectNamespace<BusinessDatabase>;
+  INVENTORY_LEDGER: DurableObjectNamespace<InventoryLedger>;
   WISP_RELAY: DurableObjectNamespace<WispRelay>;
   VM_BASELINE_ID?: string;
   ADMIN_ACCESS_CODE?: string;
@@ -30,6 +32,8 @@ export interface Env {
   TUNNEL_TOKEN: string;
   CLIENT_TOKEN: string;
   ORACLE_ACCOUNT_EXEC_ENABLED?: string;
+  STOCKROOM_ORIGIN?: string;
+  STOCKROOM_GATEWAY_TOKEN?: string;
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -508,8 +512,8 @@ export default {
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
       const password = typeof body.password === "string" ? body.password : "";
-      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 12 || password.length > 128) {
-        return json({ error: "username_must_be_2_to_32_chars_and_password_12_to_128_chars" }, 400);
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 8 || password.length > 128) {
+        return json({ error: "username_must_be_2_to_32_chars_and_password_8_to_128_chars" }, 400);
       }
 
       const baselineId = env.VM_BASELINE_ID ?? "admin";
@@ -582,8 +586,7 @@ export default {
 
       // Provision the account's isolated SQLite business database during signup.
       // Schema creation is idempotent; existing business records are never overwritten.
-      const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
-      const databaseReady = await businessDatabase.fetch("https://business-database.internal/initialize", { method: "POST" });
+      const databaseReady = await businessDatabaseFetch(env, accountId, "initialize", { method: "POST" });
       if (!databaseReady.ok) {
         await accountRegistry.fetch("https://account-registry.internal/account/" + accountId, {
           method: "PATCH", headers: { "content-type": "application/json" },
@@ -744,8 +747,7 @@ export default {
       }).catch(() => new Response("account_data_purge_failed", { status: 500 }));
       if (!accountData.ok) failures.push("account_registry");
 
-      const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
-      const businessDatabasePurge = await businessDatabase.fetch("https://business-database.internal/purge", { method: "POST" })
+      const businessDatabasePurge = await businessDatabaseFetch(env, accountId, "purge", { method: "POST" })
         .catch(() => new Response("business_database_purge_failed", { status: 500 }));
       if (!businessDatabasePurge.ok) failures.push("business_database");
 
