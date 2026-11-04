@@ -703,6 +703,70 @@ export default {
       return json(resultBody, result.status);
     }
 
+    // Claim a pre-created merchant account using the one-time invitation token.
+    // The merchant chooses their own credentials; the ambassador never receives them.
+    if (url.pathname === "/api/auth/claim-invitation" && request.method === "POST") {
+      let body: { username?: unknown; password?: unknown; invite_token?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
+      const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      const inviteToken = typeof body.invite_token === "string" ? body.invite_token : "";
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 8 || password.length > 128 ||
+          !/^[a-f0-9]{64}$/.test(inviteToken)) return json({ error: "invalid_merchant_claim_fields" }, 400);
+      const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+      const rateLimit = await authRegistry.fetch("https://account-registry.internal/auth/rate-limit", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ip: request.headers.get("cf-connecting-ip") ?? "unknown", action: "signup" }),
+      });
+      if (!rateLimit.ok) return json(await rateLimit.json(), rateLimit.status);
+      const lookup = await authRegistry.fetch("https://account-registry.internal/merchant-invite/lookup", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: inviteToken }),
+      });
+      if (!lookup.ok) return json({ error: "invitation_invalid_or_expired" }, 404);
+      const invitation = await lookup.json() as { account_id?: unknown; deal_id?: unknown };
+      const accountId = typeof invitation.account_id === "string" ? invitation.account_id : "";
+      if (!/^acct-[a-f0-9-]{36}$/.test(accountId)) return json({ error: "invitation_account_invalid" }, 409);
+      const reserved = await authRegistry.fetch("https://account-registry.internal/merchant-invite/reserve", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: inviteToken, account_id: accountId }),
+      });
+      if (!reserved.ok) return json({ error: "invitation_already_claimed_or_in_use" }, 409);
+      const createdUser = await authRegistry.fetch("https://account-registry.internal/auth/signup", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username, password, account_id: accountId }),
+      });
+      if (!createdUser.ok) return json(await createdUser.json().catch(() => ({ error: "merchant_login_creation_failed" })), createdUser.status);
+      const jobObject = await env.VM_SNAPSHOTS.get("runtime-jobs/" + accountId + ".json");
+      const job = jobObject ? await jobObject.json().catch(() => null) as Record<string, unknown> | null : null;
+      const isComplete = job?.status === "complete";
+      if (isComplete) {
+        await authRegistry.fetch("https://account-registry.internal/auth/status", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, status: "ready" }),
+        });
+      }
+      const sessionResponse = await authRegistry.fetch(
+        "https://account-registry.internal/" + (isComplete ? "auth/login" : "auth/provisioning-session"),
+        { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, password }) },
+      );
+      if (!sessionResponse.ok) return json({ error: "merchant_claim_session_failed" }, 502);
+      const linked = await authRegistry.fetch("https://account-registry.internal/merchant-invite/complete", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: inviteToken, account_id: accountId, username }),
+      });
+      if (!linked.ok) return json({ error: "merchant_login_created_but_invitation_link_failed" }, 502);
+      const session = await sessionResponse.json() as { account_id: string; session_token: string; expires_at: string };
+      const identityRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName(accountId));
+      const identityResponse = await identityRegistry.fetch("https://account-registry.internal/network/identity/" + accountId);
+      const identity = identityResponse.ok ? await identityResponse.json() as { virtual_ip?: string; virtual_mac?: string } : {};
+      return json({ ...session, username, status: isComplete ? "complete" : "provisioning",
+        snapshot_identity: accountId, virtual_ip: identity.virtual_ip, virtual_mac: identity.virtual_mac,
+        snapshot_cloned: isComplete, baseline_id: env.VM_BASELINE_ID ?? "admin",
+        progress_endpoint: "/api/auth/registration-status" }, 202);
+    }
+
     // Signup clones the verified Admin baseline; an ambassador invitation is
     // reserved for this new account and linked only after provisioning succeeds.
     if (url.pathname === "/api/auth/signup" && request.method === "POST") {
