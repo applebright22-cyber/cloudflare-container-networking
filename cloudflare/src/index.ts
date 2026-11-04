@@ -745,8 +745,7 @@ export default {
       }).catch(() => new Response("account_data_purge_failed", { status: 500 }));
       if (!accountData.ok) failures.push("account_registry");
 
-      const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
-      const businessDatabasePurge = await businessDatabase.fetch("https://business-database.internal/purge", { method: "POST" })
+      const businessDatabasePurge = await businessDatabaseFetch(env, accountId, "purge", { method: "POST" })
         .catch(() => new Response("business_database_purge_failed", { status: 500 }));
       if (!businessDatabasePurge.ok) failures.push("business_database");
 
