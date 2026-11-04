@@ -232,6 +232,56 @@ export class AccountRegistry extends DurableObject {
       return json({ ok: true, ambassador_id: session.ambassador_id, username: session.username });
     }
 
+    // Ambassador deal records live in the shared auth-users object but use a
+    // completely separate keyspace and are always scoped to the authenticated ambassador.
+    if (url.pathname === "/ambassador/deals" && (request.method === "GET" || request.method === "POST")) {
+      const body = request.method === "POST"
+        ? await request.json().catch(() => null) as Record<string, unknown> | null
+        : null;
+      const ambassadorId = request.method === "GET"
+        ? url.searchParams.get("ambassador_id") ?? ""
+        : (typeof body?.ambassador_id === "string" ? body.ambassador_id : "");
+      const token = request.method === "GET"
+        ? url.searchParams.get("token") ?? ""
+        : (typeof body?.token === "string" ? body.token : "");
+      if (!/^amb-[a-f0-9-]{36}$/.test(ambassadorId) || !/^[a-f0-9]{64}$/.test(token)) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const tokenHash = await this.sha256(token);
+      const session = await this.ctx.storage.get<{ ambassador_id: string; expires_at: number }>("ambassador-session:" + tokenHash);
+      if (!session || session.ambassador_id !== ambassadorId || session.expires_at <= Date.now()) {
+        if (session) await this.ctx.storage.delete("ambassador-session:" + tokenHash);
+        return json({ error: "unauthorized" }, 401);
+      }
+      const prefix = "ambassador-deal:" + ambassadorId + ":";
+      if (request.method === "GET") {
+        const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix, limit: 500 });
+        const deals = Array.from(page.values()).sort((a, b) =>
+          String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+        return json({ ok: true, deals });
+      }
+      const businessName = typeof body?.business_name === "string" ? body.business_name.trim() : "";
+      const contactName = typeof body?.contact_name === "string" ? body.contact_name.trim() : "";
+      const contactEmail = typeof body?.contact_email === "string" ? body.contact_email.trim().toLowerCase() : "";
+      const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
+      const notes = typeof body?.notes === "string" ? body.notes.trim() : "";
+      if (businessName.length < 2 || businessName.length > 120 ||
+          contactName.length > 120 || contactEmail.length > 254 ||
+          (contactEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(contactEmail)) ||
+          phone.length > 40 || notes.length > 2000) {
+        return json({ error: "invalid_deal_fields" }, 400);
+      }
+      const dealId = "deal-" + crypto.randomUUID();
+      const now = new Date().toISOString();
+      const deal = {
+        deal_id: dealId, ambassador_id: ambassadorId, business_name: businessName,
+        contact_name: contactName, contact_email: contactEmail, phone, notes,
+        account_id: null, status: "prospect", created_at: now, updated_at: now,
+      };
+      await this.ctx.storage.put(prefix + dealId, deal);
+      return json({ ok: true, deal }, 201);
+    }
+
     if (url.pathname === "/auth/rate-limit" && request.method === "POST") {
       const body = await request.json().catch(() => null) as { ip?: unknown; action?: unknown } | null;
       if (typeof body?.ip !== "string" || body.ip.length < 1 || body.ip.length > 80 ||
