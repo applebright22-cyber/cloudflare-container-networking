@@ -1004,7 +1004,7 @@ async function waitForRegistration(data){
   }finally{if(createButton)createButton.disabled=false;loginButton.disabled=false;}
 }
 access.addEventListener('change',()=>{creating=false;message.textContent='';updateFields()});
-createButton.addEventListener('click',()=>{
+createButton?.addEventListener('click',()=>{
   creating=!creating;
   message.textContent=creating?'Create a server account. Use at least 8 characters for the password.':'';
   updateFields();
@@ -1016,8 +1016,15 @@ form.addEventListener('submit',async function(event){
     if(!/^[0-9]{5}$/.test(adminCode)){message.textContent='Enter the five-digit admin code.';return}
     message.textContent='Checking admin code…';
     try{
-      const response=await fetch('/api/admin/access',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:adminCode})});
-      if(!response.ok)throw new Error('That admin code was not accepted.');
+      const response=await fetch('/api/admin/access',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:adminCode}),cache:'no-store'});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok){
+        const reason=result.error==='admin_ingress_ip_denied'?'This connection IP is not on ADMIN_ALLOWED_IPS.':
+          result.error==='admin_access_not_configured'?'ADMIN_ACCESS_CODE is not available to the deployed Worker.':
+          result.error==='invalid_admin_code'?'The five-digit code does not match ADMIN_ACCESS_CODE.':
+          (result.error||('HTTP '+response.status));
+        throw new Error('Admin login failed: '+reason);
+      }
       window.snapshotAdminCode=adminCode;
       adminAccountsPanel.hidden=false;void loadAdminAccounts();
     }catch(error){message.textContent=error.message||'Admin access check failed.';return}
