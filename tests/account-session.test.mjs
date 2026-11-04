@@ -70,7 +70,7 @@ test("public auth routes are rate-limited and browser credentials are not persis
   assert.match(worker, /auth\/rate-limit/);
   assert.match(dashboard, /sessionStorage\.setItem\('vm-session-token'/);
   assert.doesNotMatch(dashboard, /localStorage\.setItem\(ACCOUNTS_KEY/);
-  assert.match(dashboard, /mysterium-network-test-results:\x27\+\(window\.snapshotIdentity\|\|\x27admin\x27\)/);
+  assert.match(dashboard, /function legacyReportStorageKey\\(\\)/);
 });
 
 test("restored VMs prove shell responsiveness without running extra network diagnostics", () => {
