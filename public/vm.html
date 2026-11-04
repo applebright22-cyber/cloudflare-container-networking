@@ -99,7 +99,7 @@ body.oracle-terminal-mode #myst-log{height:calc(100vh - 310px);min-height:300px;
     <select id="access-type"><option value="regular">Regular user</option><option value="admin">Admin</option></select>
     <input id="username" type="text" minlength="2" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,31}" title="2–32 characters. Start with a letter or number; use letters, numbers, underscores, or hyphens." autocomplete="username" placeholder="Username (2–32 characters)" required>
     <input id="user-password" type="password" minlength="8" maxlength="128" autocomplete="current-password" placeholder="Password (at least 8 characters)" required>
-    <input id="admin-code" type="password" inputmode="text" pattern="[A-Za-z0-9]{15,128}" minlength="15" maxlength="128" autocomplete="off" placeholder="Admin access key (15+ letters/numbers)" hidden>
+    <input id="admin-key" type="password" inputmode="text" pattern="[A-Za-z0-9]{15,128}" minlength="15" maxlength="128" autocomplete="off" placeholder="Admin access key (15+ letters/numbers)" hidden>
     <button id="open-vm" type="submit">Log in</button><a href="/signup.html" style="display:inline-block;margin-top:12px;color:#8de8ff">Create a business account</a><span id="login-message" role="status" aria-live="polite"></span>
   </form>
 </section>
@@ -917,7 +917,7 @@ keyCopy.addEventListener('click',async()=>{
 });
 keyHide.addEventListener('click',()=>{clearDisplayedApiKey();keyMessage.textContent='Key hidden from this page.';});
 const panel=document.getElementById('login-panel'),form=document.getElementById('login-form'),access=document.getElementById('access-type');
-const adminKey=document.getElementById('admin-code'),username=document.getElementById('username'),password=document.getElementById('user-password');
+const adminKey=document.getElementById('admin-key'),username=document.getElementById('username'),password=document.getElementById('user-password');
 const message=document.getElementById('login-message'),createButton=document.getElementById('create-account'),loginButton=document.getElementById('open-vm');
 const adminAccountsPanel=document.getElementById('admin-accounts'),adminAccountList=document.getElementById('admin-account-list'),adminAccountCount=document.getElementById('admin-account-count'),adminAccountsRefresh=document.getElementById('admin-accounts-refresh');
 async function loadAdminAccounts(){
