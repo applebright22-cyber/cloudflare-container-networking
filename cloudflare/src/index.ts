@@ -746,11 +746,18 @@ export default {
           body: JSON.stringify({ username, status: "ready" }),
         });
       }
-      const sessionResponse = await authRegistry.fetch(
+      let sessionResponse = await authRegistry.fetch(
         "https://account-registry.internal/" + (isComplete ? "auth/login" : "auth/provisioning-session"),
         { method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ username, password }) },
       );
+      // The provisioner may finish between the progress read and session issue.
+      if (!sessionResponse.ok && !isComplete) {
+        sessionResponse = await authRegistry.fetch("https://account-registry.internal/auth/login", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+      }
       if (!sessionResponse.ok) return json({ error: "merchant_claim_session_failed" }, 502);
       const linked = await authRegistry.fetch("https://account-registry.internal/merchant-invite/complete", {
         method: "POST", headers: { "content-type": "application/json" },
