@@ -947,7 +947,7 @@ function updateFields(){
   code.hidden=!admin;code.required=admin;
   username.hidden=admin;username.required=!admin;
   password.hidden=admin;password.required=!admin;
-  createButton.hidden=true;
+  if(createButton)createButton.hidden=true;
   loginButton.textContent=creating?'Create account':'Log in';
   password.autocomplete=creating?'new-password':'current-password';
   password.minLength=1;password.maxLength=128;
@@ -986,7 +986,7 @@ const progressLabels={
 async function waitForRegistration(data){
   beginAccountSession(data,false);
   panel.hidden=false;document.body.classList.remove('logged-in');
-  createButton.disabled=true;loginButton.disabled=true;
+  if(createButton)createButton.disabled=true;loginButton.disabled=true;
   try{
     while(true){
       const response=await fetch('/api/auth/registration-status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:data.account_id,session_token:data.session_token})});
@@ -1001,7 +1001,7 @@ async function waitForRegistration(data){
       if(progress.status==='error')throw new Error('VM initialization failed at '+(progress.step||'an unknown stage')+': '+(progress.error||progress.boot_error||'check failed'));
       await new Promise(resolve=>setTimeout(resolve,3000));
     }
-  }finally{createButton.disabled=false;loginButton.disabled=false;}
+  }finally{if(createButton)createButton.disabled=false;loginButton.disabled=false;}
 }
 access.addEventListener('change',()=>{creating=false;message.textContent='';updateFields()});
 createButton.addEventListener('click',()=>{
