@@ -25,6 +25,8 @@ export interface Env {
   WISP_RELAY: DurableObjectNamespace<WispRelay>;
   VM_BASELINE_ID?: string;
   ADMIN_ACCESS_CODE?: string;
+  // Comma- or newline-separated public client IPs. Configure/rotate in Cloudflare Worker Variables.
+  ADMIN_ALLOWED_IPS?: string;
   VM_SNAPSHOTS: R2Bucket;
   PROJECT_STORAGE: R2Bucket;
   PAYMENTS_ENCRYPTION_KEY?: string;
@@ -34,6 +36,14 @@ export interface Env {
   ORACLE_ACCOUNT_EXEC_ENABLED?: string;
   STOCKROOM_ORIGIN?: string;
   STOCKROOM_GATEWAY_TOKEN?: string;
+}
+
+function adminIpAllowed(request: Request, env: Env): boolean {
+  // CF-Connecting-IP is set by Cloudflare's edge; do not trust client-supplied X-Forwarded-For.
+  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  if (!clientIp || !env.ADMIN_ALLOWED_IPS) return false;
+  const allowed = env.ADMIN_ALLOWED_IPS.split(/[\\s,]+/).map((value) => value.trim()).filter(Boolean);
+  return allowed.includes(clientIp);
 }
 
 function authorized(header: string | null, expected: string | undefined): boolean {
@@ -110,6 +120,12 @@ async function getOrAllocateAccountNetworkIdentity(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // Fail closed for every admin API route unless the Cloudflare-managed IP allowlist matches.
+    // This is evaluated before admin credentials or destructive handlers are processed.
+    if (url.pathname.startsWith("/api/admin/") && !adminIpAllowed(request, env)) {
+      return json({ error: "admin_ingress_ip_denied" }, 403);
+    }
 
     // Read-only account ID inventory from the shared AccountRegistry Durable Object.
     // Uses the existing /api/admin/accounts path with GET; does not delete or modify accounts.
@@ -1098,6 +1114,7 @@ export default {
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       const accountId = typeof body.account_id === "string" ? body.account_id : "";
       if (accountId === "admin") {
+        if (!adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
         if (!env.ADMIN_ACCESS_CODE || typeof body.admin_code !== "string" || body.admin_code !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
       } else {
         if (!/^acct-[a-f0-9-]{36}$/.test(accountId) || typeof body.session_token !== "string") return json({ error: "unauthorized" }, 401);
@@ -1387,6 +1404,7 @@ export default {
 
     if (url.pathname === "/api/vm/agent-ticket") {
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      if (!adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
       if (!env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
       if (request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
       const requestedIdentity = request.headers.get("x-agent-identity") ?? "admin";
@@ -1411,6 +1429,7 @@ export default {
         return json({ error: "websocket_upgrade_required" }, 426);
       }
       const identity = url.searchParams.get("identity") ?? "admin";
+      if (identity === "admin" && !adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
       if (identity !== "admin" && identity !== "oracle") {
         return json({ error: "unknown_agent_identity" }, 400);
       }
@@ -1447,6 +1466,7 @@ export default {
     if (snapshotIdentity) {
       const identity = snapshotIdentity.toLowerCase();
       const isAdmin = identity === "admin";
+      if (isAdmin && !adminIpAllowed(request, env)) return json({ error: "admin_ingress_ip_denied" }, 403);
       if (isAdmin && !env.ADMIN_ACCESS_CODE) return json({ error: "admin_access_not_configured" }, 503);
       if (isAdmin && request.headers.get("x-admin-code") !== env.ADMIN_ACCESS_CODE) return json({ error: "unauthorized" }, 401);
 
