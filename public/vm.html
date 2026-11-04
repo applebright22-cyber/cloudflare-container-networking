@@ -696,7 +696,7 @@ window.snapshotVirtualMac=virtualMac;
 window.snapshotRouterIp=routerIp;
 let networkTicket='';
 try{
-  const ticketBody=networkIdentity==='admin'?{account_id:'admin',admin_code:window.snapshotAdminKey}:{account_id:networkIdentity,session_token:window.snapshotAuthToken};
+  const ticketBody=networkIdentity==='admin'?{account_id:'admin',admin_key:window.snapshotAdminKey}:{account_id:networkIdentity,session_token:window.snapshotAuthToken};
   const ticketResponse=await fetch(apiUrl+'/api/network/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(ticketBody)});
   const ticketData=await ticketResponse.json().catch(()=>({}));
   if(!ticketResponse.ok||typeof ticketData.ticket!=='string'||!/^[a-f0-9]{64}$/.test(ticketData.ticket))throw new Error(ticketData.error||'network_ticket_failed');
@@ -944,7 +944,7 @@ adminAccountsRefresh?.addEventListener('click',loadAdminAccounts);
 let creating=false;
 function updateFields(){
   const admin=access.value==='admin';
-  code.hidden=!admin;code.required=admin;
+  adminKey.hidden=!admin;adminKey.required=admin;
   username.hidden=admin;username.required=!admin;
   password.hidden=admin;password.required=!admin;
   if(createButton)createButton.hidden=true;
