@@ -706,7 +706,7 @@ export default {
     // Claim a pre-created merchant account using the one-time invitation token.
     // The merchant chooses their own credentials; the ambassador never receives them.
     if (url.pathname === "/api/auth/claim-invitation" && request.method === "POST") {
-      let body: { username?: unknown; password?: unknown; invite_token?: unknown };
+      let body: { username?: unknown; password?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "invalid_json" }, 400); }
       const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
       const password = typeof body.password === "string" ? body.password : "";
@@ -805,17 +805,6 @@ export default {
       if (!rateLimit.ok) return json(await rateLimit.json(), rateLimit.status);
 
       const accountId = "acct-" + crypto.randomUUID();
-      const inviteToken = typeof body.invite_token === "string" ? body.invite_token : "";
-      if (body.invite_token !== undefined && !/^[a-f0-9]{64}$/.test(inviteToken)) {
-        return json({ error: "invalid_merchant_invitation" }, 400);
-      }
-      if (inviteToken) {
-        const reserved = await authRegistry.fetch("https://account-registry.internal/merchant-invite/reserve", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ token: inviteToken, account_id: accountId }),
-        });
-        if (!reserved.ok) return json(await reserved.json().catch(() => ({ error: "invitation_reservation_failed" })), reserved.status);
-      }
       const generation = crypto.randomUUID();
       const keyBytes = crypto.getRandomValues(new Uint8Array(32));
       const accountApiKey = "acct_" + Array.from(keyBytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -897,13 +886,6 @@ export default {
         return json({ error: "snapshot_clone_queue_failed", detail: message.slice(0, 200) }, 502);
       }
 
-      if (inviteToken) {
-        const linked = await authRegistry.fetch("https://account-registry.internal/merchant-invite/complete", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ token: inviteToken, account_id: accountId, username }),
-        });
-        if (!linked.ok) return json({ error: "merchant_account_created_but_invitation_link_failed", account_id: accountId }, 502);
-      }
       const session = await signupSession.json() as { account_id: string; session_token: string; expires_at: string };
       return json({ ...session, username, status: "provisioning", snapshot_identity: accountId,
         virtual_ip: allocation.virtual_ip, virtual_mac: allocation.virtual_mac,
