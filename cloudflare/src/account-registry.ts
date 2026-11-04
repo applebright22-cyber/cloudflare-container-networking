@@ -183,6 +183,55 @@ export class AccountRegistry extends DurableObject {
       }, storageCleared ? 200 : 500);
     }
 
+    // Ambassador identities and sessions are stored separately from merchant auth.
+    // They deliberately use a different ID namespace and cannot pass merchant session verification.
+    if (url.pathname === "/ambassador/signup" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { username?: unknown; password?: unknown } | null;
+      const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body?.password === "string" ? body.password : "";
+      if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) || password.length < 8 || password.length > 128) {
+        return json({ error: "invalid_signup_fields" }, 400);
+      }
+      const key = "ambassador-user:" + username;
+      if (await this.ctx.storage.get(key)) return json({ error: "username_unavailable" }, 409);
+      const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+      const salt = Array.from(saltBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      const passwordHash = await this.passwordHash(password, salt);
+      const ambassadorId = "amb-" + crypto.randomUUID();
+      await this.ctx.storage.put(key, { username, ambassador_id: ambassadorId, salt, password_hash: passwordHash, created_at: new Date().toISOString() });
+      return json({ ok: true, ambassador_id: ambassadorId }, 201);
+    }
+
+    if (url.pathname === "/ambassador/login" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { username?: unknown; password?: unknown } | null;
+      const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
+      const password = typeof body?.password === "string" ? body.password : "";
+      const user = await this.ctx.storage.get<{ ambassador_id: string; salt: string; password_hash: string }>("ambassador-user:" + username);
+      if (!user || !password || password.length > 128 || !this.constantTimeEqual(await this.passwordHash(password, user.salt), user.password_hash)) {
+        return json({ error: "invalid_credentials" }, 401);
+      }
+      const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+      const token = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      const tokenHash = await this.sha256(token);
+      const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      await this.ctx.storage.put("ambassador-session:" + tokenHash, { ambassador_id: user.ambassador_id, username, expires_at: expiresAt });
+      return json({ ambassador_id: user.ambassador_id, username, session_token: token, expires_at: new Date(expiresAt).toISOString() });
+    }
+
+    if (url.pathname === "/ambassador/verify" && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { ambassador_id?: unknown; token?: unknown } | null;
+      if (typeof body?.ambassador_id !== "string" || !/^amb-[a-f0-9-]{36}$/.test(body.ambassador_id) ||
+          typeof body?.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) return json({ error: "unauthorized" }, 401);
+      const tokenHash = await this.sha256(body.token);
+      const key = "ambassador-session:" + tokenHash;
+      const session = await this.ctx.storage.get<{ ambassador_id: string; username: string; expires_at: number }>(key);
+      if (!session || session.ambassador_id !== body.ambassador_id || session.expires_at <= Date.now()) {
+        if (session) await this.ctx.storage.delete(key);
+        return json({ error: "unauthorized" }, 401);
+      }
+      return json({ ok: true, ambassador_id: session.ambassador_id, username: session.username });
+    }
+
     if (url.pathname === "/auth/rate-limit" && request.method === "POST") {
       const body = await request.json().catch(() => null) as { ip?: unknown; action?: unknown } | null;
       if (typeof body?.ip !== "string" || body.ip.length < 1 || body.ip.length > 80 ||
