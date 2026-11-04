@@ -2,6 +2,8 @@ export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
   BUSINESS_DATABASE: DurableObjectNamespace;
+  STOCKROOM_ORIGIN?: string;
+  STOCKROOM_GATEWAY_TOKEN?: string;
   PAYMENTS_ENCRYPTION_KEY?: string;
 }
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -23,8 +25,7 @@ async function authenticate(request: Request, env: PaymentEnv, accountId: string
 async function consumeInventory(env: PaymentEnv, checkout: { id: string; account_id: string; items?: unknown }): Promise<"deducted" | "not_applicable" | "needs_review"> {
   if (!Array.isArray(checkout.items) || checkout.items.length === 0) return "not_applicable";
   try {
-    const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(checkout.account_id));
-    const response = await database.fetch("https://business-database.internal/consume", {
+    const response = await businessDatabaseFetch(env, checkout.account_id, "consume", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ checkout_id: checkout.id, items: checkout.items }),
     });
@@ -52,8 +53,7 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(mapping.account_id, "settings"));
     const credentials = await getPaypalCredentials(env, mapping.account_id);
     if (!settings?.paypal_enabled || !credentials) return json({ error: "merchant_paypal_not_configured" }, 409);
-    const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(mapping.account_id));
-    const catalogResponse = await businessDatabase.fetch("https://business-database.internal/products?status=active");
+    const catalogResponse = await businessDatabaseFetch(env, mapping.account_id, "products?status=active");
     if (!catalogResponse.ok) return json({ error: "store_catalog_unavailable" }, 503);
     const catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
     const catalog = new Map<string, { name: string; price: number; quantity: number }>();
