@@ -727,9 +727,10 @@ export default {
       const invitation = await lookup.json() as { account_id?: unknown; deal_id?: unknown };
       const accountId = typeof invitation.account_id === "string" ? invitation.account_id : "";
       if (!/^acct-[a-f0-9-]{36}$/.test(accountId)) return json({ error: "invitation_account_invalid" }, 409);
+      const reservationId = crypto.randomUUID();
       const reserved = await authRegistry.fetch("https://account-registry.internal/merchant-invite/reserve", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: inviteToken, account_id: accountId }),
+        body: JSON.stringify({ token: inviteToken, account_id: accountId, reservation_id: reservationId }),
       });
       if (!reserved.ok) return json({ error: "invitation_already_claimed_or_in_use" }, 409);
       const createdUser = await authRegistry.fetch("https://account-registry.internal/auth/signup", {
@@ -761,7 +762,7 @@ export default {
       if (!sessionResponse.ok) return json({ error: "merchant_claim_session_failed" }, 502);
       const linked = await authRegistry.fetch("https://account-registry.internal/merchant-invite/complete", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: inviteToken, account_id: accountId, username }),
+        body: JSON.stringify({ token: inviteToken, account_id: accountId, username, reservation_id: reservationId }),
       });
       if (!linked.ok) return json({ error: "merchant_login_created_but_invitation_link_failed" }, 502);
       const session = await sessionResponse.json() as { account_id: string; session_token: string; expires_at: string };
