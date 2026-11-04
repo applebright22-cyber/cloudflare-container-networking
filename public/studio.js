@@ -4,7 +4,7 @@ const accountId=(()=>{try{return sessionStorage.getItem('vm-account-id')||'guest
 const sessionToken=(()=>{try{return sessionStorage.getItem('vm-session-token')||''}catch{return ''}})();
 const KEY='vampiresquid-studio-projects-v1:'+accountId;
 let projects=[];try{projects=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(projects))projects=[]}catch{projects=[]}
-let activeId=null,selectedSectionId=null,toastTimer;
+let activeId=null,selectedSectionId=null,toastTimer,previewStockroomProducts=[];
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(projects));return true}catch{return false}}
 function authHeaders(){const token=(()=>{try{return sessionStorage.getItem('vm-session-token')||''}catch{return ''}})();return {'content-type':'application/json','authorization':'Bearer '+token}}
@@ -193,6 +193,8 @@ function resetStockroomEditor(){
 }
 function renderStockroomProducts(data){
  const products=Array.isArray(data.products)?data.products:[];
+ previewStockroomProducts=products;
+ if($('#view-editor')?.classList.contains('active')&&activeProject()?.kind==='Store')syncPreview();
  const summary=data.summary||{};
  const count=$("#stockroom-product-count"),units=$("#stockroom-unit-count"),low=$("#stockroom-low-count"),tbody=$("#stockroom-products");
  if(count)count.textContent=Number(summary.product_count||0).toLocaleString();
@@ -303,12 +305,17 @@ function businessTemplateFiles(kind){
  const readme='# '+spec.title+'\n\nThis is a starter business-tool interface with sample data. In VampireSquid Studio, records are saved with this account\'s cloud project. Standalone HTML exports use browser storage on that device.\n\n## Connect real data\n- Implement authenticated API routes in your VampireSquid backend.\n- Keep secrets on the server; do not place API keys in browser JavaScript.\n- Use Network Center guest diagnostics to check DNS, HTTPS, and endpoint reachability.\n- Browser API calls require the target service to allow CORS. For private integrations, route requests through an authenticated, account-scoped backend endpoint with SSRF protections.\n\n## Files\n- index.html: dashboard interface\n- styles.css: responsive styling\n- app.js: demo interactions and endpoint reachability check\n';
  if(kind==='Stockroom'){return {_title:spec.title,_description:spec.subtitle,'index.html':html,'styles.css':css,'app.js':js,'README.md':readme+'\n\n## Stockroom\nThis is a starter preview only. The live Stockroom view in Studio connects to the account-scoped SQLite business database for product and inventory records.\n'};}if(kind==='Oracle'){const plugin='#!/bin/sh\nBASE_URL=https://cloudflare-container-networking.brightlambre22-6dd.workers.dev\nwget -T 12 -t 1 -qO- "$BASE_URL/api/vm/oracle-status" || exit 1\n';const manifest=JSON.stringify({name:'oracle-bridge-status',version:'1.0.0',runtime:'TinyCore Linux',entrypoint:'plugins/oracle-bridge-check.sh',description:'Checks Oracle bridge status from inside TinyCore.'},null,2);return {_title:spec.title,_description:spec.subtitle,'index.html':html,'styles.css':css,'app.js':js,'README.md':readme+'\n\n## TinyCore plugin\nCopy plugins/oracle-bridge-check.sh into /home/tc, run chmod +x, then execute it. It uses wget from TinyCore to check Oracle bridge status through Cloudflare. No account secrets are embedded.\n','plugin.json':manifest,'plugins/oracle-bridge-check.sh':plugin};}return {_title:spec.title,_description:spec.subtitle,'index.html':html,'styles.css':css,'app.js':js,'README.md':readme};
 }
-function previewDoc(p){
+function previewDoc(p,includeStockroomPreview=true){
  const files=p.files&&typeof p.files==='object'?p.files:{};
  if(typeof files['index.html']==='string'){
   let doc=files['index.html'];
   const title=escapeHtml(p.title||files._title||'Your business');
   const description=escapeHtml(p.description||files._description||'');
+  if(includeStockroomPreview&&p.kind==='Store'){
+   const previewProducts=previewStockroomProducts.filter(product=>product.status==='active').map(product=>({id:product.id,sku:product.sku,name:product.name,description:product.description,category:product.category,image_url:product.image_url,price:Number(product.price||0),in_stock:Number(product.quantity||0)>0,variations:product.variations||[]}));
+   const previewScript='<script>window.__VAMPIRESQUID_PREVIEW_PRODUCTS__='+JSON.stringify(previewProducts).replace(/</g,'\\u003c')+';<\\/script>';
+   doc=doc.replace('</head>',previewScript+'</head>');
+  }
   doc=doc.replace(/<title>[\s\S]*?<\/title>/i,'<title>'+title+'</title>');
   doc=doc.replace(/(<h1[^>]*>)[\s\S]*?(<\/h1>)/i,'$1'+title+'$2');
   doc=doc.replace(/(<header[^>]*>[\s\S]*?<p[^>]*>)[\s\S]*?(<\/p>)/i,'$1'+description+'$2');
@@ -333,7 +340,7 @@ function previewDoc(p){
 function renderSectionList(){const p=activeProject(),list=$('#section-list');if(!list)return;const sections=Array.isArray(p?.sections)?p.sections:[];list.innerHTML=sections.map(section=>'<button type="button" class="section-item '+(section.id===selectedSectionId?'active':'')+'" data-select-section="'+escapeHtml(section.id)+'"><span>'+escapeHtml(section.type.charAt(0).toUpperCase()+section.type.slice(1))+'</span><b>'+escapeHtml(section.title||'Untitled section')+'</b></button>').join('')||'<p class="section-empty">Add a section to build out your page.</p>';const current=sections.find(x=>x.id===selectedSectionId),fields=$('#section-fields');if(fields){fields.hidden=!current;if(current){$('#section-title').value=current.title||'';$('#section-body').value=current.body||''}}}
 function addSection(type){const p=activeProject();if(!p)return;const defaults={features:{title:'What makes us different',body:'Share the value you bring and what makes your work special.'},about:{title:'A little about us',body:'Tell visitors your story, what you believe, and why you do what you do.'},contact:{title:'Let’s talk',body:'Have a question or a project in mind? We would love to hear from you.'}};p.sections=Array.isArray(p.sections)?p.sections:[];const section={id:id(),type,...defaults[type]};p.sections.push(section);selectedSectionId=section.id;renderSectionList();syncPreview()}
 function syncPreview(){const p=activeProject();if(!p)return;p.title=$('#site-title').value;p.description=$('#site-description').value;p.button=$('#site-button').value;p.accent=$('#site-color').value;p.bg=$('#site-bg').value;const selected=(p.sections||[]).find(x=>x.id===selectedSectionId);if(selected){selected.title=$('#section-title').value;selected.body=$('#section-body').value;const item=$('#section-list [data-select-section="'+selectedSectionId+'"] b');if(item)item.textContent=selected.title||'Untitled section'}const frame=$('#site-canvas');if(frame)frame.srcdoc=previewDoc(p)}
-function loadEditor(){const p=activeProject();if(!p)return;activeId=p.id;p.sections=Array.isArray(p.sections)?p.sections:[];$('#editor-project').value=p.id;$('#site-title').value=p.title;$('#site-description').value=p.description;$('#site-button').value=p.button;$('#site-color').value=p.accent;$('#site-bg').value=p.bg;selectedSectionId=p.sections[0]?.id||null;renderSectionList();syncPreview()}
+function loadEditor(){const p=activeProject();if(!p)return;activeId=p.id;p.sections=Array.isArray(p.sections)?p.sections:[];$('#editor-project').value=p.id;$('#site-title').value=p.title;$('#site-description').value=p.description;$('#site-button').value=p.button;$('#site-color').value=p.accent;$('#site-bg').value=p.bg;selectedSectionId=p.sections[0]?.id||null;renderSectionList();syncPreview();if(p.kind==='Store'&&sessionToken&&accountId!=='guest')void loadStockroomProducts()}
 function saveEditor(){const p=activeProject();if(!p){toast('Create a project first.');return}p.title=$('#site-title').value;p.description=$('#site-description').value;p.button=$('#site-button').value;p.accent=$('#site-color').value;p.bg=$('#site-bg').value;p.updated=new Date().toISOString();if(!persist()){toast('Could not save: browser storage is full.');return}renderProjects();syncPreview();if(sessionToken&&accountId!=='guest')syncProject(p).then(ok=>toast(ok?'Project saved to VampireSquid cloud storage.':'Draft saved locally; cloud sync needs attention.'));else toast('Draft saved in this browser.')}
 function download(){const p=activeProject();if(!p){toast('Create a project first.');return}const blob=new Blob([previewDoc(p)],{type:'text/html'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=(p.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'vampiresquid-site')+'.html';a.click();URL.revokeObjectURL(url);toast('HTML export downloaded.')}
 
@@ -424,7 +431,7 @@ async function publishProject(){
  try{
   const saved=await syncProject(project);
   if(!saved)throw new Error('The latest project could not be saved to your account. Publishing was stopped to prevent an outdated version going live.');
-  const html=previewDoc(project);
+  const html=previewDoc(project,false);
   const response=await fetch('/api/studio/publish?account_id='+encodeURIComponent(accountId),{method:'POST',headers:authHeaders(),body:JSON.stringify({project_id:project.id,html})});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error||'Publishing failed');
