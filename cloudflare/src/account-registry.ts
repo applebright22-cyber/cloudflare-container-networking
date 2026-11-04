@@ -440,8 +440,20 @@ export class AccountRegistry extends DurableObject {
         return json({ error: "invalid_signup_fields" }, 400);
       }
       const userKey = "auth-user:" + username;
-      const existing = await this.ctx.storage.get<{ status?: string }>(userKey);
-      if (existing && existing.status !== "error") return json({ error: "username_unavailable" }, 409);
+      const existing = await this.ctx.storage.get<{
+        status?: string; account_id?: string; salt?: string; password_hash?: string;
+      }>(userKey);
+      // A merchant may retry an interrupted invitation claim after their login
+      // record was created but before the session/deal link was returned. Permit
+      // only an exact same-account, same-password retry; never reassign a username.
+      if (existing && existing.status !== "error") {
+        if (existing.account_id === body.account_id && typeof existing.salt === "string" &&
+            typeof existing.password_hash === "string" &&
+            this.constantTimeEqual(await this.passwordHash(password, existing.salt), existing.password_hash)) {
+          return json({ ok: true, account_id: body.account_id, reused: true }, 200);
+        }
+        return json({ error: "username_unavailable" }, 409);
+      }
       const saltBytes = crypto.getRandomValues(new Uint8Array(16));
       const salt = Array.from(saltBytes, (b) => b.toString(16).padStart(2, "0")).join("");
       const passwordHash = await this.passwordHash(password, salt);
