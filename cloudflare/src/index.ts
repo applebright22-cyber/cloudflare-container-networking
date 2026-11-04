@@ -10,7 +10,8 @@ import { WispRelay } from "./wisp-relay";
 import { handleProjectStorageRequest } from "./project-storage";
 import { handlePayments } from "./payments";
 import { BusinessDatabase, businessDatabaseFetch, handleBusinessDatabaseRequest } from "./business-database";
-export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay, BusinessDatabase };
+import { InventoryLedger } from "./inventory-ledger";
+export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay, BusinessDatabase, InventoryLedger };
 
 export interface Env {
   TUNNEL_HUB: DurableObjectNamespace<TunnelHub>;
@@ -20,6 +21,7 @@ export interface Env {
   ACCOUNT_REGISTRY: DurableObjectNamespace<AccountRegistry>;
   ACCOUNT_PROVISIONER: DurableObjectNamespace<AccountProvisioner>;
   BUSINESS_DATABASE: DurableObjectNamespace<BusinessDatabase>;
+  INVENTORY_LEDGER: DurableObjectNamespace<InventoryLedger>;
   WISP_RELAY: DurableObjectNamespace<WispRelay>;
   VM_BASELINE_ID?: string;
   ADMIN_ACCESS_CODE?: string;
