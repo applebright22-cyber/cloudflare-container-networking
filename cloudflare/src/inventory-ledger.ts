@@ -171,11 +171,16 @@ export class InventoryLedger extends DurableObject {
       for (const x of allocations) combined.set(x.id,(combined.get(x.id)??0)+x.quantity);
       allocations.length = 0;
       for (const [id,quantity] of combined) allocations.push({id,quantity});
-      for (const x of allocations) {
-        const row=sql.exec("SELECT on_hand,offline_allocated,COALESCE((SELECT SUM(i.quantity) FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=inventory_catalog.product_id AND r.status='active'),0) AS reserved FROM inventory_catalog WHERE product_id=? AND status='active'",x.id).toArray()[0] as Record<string,number>|undefined;
-        if (!row || row.on_hand-row.offline_allocated-row.reserved<x.quantity) return json({error:"insufficient_unallocated_stock",product_id:x.id},409);
-      }
-      for (const x of allocations) sql.exec("UPDATE inventory_catalog SET offline_allocated=offline_allocated+? WHERE product_id=?",x.quantity,x.id);
+      let insufficient: string | null = null;
+      this.ctx.storage.transactionSync(() => {
+        this.expireReservations(now);
+        for (const x of allocations) {
+          const row=sql.exec("SELECT on_hand,offline_allocated,COALESCE((SELECT SUM(i.quantity) FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=inventory_catalog.product_id AND r.status='active'),0) AS reserved FROM inventory_catalog WHERE product_id=? AND status='active'",x.id).toArray()[0] as Record<string,number>|undefined;
+          if (!row || row.on_hand-row.offline_allocated-row.reserved<x.quantity) { insufficient=x.id; return; }
+        }
+        for (const x of allocations) sql.exec("UPDATE inventory_catalog SET offline_allocated=offline_allocated+? WHERE product_id=?",x.quantity,x.id);
+      });
+      if (insufficient) return json({error:"insufficient_unallocated_stock",product_id:insufficient},409);
       return json({ok:true,allocations});
     }
 
@@ -194,14 +199,18 @@ export class InventoryLedger extends DurableObject {
         if (typeof x.product_id!=="string"||!UUID.test(x.product_id)||!Number.isInteger(x.quantity)||Number(x.quantity)<1||Number(x.quantity)>99) return json({error:"invalid_inventory_item"},400);
         requested.set(x.product_id,(requested.get(x.product_id)??0)+Number(x.quantity));
       }
-      for (const [id,qty] of requested) {
-        const row=sql.exec("SELECT offline_allocated,on_hand FROM inventory_catalog WHERE product_id=?",id).toArray()[0] as {offline_allocated:number;on_hand:number}|undefined;
-        if (!row||row.offline_allocated<qty||row.on_hand<qty) return json({error:"offline_allowance_exceeded",product_id:id},409);
-      }
-      for (const [id,qty] of requested) sql.exec("UPDATE inventory_catalog SET offline_allocated=offline_allocated-?,on_hand=on_hand-? WHERE product_id=?",qty,qty,id);
       const payload={order_id:orderId,items:Array.from(requested,([product_id,quantity])=>({product_id,quantity})),status:"paid_offline",created_at:now};
-      sql.exec("INSERT INTO offline_sales(event_id,order_id,payload_json,created_at) VALUES(?,?,?,?)",eventId,orderId,JSON.stringify(payload),now);
-      sql.exec("INSERT OR IGNORE INTO inventory_orders(order_id,checkout_id,status,payload_json,created_at) VALUES(?,?, 'pending_sync',?,?)",orderId,"offline-"+eventId,JSON.stringify(payload),now);
+      let insufficient: string | null = null;
+      this.ctx.storage.transactionSync(() => {
+        for (const [productId,qty] of requested) {
+          const row=sql.exec("SELECT offline_allocated,on_hand FROM inventory_catalog WHERE product_id=?",productId).toArray()[0] as {offline_allocated:number;on_hand:number}|undefined;
+          if (!row||row.offline_allocated<qty||row.on_hand<qty) { insufficient=productId; return; }
+        }
+        for (const [productId,qty] of requested) sql.exec("UPDATE inventory_catalog SET offline_allocated=offline_allocated-?,on_hand=on_hand-? WHERE product_id=?",qty,qty,productId);
+        sql.exec("INSERT INTO offline_sales(event_id,order_id,payload_json,created_at) VALUES(?,?,?,?)",eventId,orderId,JSON.stringify(payload),now);
+        sql.exec("INSERT OR IGNORE INTO inventory_orders(order_id,checkout_id,status,payload_json,created_at) VALUES(?,?, 'pending_sync',?,?)",orderId,"offline-"+eventId,JSON.stringify(payload),now);
+      });
+      if (insufficient) return json({error:"offline_allowance_exceeded",product_id:insufficient},409);
       return json({ok:true,queued:true});
     }
 
