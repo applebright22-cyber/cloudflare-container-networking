@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
 <link rel="icon" type="image/svg+xml" href="/vampiresquid-mark.svg">
 <title>Create your account · Vampirequid</title>
 <style>
@@ -71,8 +71,8 @@ main{width:min(100%,850px);background:linear-gradient(145deg,#121c34f5,#0b1225f5
 (function(){
 const form=document.getElementById('signup-form'),submit=document.getElementById('submit');
 let accountType='merchant';
-const invitationToken=new URLSearchParams(location.search).get('invite')||'';
-if(invitationToken){document.querySelector('[data-choice="ambassador"]').hidden=true;document.querySelector('.eyebrow').textContent='Complete your business account setup';document.querySelector('h1').textContent='Claim your merchant workspace.';document.getElementById('ambassador-note').hidden=true;document.getElementById('merchant-note').innerHTML='<p class="subtle">You were invited by an ambassador. Create your own merchant login; your TinyCore workspace and Stockroom tools will be provisioned under your account.</p>';}
+const inviteFromUrl=new URLSearchParams(location.search).get('invite')||'';if(inviteFromUrl)sessionStorage.setItem('merchant-invite-token',inviteFromUrl);const invitationToken=inviteFromUrl||sessionStorage.getItem('merchant-invite-token')||'';
+if(invitationToken){history.replaceState(null,'',location.pathname);document.querySelector('[data-choice="ambassador"]').hidden=true;document.querySelector('.eyebrow').textContent='Complete your business account setup';document.querySelector('h1').textContent='Claim your merchant workspace.';document.getElementById('ambassador-note').hidden=true;document.getElementById('merchant-note').innerHTML='<p class="subtle">You were invited by an ambassador. Create your own merchant login; your TinyCore workspace and Stockroom tools will be provisioned under your account.</p>';}
 const merchantNote=document.getElementById('merchant-note'),ambassadorNote=document.getElementById('ambassador-note');
 document.querySelectorAll('[data-select]').forEach(button=>button.addEventListener('click',()=>{
  accountType=button.dataset.select;
@@ -147,6 +147,7 @@ if(accountType==='ambassador'){
  title.textContent='Ambassador account created';detail.textContent='Your separate ambassador identity is ready. Open the Ambassador Portal to register businesses, create one-time merchant setup links, and track your deals. This account does not include TinyCore or Stockroom access.';setTimeout(()=>location.assign('/ambassador.html'),1200);
  status.classList.add('good');fill.style.width='100%';submit.disabled=false;return;
 }
+if(invitationToken&&accountType==='merchant')sessionStorage.removeItem('merchant-invite-token');
 const session={...data,username,login_time:new Date().toISOString()};
 if(typeof session.account_id!=='string'||typeof session.session_token!=='string')throw new Error('Signup response did not contain a valid account session.');
 sessionStorage.setItem('vm-account-id',session.account_id);
