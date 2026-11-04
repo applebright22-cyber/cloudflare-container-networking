@@ -234,10 +234,16 @@ export class AccountRegistry extends DurableObject {
 
     // Ambassador deal records live in the shared auth-users object but use a
     // completely separate keyspace and are always scoped to the authenticated ambassador.
-    if (url.pathname === "/ambassador/deals" && request.method === "POST") {
-      const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-      const ambassadorId = typeof body?.ambassador_id === "string" ? body.ambassador_id : "";
-      const token = typeof body?.token === "string" ? body.token : "";
+    if (url.pathname === "/ambassador/deals" && (request.method === "GET" || request.method === "POST")) {
+      const body = request.method === "POST"
+        ? await request.json().catch(() => null) as Record<string, unknown> | null
+        : null;
+      const ambassadorId = request.method === "GET"
+        ? url.searchParams.get("ambassador_id") ?? ""
+        : (typeof body?.ambassador_id === "string" ? body.ambassador_id : "");
+      const token = request.method === "GET"
+        ? url.searchParams.get("token") ?? ""
+        : (typeof body?.token === "string" ? body.token : "");
       if (!/^amb-[a-f0-9-]{36}$/.test(ambassadorId) || !/^[a-f0-9]{64}$/.test(token)) {
         return json({ error: "unauthorized" }, 401);
       }
@@ -248,7 +254,7 @@ export class AccountRegistry extends DurableObject {
         return json({ error: "unauthorized" }, 401);
       }
       const prefix = "ambassador-deal:" + ambassadorId + ":";
-      if (body?.action === "list") {
+      if (request.method === "GET" || body?.action === "list") {
         const page = await this.ctx.storage.list<Record<string, unknown>>({ prefix, limit: 500 });
         const deals = Array.from(page.values()).sort((a, b) =>
           String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
