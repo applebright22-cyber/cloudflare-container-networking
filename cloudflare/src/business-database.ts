@@ -346,10 +346,7 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
       httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
       customMetadata: { account_id: accountId, product_id: productId, image_id: imageId },
     });
-    // Stockroom has one primary image per product; replace older image objects only after the new upload succeeds.
-    const existing = await env.PROJECT_STORAGE.list({ prefix, limit: 100 });
-    const obsolete = existing.objects.filter(item => item.key !== key).map(item => item.key);
-    if (obsolete.length) await env.PROJECT_STORAGE.delete(obsolete);
+    // The new reference is attached to the product in the following authenticated PUT; retain older media until that update succeeds.
     return json({ ok: true, image_url: "/api/media/" + accountId + "/" + productId + "/" + imageId + "." + extension });
   }
   if (!url.pathname.startsWith("/api/stockroom/")) return null;
