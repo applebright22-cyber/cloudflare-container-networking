@@ -110,7 +110,7 @@ test("reopening Stockroom applies queued paid orders transactionally before refr
   assert.match(database, /BEGIN IMMEDIATE/);
   assert.match(database, /business_orders/);
   assert.match(database, /local_inventory_conflict/);
-  assert.match(database, /url\.pathname === "\/sync\/orders"/);
+  assert.match(database, /internalPath === "\/sync\/orders"/);
   assert.match(tinycoreApi, /path==\"\/v1\/apply-orders\"/);
   assert.match(tinycoreApi, /BEGIN IMMEDIATE/);
   assert.match(tinycoreApi, /business_orders/);
