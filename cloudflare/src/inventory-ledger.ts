@@ -48,7 +48,8 @@ export class InventoryLedger extends DurableObject {
         const prior = sql.exec("SELECT source_updated_at,offline_allocated FROM inventory_catalog WHERE product_id=?", id).toArray()[0] as { source_updated_at: string; offline_allocated: number } | undefined;
         // Never let an older local snapshot overwrite newer central inventory state.
         if (prior && updated <= prior.source_updated_at) continue;
-        const held = Number(prior?.offline_allocated ?? 0) + Number(sql.exec("SELECT COALESCE(SUM(i.quantity),0) AS held FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=? AND r.status='active'",id).toArray()[0] && (sql.exec("SELECT COALESCE(SUM(i.quantity),0) AS held FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=? AND r.status='active'",id).toArray()[0] as {held:number}).held);
+        const reservedRow = sql.exec("SELECT COALESCE(SUM(i.quantity),0) AS held FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=? AND r.status='active'",id).toArray()[0] as {held:number}|undefined;
+        const held = Number(prior?.offline_allocated ?? 0) + Number(reservedRow?.held ?? 0);
         if (quantity < held) return json({ error: "catalog_update_conflicts_with_reserved_stock", product_id: id }, 409);
         sql.exec("INSERT INTO inventory_catalog(product_id,sku,name,price_cents,on_hand,offline_allocated,status,source_updated_at) VALUES(?,?,?,?,?,0,?,?) ON CONFLICT(product_id) DO UPDATE SET sku=excluded.sku,name=excluded.name,price_cents=excluded.price_cents,on_hand=excluded.on_hand,status=excluded.status,source_updated_at=excluded.source_updated_at",
           id, sku, name, price, quantity, status, updated);
@@ -141,6 +142,10 @@ export class InventoryLedger extends DurableObject {
         if (typeof x.product_id!=="string" || !UUID.test(x.product_id) || !Number.isInteger(x.quantity) || Number(x.quantity)<1 || Number(x.quantity)>10000) return json({error:"invalid_allocation"},400);
         allocations.push({id:x.product_id,quantity:Number(x.quantity)});
       }
+      const combined = new Map<string,number>();
+      for (const x of allocations) combined.set(x.id,(combined.get(x.id)??0)+x.quantity);
+      allocations.length = 0;
+      for (const [id,quantity] of combined) allocations.push({id,quantity});
       for (const x of allocations) {
         const row=sql.exec("SELECT on_hand,offline_allocated,COALESCE((SELECT SUM(i.quantity) FROM inventory_reservation_items i JOIN inventory_reservations r ON r.checkout_id=i.checkout_id WHERE i.product_id=inventory_catalog.product_id AND r.status='active'),0) AS reserved FROM inventory_catalog WHERE product_id=? AND status='active'",x.id).toArray()[0] as Record<string,number>|undefined;
         if (!row || row.on_hand-row.offline_allocated-row.reserved<x.quantity) return json({error:"insufficient_unallocated_stock",product_id:x.id},409);
