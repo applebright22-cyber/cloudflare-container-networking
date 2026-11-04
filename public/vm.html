@@ -996,7 +996,7 @@ async function waitForRegistration(data){
 access.addEventListener('change',()=>{creating=false;message.textContent='';updateFields()});
 createButton.addEventListener('click',()=>{
   creating=!creating;
-  message.textContent=creating?'Create a server account. Use at least 12 characters for the password.':'';
+  message.textContent=creating?'Create a server account. Use at least 8 characters for the password.':'';
   updateFields();
 });
 form.addEventListener('submit',async function(event){
@@ -1018,7 +1018,7 @@ form.addEventListener('submit',async function(event){
   }
   const name=username.value.trim().toLowerCase(),pass=password.value;
   if(!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(name)){message.textContent='Username must be 2–32 characters: letters, numbers, _ or -.';return}
-  if(!creating&&pass.length<8){message.textContent='Password must be at least 8 characters.';password.focus();return}
+  if(pass.length<8){message.textContent='Password must be at least 8 characters.';password.focus();return}
    if(!creating&&!pass){message.textContent='Enter your password.';return}
   message.textContent=creating?'Creating your account; the VM snapshot will be saved after its first network test…':'Signing in and loading your saved VM…';
   try{
@@ -1026,7 +1026,7 @@ form.addEventListener('submit',async function(event){
       method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:name,password:pass})
     });
     const data=await response.json().catch(()=>({}));
-    if(!response.ok){const reason=data.error==='username_unavailable'?'That username is already taken.':data.error==='username_must_be_2_to_32_chars_and_password_12_to_128_chars'?'Signup requirements: username 2–32 characters (letters, numbers, _ or -); password 12–128 characters.':data.error==='admin_baseline_snapshot_not_found'||data.error==='baseline_snapshot_not_found'?'Account creation is temporarily unavailable because the TinyCore baseline snapshot has not been configured yet.':creating?'Account creation failed: '+(data.error||response.status):'Incorrect username or password.';throw new Error(reason)}
+    if(!response.ok){const reason=data.error==='username_unavailable'?'That username is already taken.':data.error==='username_must_be_2_to_32_chars_and_password_8_to_128_chars'?'Signup requirements: username 2–32 characters (letters, numbers, _ or -); password 8–128 characters.':data.error==='admin_baseline_snapshot_not_found'||data.error==='baseline_snapshot_not_found'?'Account creation is temporarily unavailable because the TinyCore baseline snapshot has not been configured yet.':creating?'Account creation failed: '+(data.error||response.status):'Incorrect username or password.';throw new Error(reason)}
     const wasCreating=creating;
     creating=false;
     if(wasCreating&&data.status==='provisioning')await waitForRegistration(data);
