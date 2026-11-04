@@ -295,7 +295,19 @@ export async function handleBusinessDatabaseRequest(request: Request, env: Busin
     const mapping = await mappingObject.json<{ account_id?: unknown }>().catch(() => null);
     const accountId = typeof mapping?.account_id === "string" ? mapping.account_id : "";
     if (!ACCOUNT_ID.test(accountId)) return json({ error: "site_not_found" }, 404);
-    return businessDatabaseFetch(env, accountId, "public-products");
+    const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
+    let catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
+    let catalog = await catalogResponse.json() as { products?: Array<{id:string;sku:string;name:string;description:string;category:string;image_url:string;variations:unknown[];external_url:string;price:number;in_stock:boolean}> };
+    if (catalogResponse.ok && !(catalog.products ?? []).length) {
+      try { await syncInventoryCatalog(env, accountId); } catch { /* Keep the published catalog unavailable until its first successful sync. */ }
+      catalogResponse = await ledger.fetch("https://inventory-ledger.internal/catalog");
+      catalog = await catalogResponse.json() as typeof catalog;
+    }
+    if (!catalogResponse.ok) return json({ error: "store_catalog_unavailable" }, 503);
+    return json({ ok: true, products: (catalog.products ?? []).map(p => ({
+      id:p.id, sku:p.sku, name:p.name, description:p.description, category:p.category,
+      image_url:p.image_url, price:p.price, in_stock:p.in_stock, variations:p.variations, external_url:p.external_url,
+    })) });
   }
   if (!url.pathname.startsWith("/api/stockroom/")) return null;
   if (!["GET", "POST", "PUT", "DELETE"].includes(request.method)) return json({ error: "method_not_allowed" }, 405);
@@ -346,8 +358,9 @@ export async function syncInventoryCatalog(env: BusinessDatabaseEnv, accountId: 
   if (!response.ok) throw new Error("stockroom_catalog_unavailable");
   const data = await response.json() as { products?: Array<{id:string;sku:string;name:string;price:number;quantity:number;status:string;updated_at:string}> };
   const products = (data.products ?? []).map(p => ({
-    id: p.id, sku: p.sku, name: p.name, price_cents: Math.round(Number(p.price) * 100),
-    quantity: Number(p.quantity), status: p.status, updated_at: p.updated_at,
+    id: p.id, sku: p.sku, name: p.name, description: p.description, category: p.category,
+    image_url: p.image_url, variations_json: JSON.stringify(p.variations ?? []), external_url: p.external_url,
+    price_cents: Math.round(Number(p.price) * 100), quantity: Number(p.quantity), status: p.status, updated_at: p.updated_at,
   }));
   const ledger = env.INVENTORY_LEDGER.get(env.INVENTORY_LEDGER.idFromName(accountId));
   const synced = await ledger.fetch("https://inventory-ledger.internal/catalog/sync", {
