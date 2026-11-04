@@ -122,15 +122,15 @@ test("reopening Stockroom applies queued paid orders transactionally before refr
 test("Stockroom requires sign-in and stores product images through authenticated account-scoped R2 media", () => {
   assert.match(studioHtml, /stockroom-image-file/);
   assert.doesNotMatch(studioHtml, /Image URL/);
-  assert.match(studioJs, /setStockroomFormAccess\\(false\\)/);
+  assert.match(studioJs, /setStockroomFormAccess\(false\)/);
   assert.match(studioJs, /Sign in before saving products/);
-  assert.match(studioJs, /FormData\\(\\)/);
-  assert.match(database, /api\\/stockroom\\/media/);
-  assert.match(database, /merchants\\/.*products/);
+  assert.match(studioJs, /FormData\(\)/);
+  assert.match(database, /api\/stockroom\/media/);
+  assert.match(database, /merchants\/.*products/);
   assert.match(database, /unsupported_or_mismatched_image_type/);
-  assert.match(database, /api\\/media\\//);
-  assert.match(database, /auth\\/verify/);
-  assert.match(tinycoreApi, /api\\/media/);
+  assert.match(database, /api\/media\//);
+  assert.match(database, /auth\/verify/);
+  assert.match(tinycoreApi, /api\/media/);
 });
 
 test("published store checkout and catalog reads never call TinyCore", () => {
