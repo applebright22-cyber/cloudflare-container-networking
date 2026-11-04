@@ -20,6 +20,19 @@ async function authenticate(request: Request, env: PaymentEnv, accountId: string
   });
   return response.ok;
 }
+async function consumeInventory(env: PaymentEnv, checkout: { id: string; account_id: string; items?: unknown }): Promise<"deducted" | "not_applicable" | "needs_review"> {
+  if (!Array.isArray(checkout.items) || checkout.items.length === 0) return "not_applicable";
+  try {
+    const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(checkout.account_id));
+    const response = await database.fetch("https://business-database.internal/consume", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: checkout.id, items: checkout.items }),
+    });
+    return response.ok ? "deducted" : "needs_review";
+  } catch {
+    return "needs_review";
+  }
+}
 async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
   const obj = await bucket.get(key); if (!obj) return null;
   try { return await obj.json<T>(); } catch { return null; }
@@ -168,9 +181,10 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       if (!captured.ok) return json({ error: "paypal_capture_failed", paypal_status: captured.status }, 502);
       const capture = result.purchase_units?.[0]?.payments?.captures?.[0];
       if (result.status !== "COMPLETED" || capture?.status !== "COMPLETED" || capture.amount?.currency_code !== "USD" || Number(capture.amount.value) !== Number(page.amount_usd)) return json({ error: "paypal_payment_not_completed" }, 409);
-      const updated = { ...page, status: "paid", payment_method: "paypal", paypal_order_id: saved.order_id, paypal_capture_id: capture.id ?? null, paid_at: new Date().toISOString() };
+      const inventory_status = await consumeInventory(env, page);
+      const updated = { ...page, status: "paid", inventory_status, payment_method: "paypal", paypal_order_id: saved.order_id, paypal_capture_id: capture.id ?? null, paid_at: new Date().toISOString() };
       await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
-      return json({ ok: true, status: "paid", capture_id: capture.id ?? null });
+      return json({ ok: true, status: "paid", inventory_status, capture_id: capture.id ?? null });
     }
     return json({ error: "method_not_allowed" }, 405);
   }
@@ -233,10 +247,11 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const expected = BigInt(Math.round(Number(page.amount_usd) * 1_000_000));
     const paid = (receipt.logs ?? []).some(log => log.address?.toLowerCase() === USDC_BASE.toLowerCase() && log.topics?.[0]?.toLowerCase() === TRANSFER_TOPIC && log.topics?.[2]?.toLowerCase() === recipientTopic && typeof log.data === "string" && BigInt(log.data) >= expected);
     if (!paid) return json({ error: "matching_usdc_transfer_not_found" }, 400);
-    const updated = { ...page, status: "paid", transaction_hash: hash, paid_at: new Date().toISOString(), network: "Base", token: "USDC" };
+    const inventory_status = await consumeInventory(env, page);
+    const updated = { ...page, status: "paid", inventory_status, transaction_hash: hash, paid_at: new Date().toISOString(), network: "Base", token: "USDC" };
     await env.PROJECT_STORAGE.put(usedKey, JSON.stringify({ checkout_id: id, account_id: page.account_id }), { httpMetadata: { contentType: "application/json" } });
     await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
-    return json({ ok: true, status: "paid", transaction_hash: hash });
+    return json({ ok: true, status: "paid", inventory_status, transaction_hash: hash });
   }
   return json({ error: "method_not_allowed" }, 405);
 }
