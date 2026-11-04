@@ -311,7 +311,7 @@ function previewDoc(p,includeStockroomPreview=true){
   let doc=files['index.html'];
   if(p.kind==='Store'){
    doc=doc.replace(/Continue to secure PayPal checkout/g,'Continue to secure checkout');
-   doc=doc.replace(/Live checkout is available after publishing and connecting PayPal\\./g,'Checkout methods appear here after the merchant enables PayPal or Base USDC.');
+   doc=doc.replace(/Live checkout is available after publishing and connecting PayPal\./g,'Checkout methods appear here after the merchant enables PayPal or Base USDC.');
   }
   const title=escapeHtml(p.title||files._title||'Your business');
   const description=escapeHtml(p.description||files._description||'');
