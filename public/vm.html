@@ -751,13 +751,13 @@ startBootMonitor();
 return;
 }
 startOracleBridgeStatus();
-stateText('Verifying restored Tiny Core shell: waiting for a stable prompt, then running an echo probe (up to 25 seconds)…');
-report('\\n===== RESTORED GUEST SHELL VERIFICATION =====\\nWaiting for a stable Tiny Core prompt and an echo command round-trip.\\n');
+stateText('Automatically waking the restored Tiny Core shell, then verifying command input…');
+report('\\n===== AUTOMATIC RESTORED SHELL WAKE =====\\nSending Enter automatically, waiting for a stable prompt, and checking an echo command round-trip.\\n');
 const verification=await verifyRestoredGuestShell();
 if(!verification.ok){
 bootComplete=false;
 stateText('Guest shell verification failed: '+verification.reason+'. Saved snapshot was not changed.');
-statusText('The restored guest did not pass its shell command probe. VM startup is not marked ready; inspect the guest screen or use Wake shell / run bootstrap.');
+statusText('The restored guest shell did not become ready automatically. VM startup is not marked ready; inspect the guest screen and retry startup.');
 report('\\n*** RESTORED GUEST SHELL VERIFICATION FAILED ***\\nreason='+verification.reason+'\\nSaved snapshot was not modified; Oracle guest command execution was not enabled.\\n');
 return;
 }
@@ -781,15 +781,24 @@ if(promptPattern.test(lines[i]))return lines[i];
 }
 return '';
 }
-async function verifyRestoredGuestShell(promptTimeoutMs=15000,commandTimeoutMs=10000){
-const promptDeadline=Date.now()+promptTimeoutMs;
+async function verifyRestoredGuestShell(promptTimeoutMs=25000,commandTimeoutMs=10000){
 let candidate='',candidateSince=0,stablePrompt=false;
+try{
+if(window.emulator&&typeof window.emulator.keyboard_set_enabled==='function')window.emulator.keyboard_set_enabled(true);
+await sendVmCommand('\n');
+}catch(error){return {ok:false,reason:'automatic shell wake failed: '+(error&&error.message?error.message:String(error))};}
+const promptDeadline=Date.now()+promptTimeoutMs;
+let nextWakeAt=Date.now()+2500;
 while(Date.now()<promptDeadline){
 const prompt=shellPrompt(screenText());
 if(prompt){
 if(prompt===candidate&&Date.now()-candidateSince>=PROMPT_STABLE_MS){stablePrompt=true;break;}
 if(prompt!==candidate){candidate=prompt;candidateSince=Date.now();}
 }else{candidate='';candidateSince=0;}
+if(Date.now()>=nextWakeAt){
+try{await sendVmCommand('\n');}catch(error){return {ok:false,reason:'automatic shell wake retry failed: '+(error&&error.message?error.message:String(error))};}
+nextWakeAt=Date.now()+2500;
+}
 await new Promise(resolve=>setTimeout(resolve,25));
 }
 if(!stablePrompt)return {ok:false,reason:'no stable Tiny Core shell prompt appeared within '+promptTimeoutMs+' ms'};
