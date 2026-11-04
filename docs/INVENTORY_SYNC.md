@@ -30,7 +30,7 @@ Online availability is:
 
 `max(0, on_hand - offline_allocated - online_reserved)`
 
-An offline allocation is created while TinyCore is connected. It reduces online availability immediately. A disconnected POS may sell only from that allowance. Each offline sale must have a unique event ID and order ID; the ledger consumes the allowance once and queues the sale for reconciliation. Replaying an event is idempotent.
+An offline allocation is created while TinyCore is connected. It reduces online availability immediately. A disconnected POS may sell only from that allowance. Each offline sale must have a unique event ID and order ID; the ledger consumes the allowance once and records the sale in its central offline-sales journal. The local POS has already recorded and deducted that sale, so it is deliberately not sent through the online-order apply queue (which would deduct it twice). Replaying an event is idempotent.
 
 Never allocate more units than the currently unallocated stock. If the allowance is exhausted while offline, the POS must stop selling that product until it reconnects or has a new allocation.
 
