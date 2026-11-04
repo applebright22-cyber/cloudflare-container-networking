@@ -9,9 +9,12 @@ on:
       - "cloudflare/src/index.ts"
       - "wrangler.toml"
       - "cloudflare/wrangler.toml"
-      - "cloudflare/wrangler.toml"
+      - "cloudflare/package.json"
+      - "cloudflare/scripts/**"
       - "tinycore/stockroom/**"
       - "public/studio.js"
+      - "public/studio.html"
+      - "public/stockroom-storefront.js"
       - "public/vm.html"
       - "tests/account-session.test.mjs"
       - "cloudflare/src/account-registry.ts"
@@ -38,3 +41,9 @@ jobs:
         run: node --test tests/stockroom-integration.test.mjs
       - name: Compile TinyCore API
         run: python -m py_compile tinycore/stockroom/stockroom.py
+      - name: Install Cloudflare Worker dependencies
+        working-directory: cloudflare
+        run: npm install --no-audit --no-fund
+      - name: Build and dry-run Worker validation (no deployment)
+        working-directory: cloudflare
+        run: npm run check
