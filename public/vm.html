@@ -939,7 +939,10 @@ function updateFields(){
   password.hidden=admin;password.required=!admin;
   createButton.hidden=admin;
   loginButton.textContent=creating?'Create account':'Log in';
-  password.autocomplete=creating?'new-password':'current-password';\n  password.minLength=creating?12:1;password.maxLength=128;\n  password.placeholder=creating?'Create password (12–128 characters)':'Password';\n  username.placeholder=creating?'Username (2–32 characters)':'Username';
+  password.autocomplete=creating?'new-password':'current-password';
+  password.minLength=creating?12:1;password.maxLength=128;
+  password.placeholder=creating?'Create password (12–128 characters)':'Password';
+  username.placeholder=creating?'Username (2–32 characters)':'Username';
 }
 function beginAccountSession(data,launchVm=true){
   if(!data||typeof data.account_id!=='string'||!/^acct-[a-f0-9-]{36}$/.test(data.account_id)||typeof data.session_token!=='string'){
