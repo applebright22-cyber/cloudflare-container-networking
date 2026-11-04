@@ -214,6 +214,12 @@ export class BusinessDatabase extends DurableObject {
 }
 
 
+/** Convert an incoming Request to the subset accepted by the Request constructor. */
+function stockroomRequestInit(init?: RequestInit | Request): RequestInit | undefined {
+  if (!(init instanceof Request)) return init;
+  return { method: init.method, headers: init.headers, body: init.body };
+}
+
 /** Route Stockroom operations to persistent TinyCore SQLite when configured; otherwise retain the DO backend. */
 export async function businessDatabaseFetch(env: BusinessDatabaseEnv, accountId: string, path: string, init?: RequestInit | Request): Promise<Response> {
   if (env.STOCKROOM_ORIGIN && env.STOCKROOM_GATEWAY_TOKEN) {
@@ -221,7 +227,7 @@ export async function businessDatabaseFetch(env: BusinessDatabaseEnv, accountId:
     try { origin = new URL(env.STOCKROOM_ORIGIN); } catch { return json({ error: "stockroom_origin_invalid" }, 503); }
     if (origin.protocol !== "https:") return json({ error: "stockroom_origin_must_use_https" }, 503);
     const target = new URL("/v1/" + (path.startsWith("/") ? path.slice(1) : path), origin);
-    const outgoing = init instanceof Request ? new Request(target, init) : new Request(target, init);
+    const outgoing = init instanceof Request ? new Request(target, stockroomRequestInit(init)) : new Request(target, init);
     outgoing.headers.delete("authorization");
     outgoing.headers.set("x-stockroom-gateway-token", env.STOCKROOM_GATEWAY_TOKEN);
     outgoing.headers.set("x-stockroom-account-id", accountId);
@@ -229,7 +235,7 @@ export async function businessDatabaseFetch(env: BusinessDatabaseEnv, accountId:
   }
   const database = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(accountId));
   const internalUrl = "https://business-database.internal/" + (path.startsWith("/") ? path.slice(1) : path);
-  return database.fetch(new Request(internalUrl, init));
+  return database.fetch(new Request(internalUrl, stockroomRequestInit(init)));
 }
 
 /** Authenticates account requests before routing to that account's private SQL database. */
