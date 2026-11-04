@@ -125,9 +125,14 @@ busybox httpd -p 8080 -h "$ROOT"
 `}
 };
 function stockroomUrl(path=""){return "/api/stockroom"+path+"?account_id="+encodeURIComponent(accountId)}
+function setStockroomFormAccess(enabled){
+ const form=$("#stockroom-product-form");
+ if(form)form.querySelectorAll("input,select,textarea,button").forEach(control=>{control.disabled=!enabled});
+}
 async function initializeStockroomDatabase(){
  const status=$("#stockroom-database-status"),message=$("#stockroom-message");
- if(!sessionToken||!accountId||accountId==="guest"){if(status)status.textContent="SIGN IN REQUIRED";if(message)message.textContent="Sign in to connect your business Stockroom database.";return false}
+ if(!sessionToken||!accountId||accountId==="guest"){setStockroomFormAccess(false);if(status)status.textContent="SIGN IN REQUIRED";if(message)message.textContent="Sign in to connect your business Stockroom database before adding, editing, or saving products.";return false}
+ setStockroomFormAccess(true);
  if(status)status.textContent="INITIALIZING";
  if(message)message.textContent="Checking your private business database…";
  try{
@@ -170,6 +175,8 @@ let editingStockroomProductId=null;
 function resetStockroomEditor(){
  const form=$("#stockroom-product-form");if(form)form.reset();
  $("#stockroom-quantity").value="0";$("#stockroom-price").value="0.00";$("#stockroom-cost").value="0.00";$("#stockroom-status").value="active";
+ $("#stockroom-image-ref").value="";$("#stockroom-image-file").value="";
+ const preview=$("#stockroom-image-preview");if(preview)preview.textContent="Choose an image from your device. Images are stored securely in R2.";
  editingStockroomProductId=null;
  $("#stockroom-form-title").textContent="Add a product";
  $("#stockroom-form-help").textContent="Create a product record. You can edit it later without leaving Stockroom.";
@@ -197,25 +204,44 @@ function renderStockroomProducts(data){
 async function saveStockroomProduct(event){
  event.preventDefault();
  const form=$("#stockroom-product-form"),button=$("#stockroom-save"),message=$("#stockroom-message");
- if(!form||!sessionToken||!accountId||accountId==="guest"){if(message)message.textContent="Sign in before saving products.";return}
+ if(!form||!sessionToken||!accountId||accountId==="guest"){setStockroomFormAccess(false);if(message)message.textContent="Sign in before saving products.";return}
  let variations=[];try{variations=JSON.parse($("#stockroom-variations").value.trim()||"[]");if(!Array.isArray(variations))throw new Error("Variations must be a JSON array.")}catch(error){if(message)message.textContent=error.message||"Variations must be valid JSON.";return}
  const payload={
   name:$("#stockroom-name").value.trim(),sku:$("#stockroom-sku").value.trim(),
   category:$("#stockroom-category").value.trim(),quantity:Number($("#stockroom-quantity").value),
   price:Number($("#stockroom-price").value),cost:Number($("#stockroom-cost").value),
-  image_url:$("#stockroom-image").value.trim(),external_url:$("#stockroom-external-url").value.trim(),
+  image_url:$("#stockroom-image-ref").value.trim(),external_url:$("#stockroom-external-url").value.trim(),
   description:$("#stockroom-description").value.trim(),status:$("#stockroom-status").value,variations
  };
- button.disabled=true;button.textContent=editingStockroomProductId?"Saving changes…":"Saving…";
+ const editing=Boolean(editingStockroomProductId),existingId=editingStockroomProductId;
+ button.disabled=true;button.textContent=editing?"Saving changes…":"Saving…";
  try{
-  const editing=Boolean(editingStockroomProductId);
-  const response=await fetch(stockroomUrl(editing?"/products/"+encodeURIComponent(editingStockroomProductId):"/products"),{method:editing?"PUT":"POST",headers:authHeaders(),body:JSON.stringify(payload)});
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(data.error==="sku_already_exists"?"That SKU is already in your Stockroom.":data.error||"Product could not be saved");
-  if(message)message.textContent=payload.name+(editing?" was updated.":" was saved to your business database.");
+  let savedId=existingId;
+  if(!editing){
+   const createResponse=await fetch(stockroomUrl("/products"),{method:"POST",headers:authHeaders(),body:JSON.stringify(payload)});
+   const created=await createResponse.json().catch(()=>({}));
+   if(!createResponse.ok)throw new Error(created.error==="sku_already_exists"?"That SKU is already in your Stockroom.":created.error||"Product could not be saved");
+   savedId=created.product?.id;
+   if(typeof savedId!=="string")throw new Error("Product was saved but the server did not return its product ID.");
+  }
+  const file=$("#stockroom-image-file")?.files?.[0];
+  if(file){
+   if(!savedId)throw new Error("Save the product before uploading its image.");
+   const upload=new FormData();upload.append("image",file,file.name);
+   const uploadResponse=await fetch(stockroomUrl("/media/"+encodeURIComponent(savedId)),{method:"POST",headers:{authorization:authHeaders().authorization},body:upload});
+   const media=await uploadResponse.json().catch(()=>({}));
+   if(!uploadResponse.ok)throw new Error("Product saved, but image upload failed: "+(media.error||"R2 upload failed"));
+   payload.image_url=media.image_url;
+  }
+  if(editing||file){
+   const updateResponse=await fetch(stockroomUrl("/products/"+encodeURIComponent(savedId)),{method:"PUT",headers:authHeaders(),body:JSON.stringify(payload)});
+   const updated=await updateResponse.json().catch(()=>({}));
+   if(!updateResponse.ok)throw new Error("Product saved, but its final update failed: "+(updated.error||"update failed"));
+  }
+  if(message)message.textContent=payload.name+(editing?" was updated.":" was saved to Stockroom.")+(file?" Product image uploaded to R2 and attached.":"");
   resetStockroomEditor();await loadStockroomProducts();
- }catch(error){if(message)message.textContent="Save failed: "+error.message}
- finally{button.disabled=false;if(!editingStockroomProductId)button.textContent="＋ Save product";else button.textContent="Save changes"}
+ }catch(error){if(message)message.textContent="Save failed: "+error.message;await loadStockroomProducts()}
+ finally{button.disabled=false;button.textContent=editingStockroomProductId?"Save changes":"＋ Save product"}
 }
 async function editStockroomProduct(productId){
  try{
@@ -228,7 +254,9 @@ async function editStockroomProduct(productId){
   $("#stockroom-name").value=product.name||"";$("#stockroom-sku").value=product.sku||"";
   $("#stockroom-category").value=product.category||"";$("#stockroom-quantity").value=product.quantity??0;
   $("#stockroom-price").value=Number(product.price||0).toFixed(2);$("#stockroom-cost").value=Number(product.cost||0).toFixed(2);
-  $("#stockroom-image").value=product.image_url||"";$("#stockroom-external-url").value=product.external_url||"";
+  $("#stockroom-image-ref").value=product.image_url||"";$("#stockroom-image-file").value="";
+  const preview=$("#stockroom-image-preview");if(preview)preview.textContent=product.image_url?"Current product image saved in R2. Choose a new file to replace it.":"No product image uploaded yet.";
+  $("#stockroom-external-url").value=product.external_url||"";
   $("#stockroom-description").value=product.description||"";$("#stockroom-variations").value=JSON.stringify(product.variations||[],null,2);
   $("#stockroom-status").value=product.status==="draft"?"draft":"active";
   $("#stockroom-form-title").textContent="Edit product";
@@ -347,7 +375,8 @@ async function disconnectPaypal(){
 }
 async function saveCryptoSettings(){
  const status=$('#payment-crypto-status'),button=$('#payment-save-crypto');button.disabled=true;status.textContent='Saving…';
- try{const body={wallet_address:$('#payment-wallet').value.trim(),paypal_url:'',crypto_enabled:$('#payment-crypto-enabled').checked,paypal_enabled:!!paypalConnection.connected};
+ const modes=paypalConnection.available_modes||{};
+ try{const body={wallet_address:$('#payment-wallet').value.trim(),paypal_url:'',crypto_enabled:$('#payment-crypto-enabled').checked,paypal_enabled:Boolean(paypalConnection.connected||modes.sandbox||modes.live)};
   const r=await fetch('/api/payments/settings?account_id='+encodeURIComponent(accountId),{method:'PUT',headers:authHeaders(),body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not save payment settings');
   status.textContent='Payment settings saved.';
  }catch(error){status.textContent=error.message}finally{button.disabled=false}
@@ -402,7 +431,7 @@ async function publishProject(){
  finally{button.disabled=false}
 }
 
-function bind(){ $('#publish-site')?.addEventListener('click',publishProject);$('#publish-project')?.addEventListener('change',()=>{const p=projects.find(x=>x.id===$('#publish-project').value);updatePublishedAddress(p);updateViewWebsite(p)});$('#view-website')?.addEventListener('click',e=>{const project=projects.find(p=>p.id===$('#publish-project')?.value);const url=safePublishedUrl(project&&project.publishedUrl);if(!url){e.preventDefault();toast('Publish this project before opening its website.');return}e.currentTarget.href=url;});$('#payment-paypal-connect')?.addEventListener('click',connectPaypal);$('#payment-paypal-mode')?.addEventListener('change',loadPaymentSettings);$('#payment-paypal-disconnect')?.addEventListener('click',disconnectPaypal);$('#payment-save-crypto')?.addEventListener('click',saveCryptoSettings);$$('[data-view]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.view)));$$('[data-go]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.go)));['#new-project','#new-project-top','#empty-create','#projects-create','#projects-empty-create'].forEach(s=>$(s)?.addEventListener('click',()=>openModal()));$('#modal-close').addEventListener('click',closeModal);$('#new-modal').addEventListener('click',e=>{if(e.target.id==='new-modal')closeModal()});$('#new-form').addEventListener('submit',e=>{e.preventDefault();const name=$('#project-name').value.trim();if(name)createProject(name,$('#project-kind').value)});document.addEventListener('click',e=>{const section=e.target.closest('[data-select-section]');if(section){selectedSectionId=section.dataset.selectSection;renderSectionList();syncPreview();return}const edit=e.target.closest('[data-edit]');if(edit){activeId=edit.dataset.edit;openView('editor');return}const duplicate=e.target.closest('[data-duplicate]');if(duplicate){duplicateProject(duplicate.dataset.duplicate);return}const remove=e.target.closest('[data-delete]');if(remove)deleteProject(remove.dataset.delete)});$$('[data-template]').forEach(b=>b.addEventListener('click',()=>{const kind=b.dataset.template;createProject(kind+' Website',kind)}));$('#stockroom-product-form')?.addEventListener('submit',saveStockroomProduct);$('#stockroom-cancel-edit')?.addEventListener('click',resetStockroomEditor);$('#stockroom-refresh')?.addEventListener('click',initializeStockroomDatabase);$('#stockroom-search')?.addEventListener('input',()=>loadStockroomProducts());$('#stockroom-products')?.addEventListener('click',e=>{if(e.target.closest('[data-stockroom-empty-add]')){$('#stockroom-name').focus();$('#stockroom-product-form').scrollIntoView({behavior:'smooth',block:'center'});return}const edit=e.target.closest('[data-stockroom-edit]');if(edit)void editStockroomProduct(edit.dataset.stockroomEdit);const remove=e.target.closest('[data-stockroom-delete]');if(remove)void archiveStockroomProduct(remove.dataset.stockroomDelete)});$('#editor-project').addEventListener('change',e=>{activeId=e.target.value;loadEditor()});['#site-title','#site-description','#site-button','#site-color','#site-bg'].forEach(s=>$(s).addEventListener('input',syncPreview));$('#save-project').addEventListener('click',saveEditor);$('#download-site').addEventListener('click',download);$$('[data-add-section]').forEach(b=>b.addEventListener('click',()=>{addSection(b.dataset.addSection);toast('Section added. Customize it and save your page.')}));$('#section-title').addEventListener('input',syncPreview);$('#section-body').addEventListener('input',syncPreview);$('#remove-section').addEventListener('click',()=>{const p=activeProject();if(!p)return;p.sections=(p.sections||[]).filter(x=>x.id!==selectedSectionId);selectedSectionId=p.sections[0]?.id||null;renderSectionList();syncPreview()});$$('[data-device]').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.device==='desktop'?'true':'false');b.addEventListener('click',()=>{$$('[data-device]').forEach(x=>{const active=x===b;x.classList.toggle('active',active);x.setAttribute('aria-pressed',active?'true':'false')});const mobile=b.dataset.device==='mobile';$('#canvas-wrap').classList.toggle('mobile-preview',mobile);const frame=$('#site-canvas');if(frame){frame.style.width=mobile?'min(375px, 100%)':'100%';frame.title=mobile?'Mobile website preview (375px viewport)':'Desktop website preview'};})});$('#workspace-name').addEventListener('change',e=>{try{localStorage.setItem('vampiresquid-workspace-name',e.target.value)}catch{}});$('#logout')?.addEventListener('click',()=>{try{if(sessionToken&&accountId!=='guest')fetch('/api/auth/logout',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken}),keepalive:true}).catch(()=>{})}catch{}try{['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}location.replace('/vm.html?logged_out=1')});$('#delete-account')?.addEventListener('click',async()=>{if(!sessionToken||!accountId||accountId==='guest'){toast('Sign in to a regular account before deleting it.');return}const confirmation=prompt('This permanently deletes your account, projects, and saved VM. Type DELETE to continue.');if(confirmation!=='DELETE')return;const button=$('#delete-account');button.disabled=true;button.textContent='Deleting account…';try{const response=await fetch('/api/account/delete',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error((data.error||'Account deletion failed')+(Array.isArray(data.failures)?': '+data.failures.join(', '):''));try{localStorage.removeItem(KEY);localStorage.removeItem(DELETED_KEY);['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}alert('Your VampireSquid account and account data have been deleted.');location.assign('/vm.html')}catch(error){toast('Could not delete account: '+error.message);button.disabled=false;button.textContent='Delete my account'}})}
+function bind(){ $('#publish-site')?.addEventListener('click',publishProject);$('#publish-project')?.addEventListener('change',()=>{const p=projects.find(x=>x.id===$('#publish-project').value);updatePublishedAddress(p);updateViewWebsite(p)});$('#view-website')?.addEventListener('click',e=>{const project=projects.find(p=>p.id===$('#publish-project')?.value);const url=safePublishedUrl(project&&project.publishedUrl);if(!url){e.preventDefault();toast('Publish this project before opening its website.');return}e.currentTarget.href=url;});$('#payment-paypal-connect')?.addEventListener('click',connectPaypal);$('#payment-paypal-mode')?.addEventListener('change',loadPaymentSettings);$('#payment-paypal-disconnect')?.addEventListener('click',disconnectPaypal);$('#payment-save-crypto')?.addEventListener('click',saveCryptoSettings);$$('[data-view]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.view)));$$('[data-go]').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.go)));['#new-project','#new-project-top','#empty-create','#projects-create','#projects-empty-create'].forEach(s=>$(s)?.addEventListener('click',()=>openModal()));$('#modal-close').addEventListener('click',closeModal);$('#new-modal').addEventListener('click',e=>{if(e.target.id==='new-modal')closeModal()});$('#new-form').addEventListener('submit',e=>{e.preventDefault();const name=$('#project-name').value.trim();if(name)createProject(name,$('#project-kind').value)});document.addEventListener('click',e=>{const section=e.target.closest('[data-select-section]');if(section){selectedSectionId=section.dataset.selectSection;renderSectionList();syncPreview();return}const edit=e.target.closest('[data-edit]');if(edit){activeId=edit.dataset.edit;openView('editor');return}const duplicate=e.target.closest('[data-duplicate]');if(duplicate){duplicateProject(duplicate.dataset.duplicate);return}const remove=e.target.closest('[data-delete]');if(remove)deleteProject(remove.dataset.delete)});$$('[data-template]').forEach(b=>b.addEventListener('click',()=>{const kind=b.dataset.template;createProject(kind+' Website',kind)}));$('#stockroom-product-form')?.addEventListener('submit',saveStockroomProduct);$('#stockroom-image-file')?.addEventListener('change',e=>{const file=e.target.files?.[0],preview=$('#stockroom-image-preview');if(!preview)return;if(!file){preview.textContent=$('#stockroom-image-ref').value?'Current product image saved in R2.':'Choose an image from your device.';return}if(!/^image\/(jpeg|png|webp|gif)$/.test(file.type)||file.size>5*1024*1024){e.target.value='';preview.textContent='Choose a JPEG, PNG, WebP, or GIF image no larger than 5 MB.';return}preview.textContent='Selected: '+file.name+' ('+(file.size/1024).toFixed(0)+' KB). It will upload to R2 when you save.';});$('#stockroom-cancel-edit')?.addEventListener('click',resetStockroomEditor);$('#stockroom-refresh')?.addEventListener('click',initializeStockroomDatabase);$('#stockroom-search')?.addEventListener('input',()=>loadStockroomProducts());$('#stockroom-products')?.addEventListener('click',e=>{if(e.target.closest('[data-stockroom-empty-add]')){$('#stockroom-name').focus();$('#stockroom-product-form').scrollIntoView({behavior:'smooth',block:'center'});return}const edit=e.target.closest('[data-stockroom-edit]');if(edit)void editStockroomProduct(edit.dataset.stockroomEdit);const remove=e.target.closest('[data-stockroom-delete]');if(remove)void archiveStockroomProduct(remove.dataset.stockroomDelete)});$('#editor-project').addEventListener('change',e=>{activeId=e.target.value;loadEditor()});['#site-title','#site-description','#site-button','#site-color','#site-bg'].forEach(s=>$(s).addEventListener('input',syncPreview));$('#save-project').addEventListener('click',saveEditor);$('#download-site').addEventListener('click',download);$$('[data-add-section]').forEach(b=>b.addEventListener('click',()=>{addSection(b.dataset.addSection);toast('Section added. Customize it and save your page.')}));$('#section-title').addEventListener('input',syncPreview);$('#section-body').addEventListener('input',syncPreview);$('#remove-section').addEventListener('click',()=>{const p=activeProject();if(!p)return;p.sections=(p.sections||[]).filter(x=>x.id!==selectedSectionId);selectedSectionId=p.sections[0]?.id||null;renderSectionList();syncPreview()});$$('[data-device]').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.device==='desktop'?'true':'false');b.addEventListener('click',()=>{$$('[data-device]').forEach(x=>{const active=x===b;x.classList.toggle('active',active);x.setAttribute('aria-pressed',active?'true':'false')});const mobile=b.dataset.device==='mobile';$('#canvas-wrap').classList.toggle('mobile-preview',mobile);const frame=$('#site-canvas');if(frame){frame.style.width=mobile?'min(375px, 100%)':'100%';frame.title=mobile?'Mobile website preview (375px viewport)':'Desktop website preview'};})});$('#workspace-name').addEventListener('change',e=>{try{localStorage.setItem('vampiresquid-workspace-name',e.target.value)}catch{}});$('#logout')?.addEventListener('click',()=>{try{if(sessionToken&&accountId!=='guest')fetch('/api/auth/logout',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken}),keepalive:true}).catch(()=>{})}catch{}try{['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}location.replace('/vm.html?logged_out=1')});$('#delete-account')?.addEventListener('click',async()=>{if(!sessionToken||!accountId||accountId==='guest'){toast('Sign in to a regular account before deleting it.');return}const confirmation=prompt('This permanently deletes your account, projects, and saved VM. Type DELETE to continue.');if(confirmation!=='DELETE')return;const button=$('#delete-account');button.disabled=true;button.textContent='Deleting account…';try{const response=await fetch('/api/account/delete',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({account_id:accountId,session_token:sessionToken})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error((data.error||'Account deletion failed')+(Array.isArray(data.failures)?': '+data.failures.join(', '):''));try{localStorage.removeItem(KEY);localStorage.removeItem(DELETED_KEY);['vm-account-id','vm-session-token','vm-username','vm-login-time','vm-initial-snapshot-pending'].forEach(k=>sessionStorage.removeItem(k))}catch{}alert('Your VampireSquid account and account data have been deleted.');location.assign('/vm.html')}catch(error){toast('Could not delete account: '+error.message);button.disabled=false;button.textContent='Delete my account'}})}
 bind();renderProjects();
 
 if(!accountId||accountId==='guest'||!sessionToken){const label=$('#session-user');if(label)label.textContent='Not signed in';toast('Preview mode: log in to your account before using account-connected features.');}
