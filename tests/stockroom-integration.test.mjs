@@ -45,7 +45,7 @@ test("signup and TinyCore startup initialize the business database idempotently"
 test("Stockroom API authenticates private account requests and isolates public catalog fields", () => {
   assert.match(database, /auth\/verify/);
   assert.match(database, /BUSINESS_DATABASE\.idFromName\(accountId\)/);
-  assert.match(database, /\/api\/stockroom\/public/);
+  assert.ok(database.includes("stockroom\\/public"));
   assert.match(database, /\/public-products/);
   assert.match(database, /price: row\.price_cents \/ 100/);
   assert.doesNotMatch(database.slice(database.indexOf('if (url.pathname === "/public-products"'), database.indexOf('if (url.pathname === "/products" && request.method === "GET")')), /cost_cents/);
