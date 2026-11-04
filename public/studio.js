@@ -171,12 +171,13 @@ async function saveStockroomProduct(event){
  event.preventDefault();
  const form=$("#stockroom-product-form"),button=$("#stockroom-save"),message=$("#stockroom-message");
  if(!form||!sessionToken||!accountId||accountId==="guest"){if(message)message.textContent="Sign in before saving products.";return}
+ let variations=[];try{variations=JSON.parse($("#stockroom-variations").value.trim()||"[]");if(!Array.isArray(variations))throw new Error("Variations must be a JSON array.")}catch(error){if(message)message.textContent=error.message||"Variations must be valid JSON.";return}
  const payload={
   name:$("#stockroom-name").value.trim(),sku:$("#stockroom-sku").value.trim(),
   category:$("#stockroom-category").value.trim(),quantity:Number($("#stockroom-quantity").value),
   price:Number($("#stockroom-price").value),cost:Number($("#stockroom-cost").value),
   image_url:$("#stockroom-image").value.trim(),external_url:$("#stockroom-external-url").value.trim(),
-  description:$("#stockroom-description").value.trim(),status:$("#stockroom-status").value,variations:[]
+  description:$("#stockroom-description").value.trim(),status:$("#stockroom-status").value,variations
  };
  button.disabled=true;button.textContent="Saving…";
  try{
