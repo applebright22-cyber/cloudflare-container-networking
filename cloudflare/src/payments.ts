@@ -1,6 +1,7 @@
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
+  BUSINESS_DATABASE: DurableObjectNamespace;
   PAYMENTS_ENCRYPTION_KEY?: string;
 }
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -38,16 +39,17 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(mapping.account_id, "settings"));
     const credentials = await getPaypalCredentials(env, mapping.account_id);
     if (!settings?.paypal_enabled || !credentials) return json({ error: "merchant_paypal_not_configured" }, 409);
-    const page = await env.PROJECT_STORAGE.get("published-sites/" + siteId + "/index.html");
-    if (!page) return json({ error: "published_site_missing" }, 404);
-    const html = await page.text();
-    const catalog = new Map<string, { name: string; price: number }>();
-    const buttonPattern = /<button\b(?=[^>]*\bdata-product-id=["']([a-z0-9-]{2,64})["'])(?=[^>]*\bdata-name=["']([^"']{1,100})["'])(?=[^>]*\bdata-price=["'](\d{1,7}(?:\.\d{1,2})?)["'])[^>]*>/gi;
-    for (const match of html.matchAll(buttonPattern)) {
-      const price = Number(match[3]);
-      if (Number.isFinite(price) && price > 0) catalog.set(match[1], { name: match[2].trim(), price });
+    const businessDatabase = env.BUSINESS_DATABASE.get(env.BUSINESS_DATABASE.idFromName(mapping.account_id));
+    const catalogResponse = await businessDatabase.fetch("https://business-database.internal/products?status=active");
+    if (!catalogResponse.ok) return json({ error: "store_catalog_unavailable" }, 503);
+    const catalogData = await catalogResponse.json() as { products?: Array<{ id: string; name: string; price: number; quantity: number }> };
+    const catalog = new Map<string, { name: string; price: number; quantity: number }>();
+    for (const product of catalogData.products ?? []) {
+      if (typeof product.id === "string" && Number.isFinite(product.price) && product.price > 0) {
+        catalog.set(product.id, { name: product.name, price: product.price, quantity: Number(product.quantity) || 0 });
+      }
     }
-    if (!catalog.size) return json({ error: "store_catalog_not_found" }, 409);
+    if (!catalog.size) return json({ error: "store_catalog_empty" }, 409);
     const body = await request.json().catch(() => null) as { items?: unknown } | null;
     if (!Array.isArray(body?.items) || body.items.length < 1 || body.items.length > 20) return json({ error: "invalid_cart" }, 400);
     const quantities = new Map<string, number>();
@@ -56,7 +58,9 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       const productId = (item as { product_id?: unknown }).product_id;
       const quantity = (item as { quantity?: unknown }).quantity;
       if (typeof productId !== "string" || !catalog.has(productId) || !Number.isInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 99) return json({ error: "invalid_cart_item" }, 400);
-      quantities.set(productId, (quantities.get(productId) ?? 0) + Number(quantity));
+      const requested = (quantities.get(productId) ?? 0) + Number(quantity);
+      if (requested > catalog.get(productId)!.quantity) return json({ error: "insufficient_stock", product_id: productId }, 409);
+      quantities.set(productId, requested);
     }
     let amount = 0;
     const lineItems = Array.from(quantities, ([product_id, quantity]) => {
