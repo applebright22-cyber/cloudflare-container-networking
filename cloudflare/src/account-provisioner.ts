@@ -9,6 +9,8 @@ interface ProvisioningJob {
   identity: string;
   username: string;
   baseline_id: string;
+  ambassador_id?: string;
+  deal_id?: string;
   generation: string;
   status: "queued" | "running" | "complete" | "error";
   created_at: string;
@@ -68,12 +70,15 @@ export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
       return json({ ok: true, storage_cleared: true, alarm_deleted: true });
     }
     if (url.pathname !== "/start" || request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-    const body = await request.json().catch(() => null) as { identity?: unknown; username?: unknown; baseline_id?: unknown } | null;
+    const body = await request.json().catch(() => null) as { identity?: unknown; username?: unknown; baseline_id?: unknown; ambassador_id?: unknown; deal_id?: unknown } | null;
     const identity = typeof body?.identity === "string" ? body.identity.toLowerCase() : "";
     const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
     const baselineId = typeof body?.baseline_id === "string" ? body.baseline_id : (this.env.VM_BASELINE_ID ?? "admin");
     if (!validAccountId(identity) || !/^[a-z0-9][a-z0-9_-]{1,31}$/.test(username) ||
-        !/^[a-zA-Z0-9._-]{1,64}$/.test(baselineId) || baselineId.startsWith("acct-")) {
+        !/^[a-zA-Z0-9._-]{1,64}$/.test(baselineId) || baselineId.startsWith("acct-") ||
+        (body?.ambassador_id !== undefined && (typeof body.ambassador_id !== "string" || !/^amb-[a-f0-9-]{36}$/.test(body.ambassador_id))) ||
+        (body?.deal_id !== undefined && (typeof body.deal_id !== "string" || !/^deal-[a-f0-9-]{36}$/.test(body.deal_id))) ||
+        ((body?.ambassador_id === undefined) !== (body?.deal_id === undefined))) {
       return json({ error: "invalid_snapshot_clone_job" }, 400);
     }
 
@@ -83,7 +88,10 @@ export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
     }
     const now = new Date().toISOString();
     const job: ProvisioningJob = {
-      identity, username, baseline_id: baselineId, generation: crypto.randomUUID(),
+      identity, username, baseline_id: baselineId,
+      ...(typeof body?.ambassador_id === "string" && typeof body?.deal_id === "string"
+        ? { ambassador_id: body.ambassador_id, deal_id: body.deal_id } : {}),
+      generation: crypto.randomUUID(),
       status: "queued", created_at: now, updated_at: now, attempts: 0,
     };
     await this.ctx.storage.put("job", job);
@@ -177,6 +185,7 @@ export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
         body: JSON.stringify({ account_id: job.identity, status: "ready" }),
       });
       if (!accountReady.ok || !authReady.ok) throw new Error("account_ready_transition_failed");
+      await this.updateAmbassadorDeal(job, "ready");
 
       job = { ...job, status: "complete", updated_at: new Date().toISOString() };
       await this.ctx.storage.put("job", job);
@@ -211,9 +220,22 @@ export class AccountProvisioner extends DurableObject<ProvisionerEnv> {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ account_id: job.identity, status: "error" }),
       });
+      await this.updateAmbassadorDeal(job, "error");
       await this.writeProgress(job, "error", "failed", { error: message, snapshot_cloned: false });
       await this.ctx.storage.deleteAlarm();
     }
+  }
+
+  private async updateAmbassadorDeal(job: ProvisioningJob, status: "ready" | "error"): Promise<void> {
+    if (!job.ambassador_id || !job.deal_id) return;
+    const auth = this.env.ACCOUNT_REGISTRY.get(this.env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+    await auth.fetch("https://account-registry.internal/ambassador/deal/provisioning-status", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ambassador_id: job.ambassador_id, deal_id: job.deal_id,
+        account_id: job.identity, workspace_status: status,
+      }),
+    });
   }
 
   private async writeProgress(
