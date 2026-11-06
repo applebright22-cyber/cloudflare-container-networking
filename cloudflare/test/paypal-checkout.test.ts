@@ -179,8 +179,10 @@ test("PayPal merchant connection, buyer checkout, capture and inventory commit u
   assert.equal(captureRequestId, checkoutId + "-capture");
   assert.equal(oauthClients.at(-1), "sandbox-client-id");
   assert.match(captureHost, /api-m\.sandbox\.paypal\.com/);
-  const savedCheckout = await (await env.PROJECT_STORAGE.get("accounts/" + account + "/payments/checkout-" + checkoutId)).json();
-  assert.equal(savedCheckout.paypal_mode, "sandbox");
+  const savedCheckout = await call(env, request("/api/payments/checkout/" + checkoutId));
+  assert.equal(savedCheckout.response.status, 200);
+  assert.equal(savedCheckout.data.checkout.paypal_mode, "sandbox");
+  assert.equal(savedCheckout.data.checkout.status, "paid");
 
   const duplicateCapture = await call(env, request("/api/payments/checkout/" + checkoutId + "/paypal/capture", {
     method: "POST", body: { order_id: "PAYPAL-ORDER-123" },
