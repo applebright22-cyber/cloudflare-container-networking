@@ -131,8 +131,13 @@ export async function handleMarketplaceRequest(request: Request, env: Marketplac
   if (url.pathname !== "/api/marketplace/products") return null;
   if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
 
-  const latitude = Number(url.searchParams.get("lat"));
-  const longitude = Number(url.searchParams.get("lng"));
+  const latitudeText = url.searchParams.get("lat");
+  const longitudeText = url.searchParams.get("lng");
+  if (latitudeText === null || longitudeText === null || !latitudeText.trim() || !longitudeText.trim()) {
+    return json({ error: "valid_location_required" }, 400);
+  }
+  const latitude = Number(latitudeText);
+  const longitude = Number(longitudeText);
   if (!validCoordinates(latitude, longitude)) return json({ error: "valid_location_required" }, 400);
   const query = (url.searchParams.get("q") ?? "").trim().slice(0, 100).toLowerCase();
   const category = (url.searchParams.get("category") ?? "").trim().slice(0, 60).toLowerCase();
