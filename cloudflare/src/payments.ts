@@ -1,4 +1,4 @@
-import { InventoryLedger } from "./inventory-ledger";
+import type { InventoryLedger } from "./inventory-ledger";
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
@@ -102,7 +102,7 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       return json({error:"cart_total_invalid"},400);
     }
     const reservedLineItems = reserved.items.map(x => ({ product_id:x.product_id,name:x.name,quantity:x.quantity,unit_amount_usd:x.unit_amount_usd }));
-    const record = { id, account_id: mapping.account_id, site_id: siteId, amount_usd: amount.toFixed(2), description: reservedLineItems.map(x => x.quantity + " × " + x.name).join(", ").slice(0, 120), items: reservedLineItems, status: "pending", created_at: new Date().toISOString(), expires_at: reserved.expires_at ?? new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+    const record = { id, account_id: mapping.account_id, site_id: siteId, paypal_mode: credentials?.mode ?? null, amount_usd: amount.toFixed(2), description: reservedLineItems.map(x => x.quantity + " × " + x.name).join(", ").slice(0, 120), items: reservedLineItems, status: "pending", created_at: new Date().toISOString(), expires_at: reserved.expires_at ?? new Date(Date.now() + 30 * 60 * 1000).toISOString() };
     try {
       await env.PROJECT_STORAGE.put(keyFor(mapping.account_id, "checkout-" + id), JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
       await env.PROJECT_STORAGE.put("payment-index/" + id + ".json", JSON.stringify({ account_id: mapping.account_id }), { httpMetadata: { contentType: "application/json" } });
@@ -117,23 +117,47 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
   const createMatch = url.pathname === "/api/payments/checkout";
   const paypalConnectMatch = url.pathname === "/api/payments/paypal/connect";
   const paypalStatusMatch = url.pathname === "/api/payments/paypal/status";
+  const paypalTestMatch = url.pathname === "/api/payments/paypal/test";
   const paypalCreateMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})\/paypal\/create-order$/);
   const paypalCaptureMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})\/paypal\/capture$/);
   const publicMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})$/);
   const verifyMatch = url.pathname.match(/^\/api\/payments\/checkout\/([a-f0-9-]{36})\/verify$/);
-  if (!settingsMatch && !createMatch && !publicMatch && !verifyMatch && !paypalConnectMatch && !paypalStatusMatch && !paypalCreateMatch && !paypalCaptureMatch) return json({ error: "not_found" }, 404);
-  if (paypalConnectMatch || paypalStatusMatch) {
+  if (!settingsMatch && !createMatch && !publicMatch && !verifyMatch && !paypalConnectMatch && !paypalStatusMatch && !paypalTestMatch && !paypalCreateMatch && !paypalCaptureMatch) return json({ error: "not_found" }, 404);
+  if (paypalConnectMatch || paypalStatusMatch || paypalTestMatch) {
     const accountId = url.searchParams.get("account_id") ?? "";
     if (!await authenticate(request, env, accountId)) return json({ error: "unauthorized" }, 401);
+    if (paypalTestMatch && !env.PAYMENTS_ENCRYPTION_KEY) return json({ error: "payments_encryption_key_not_configured" }, 503);
     const key = keyFor(accountId, "paypal-credentials");
     const selectedMode = url.searchParams.get("mode") === "live" ? "live" : "sandbox";
     const modeKey = (mode: "sandbox" | "live") => keyFor(accountId, "paypal-credentials-" + mode);
     if (paypalStatusMatch && request.method === "GET") {
-      const saved = await readJson<{ mode: string; client_id: string }>(env.PROJECT_STORAGE, modeKey(selectedMode))
-        ?? await readJson<{ mode: string; client_id: string }>(env.PROJECT_STORAGE, key).then(x => x?.mode === selectedMode ? x : null);
-      const sandbox = await readJson<{ client_id?: string }>(env.PROJECT_STORAGE, modeKey("sandbox"));
-      const live = await readJson<{ client_id?: string }>(env.PROJECT_STORAGE, modeKey("live"));
-      return json({ ok: true, connected: Boolean(saved), mode: selectedMode, client_id: saved?.client_id ?? null, available_modes: { sandbox: Boolean(sandbox), live: Boolean(live) } });
+      const saved = await readJson<{ mode: string; client_id: string; iv?: string; ciphertext?: string }>(env.PROJECT_STORAGE, modeKey(selectedMode))
+        ?? await readJson<{ mode: string; client_id: string; iv?: string; ciphertext?: string }>(env.PROJECT_STORAGE, key).then(x => x?.mode === selectedMode ? x : null);
+      const sandbox = await readJson<{ client_id?: string; iv?: string; ciphertext?: string }>(env.PROJECT_STORAGE, modeKey("sandbox"));
+      const live = await readJson<{ client_id?: string; iv?: string; ciphertext?: string }>(env.PROJECT_STORAGE, modeKey("live"));
+      return json({
+        ok: true, connected: Boolean(saved?.iv && saved?.ciphertext && saved.client_id), mode: selectedMode,
+        client_id: saved?.iv && saved?.ciphertext ? saved.client_id : null,
+        available_modes: {
+          sandbox: Boolean(sandbox?.iv && sandbox?.ciphertext && sandbox.client_id),
+          live: Boolean(live?.iv && live?.ciphertext && live.client_id),
+        },
+      });
+    }
+    if (paypalTestMatch && request.method === "POST") {
+      const body = await request.json().catch(() => null) as { mode?: unknown } | null;
+      if (body?.mode !== "sandbox" && body?.mode !== "live") return json({ error: "invalid_paypal_mode" }, 400);
+      const saved = await readJson<{ iv?: string; ciphertext?: string }>(env.PROJECT_STORAGE, modeKey(body.mode));
+      if (!saved?.iv || !saved.ciphertext) return json({ error: "paypal_mode_not_connected", mode: body.mode }, 409);
+      try {
+        const credentials = await decryptCredentials(env.PAYMENTS_ENCRYPTION_KEY ?? "", saved as { iv: string; ciphertext: string });
+        if (credentials.mode !== body.mode) return json({ error: "paypal_mode_mismatch" }, 409);
+        const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+        await paypalAccessToken(host, credentials);
+        return json({ ok: true, verified: true, mode: credentials.mode, message: "PayPal OAuth authentication succeeded. No payment was taken." });
+      } catch {
+        return json({ error: "paypal_connection_test_failed" }, 502);
+      }
     }
     if (paypalConnectMatch && request.method === "POST") {
       const body = await request.json().catch(() => null) as { mode?: unknown } | null;
@@ -180,28 +204,47 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const id = (paypalCreateMatch ?? paypalCaptureMatch)![1];
     const page = await findCheckout(env.PROJECT_STORAGE, id);
     if (!page) return json({ error: "checkout_not_found" }, 404);
-    if (page.status === "paid") return json({ ok: true, status: "paid" });
+    if (page.status === "paid") {
+      if (page.inventory_status === "needs_review" && page.paypal_order_id) {
+        const repaired = await commitInventory(env, page, page.paypal_order_id, "paypal");
+        const updated = { ...page, inventory_status: repaired.ok ? "queued_for_tinycore_sync" : "needs_review", order_id: repaired.order_id ?? page.order_id };
+        await env.PROJECT_STORAGE.put(keyFor(page.account_id, "checkout-" + id), JSON.stringify(updated), { httpMetadata: { contentType: "application/json" } });
+        return json({ ok: true, status: "paid", inventory_status: updated.inventory_status, order_id: updated.order_id ?? null });
+      }
+      return json({ ok: true, status: "paid", inventory_status: page.inventory_status ?? "complete" });
+    }
     if (Date.now() > Date.parse(page.expires_at)) return json({ error: "checkout_expired" }, 410);
     const paymentSettings = await readJson<any>(env.PROJECT_STORAGE, keyFor(page.account_id, "settings"));
     if (!paymentSettings?.paypal_enabled) return json({ error: "paypal_not_enabled" }, 409);
-    const credentials = await getPaypalCredentials(env, page.account_id);
+    const credentials = await getPaypalCredentials(env, page.account_id, page.paypal_mode === "live" ? "live" : page.paypal_mode === "sandbox" ? "sandbox" : undefined);
     if (!credentials) return json({ error: "paypal_not_connected" }, 409);
     const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
     let access: string;
     try { access = await paypalAccessToken(host, credentials); }
     catch { return json({ error: "paypal_authentication_unavailable" }, 502); }
     if (paypalCreateMatch && request.method === "POST") {
-      const created = await fetch(host + "/v2/checkout/orders", { method: "POST", headers: { authorization: "Bearer " + access, "content-type": "application/json", prefer: "return=representation" }, body: JSON.stringify({ intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, description: String(page.description).slice(0, 127), amount: { currency_code: "USD", value: Number(page.amount_usd).toFixed(2) } }] }) });
+      const orderKey = keyFor(page.account_id, "paypal-order-" + id);
+      const existing = await readJson<{ order_id?: string }>(env.PROJECT_STORAGE, orderKey);
+      if (existing?.order_id) return json({ ok: true, order_id: existing.order_id, reused: true });
+      const created = await fetch(host + "/v2/checkout/orders", {
+        method: "POST",
+        headers: { authorization: "Bearer " + access, "content-type": "application/json", prefer: "return=representation", "PayPal-Request-Id": id },
+        body: JSON.stringify({ intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, description: String(page.description).slice(0, 127), amount: { currency_code: "USD", value: Number(page.amount_usd).toFixed(2) } }] }),
+      });
       const order = await created.json() as { id?: string };
       if (!created.ok || !order.id) return json({ error: "paypal_order_creation_failed", paypal_status: created.status }, 502);
-      await env.PROJECT_STORAGE.put(keyFor(page.account_id, "paypal-order-" + id), JSON.stringify({ order_id: order.id }), { httpMetadata: { contentType: "application/json" } });
+      await env.PROJECT_STORAGE.put(orderKey, JSON.stringify({ order_id: order.id, mode: credentials.mode, created_at: new Date().toISOString() }), { httpMetadata: { contentType: "application/json" } });
       return json({ ok: true, order_id: order.id });
     }
     if (paypalCaptureMatch && request.method === "POST") {
       const body = await request.json().catch(() => null) as { order_id?: unknown } | null;
       const saved = await readJson<{ order_id: string }>(env.PROJECT_STORAGE, keyFor(page.account_id, "paypal-order-" + id));
       if (!saved || body?.order_id !== saved.order_id) return json({ error: "paypal_order_mismatch" }, 400);
-      const captured = await fetch(host + "/v2/checkout/orders/" + encodeURIComponent(saved.order_id) + "/capture", { method: "POST", headers: { authorization: "Bearer " + access, "content-type": "application/json", prefer: "return=representation" }, body: "{}" });
+      const captured = await fetch(host + "/v2/checkout/orders/" + encodeURIComponent(saved.order_id) + "/capture", {
+        method: "POST",
+        headers: { authorization: "Bearer " + access, "content-type": "application/json", prefer: "return=representation", "PayPal-Request-Id": id + "-capture" },
+        body: "{}",
+      });
       const result = await captured.json() as { status?: string; purchase_units?: Array<{ payments?: { captures?: Array<{ status?: string; amount?: { value?: string; currency_code?: string }; id?: string }> } }> };
       if (!captured.ok) return json({ error: "paypal_capture_failed", paypal_status: captured.status }, 502);
       const capture = result.purchase_units?.[0]?.payments?.captures?.[0];
@@ -235,7 +278,8 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       const settings = await readJson<any>(env.PROJECT_STORAGE, settingsKey);
       if (!settings || (!settings.crypto_enabled && !settings.paypal_enabled)) return json({ error: "no_payment_method_configured" }, 409);
       const id = crypto.randomUUID();
-      const record = { id, account_id: accountId, amount_usd: Number(amount).toFixed(2), description: body.description.trim(), status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+      const activeCredentials = await getPaypalCredentials(env, accountId);
+      const record = { id, account_id: accountId, paypal_mode: activeCredentials?.mode ?? null, amount_usd: Number(amount).toFixed(2), description: body.description.trim(), status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
       await env.PROJECT_STORAGE.put(keyFor(accountId, "checkout-" + id), JSON.stringify(record), { httpMetadata: { contentType: "application/json" } });
       await env.PROJECT_STORAGE.put("payment-index/" + id + ".json", JSON.stringify({ account_id: accountId }), { httpMetadata: { contentType: "application/json" } });
       return json({ ok: true, checkout: record, url: new URL("/checkout.html?id=" + id, url.origin).toString() }, 201);
@@ -247,7 +291,10 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
     const page = await findCheckout(env.PROJECT_STORAGE, id);
     if (!page) return json({ error: "checkout_not_found" }, 404);
     const settings = await readJson<any>(env.PROJECT_STORAGE, keyFor(page.account_id, "settings"));
-    const paypalConfig = await readJson<{ client_id: string; mode: string }>(env.PROJECT_STORAGE, keyFor(page.account_id, "paypal-credentials"));
+    const selectedMode = page.paypal_mode === "live" ? "live" : page.paypal_mode === "sandbox" ? "sandbox" : undefined;
+    const paypalConfig = selectedMode
+      ? await readJson<{ client_id: string; mode: string }>(env.PROJECT_STORAGE, keyFor(page.account_id, "paypal-credentials-" + selectedMode))
+      : await readJson<{ client_id: string; mode: string }>(env.PROJECT_STORAGE, keyFor(page.account_id, "paypal-credentials"));
     return json({ ok: true, checkout: page, methods: { crypto: Boolean(settings?.crypto_enabled), paypal: Boolean(settings?.paypal_enabled && paypalConfig) }, paypal: paypalConfig ? { client_id: paypalConfig.client_id, mode: paypalConfig.mode } : null, wallet_address: settings?.crypto_enabled ? settings.wallet_address : null, paypal_url: settings?.paypal_enabled ? settings.paypal_url : null, network: "Base", token: "USDC", token_contract: USDC_BASE });
   }
   if (verifyMatch && request.method === "POST") {
@@ -303,9 +350,10 @@ async function decryptCredentials(secret: string, record: { iv: string; cipherte
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: Uint8Array.from(atob(record.iv), c => c.charCodeAt(0)) }, key, Uint8Array.from(atob(record.ciphertext), c => c.charCodeAt(0)));
   return JSON.parse(new TextDecoder().decode(plain));
 }
-async function getPaypalCredentials(env: PaymentEnv, accountId: string) {
+async function getPaypalCredentials(env: PaymentEnv, accountId: string, mode?: "sandbox" | "live") {
   if (!env.PAYMENTS_ENCRYPTION_KEY) return null;
-  const record = await readJson<{ iv: string; ciphertext: string }>(env.PROJECT_STORAGE, keyFor(accountId, "paypal-credentials"));
+  const suffix = mode ? "paypal-credentials-" + mode : "paypal-credentials";
+  const record = await readJson<{ iv: string; ciphertext: string }>(env.PROJECT_STORAGE, keyFor(accountId, suffix));
   if (!record?.iv || !record.ciphertext) return null;
   try { return await decryptCredentials(env.PAYMENTS_ENCRYPTION_KEY, record); } catch { return null; }
 }
