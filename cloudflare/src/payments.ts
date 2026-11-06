@@ -1,4 +1,4 @@
-import { InventoryLedger } from "./inventory-ledger";
+import type { InventoryLedger } from "./inventory-ledger";
 export interface PaymentEnv {
   ACCOUNT_REGISTRY: DurableObjectNamespace;
   PROJECT_STORAGE: R2Bucket;
