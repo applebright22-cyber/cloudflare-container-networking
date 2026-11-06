@@ -6,6 +6,8 @@ on:
       - "cloudflare/src/business-database.ts"
       - "cloudflare/src/inventory-ledger.ts"
       - "cloudflare/src/payments.ts"
+      - "cloudflare/src/marketplace-directory.ts"
+      - "cloudflare/test/marketplace-directory.test.ts"
       - "cloudflare/src/index.ts"
       - "wrangler.toml"
       - "cloudflare/wrangler.toml"
@@ -44,6 +46,9 @@ jobs:
       - name: Install Cloudflare Worker dependencies
         working-directory: cloudflare
         run: npm install --no-audit --no-fund
+      - name: Run Cloudflare Worker unit tests
+        working-directory: cloudflare
+        run: npm run test:headless
       - name: Build and dry-run Worker validation (no deployment)
         working-directory: cloudflare
         run: npm run check
