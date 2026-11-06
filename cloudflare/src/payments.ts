@@ -151,6 +151,7 @@ export async function handlePayments(request: Request, env: PaymentEnv): Promise
       if (!saved?.iv || !saved.ciphertext) return json({ error: "paypal_mode_not_connected", mode: body.mode }, 409);
       try {
         const credentials = await decryptCredentials(env.PAYMENTS_ENCRYPTION_KEY ?? "", saved as { iv: string; ciphertext: string });
+        if (credentials.mode !== body.mode) return json({ error: "paypal_mode_mismatch" }, 409);
         const host = credentials.mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
         await paypalAccessToken(host, credentials);
         return json({ ok: true, verified: true, mode: credentials.mode, message: "PayPal OAuth authentication succeeded. No payment was taken." });
