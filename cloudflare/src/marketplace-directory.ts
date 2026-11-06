@@ -34,7 +34,7 @@ async function authenticate(request: Request, env: MarketplaceEnv, accountId: st
   return response.ok;
 }
 
-function validCoordinates(latitude: unknown, longitude: unknown): latitude is number {
+function validCoordinates(latitude: unknown, longitude: unknown): boolean {
   return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
     typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
 }
@@ -96,12 +96,14 @@ export async function handleMarketplaceRequest(request: Request, env: Marketplac
     }
     if (request.method !== "PUT") return json({ error: "method_not_allowed" }, 405);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    const latitude = body?.latitude;
+    const longitude = body?.longitude;
     if (!body || typeof body.project_id !== "string" || !PROJECT_ID.test(body.project_id) ||
         typeof body.street_address !== "string" || body.street_address.trim().length < 4 || body.street_address.length > 180 ||
         typeof body.city !== "string" || body.city.trim().length < 2 || body.city.length > 80 ||
         typeof body.state !== "string" || !/^[A-Z]{2}$/.test(body.state.trim().toUpperCase()) ||
         typeof body.postal_code !== "string" || body.postal_code.length > 12 ||
-        !validCoordinates(body.latitude, body.longitude)) {
+        typeof latitude !== "number" || typeof longitude !== "number" || !validCoordinates(latitude, longitude)) {
       return json({ error: "invalid_marketplace_profile" }, 400);
     }
     const stores = await getPublishedStores(env, accountId);
@@ -149,10 +151,13 @@ export async function handleMarketplaceRequest(request: Request, env: Marketplac
       if (storesChecked >= 500) break;
       storesChecked += 1;
       const profile = await readJson<Record<string, unknown>>(env.PROJECT_STORAGE, item.key);
+      const storeLatitude = profile?.latitude;
+      const storeLongitude = profile?.longitude;
       if (!profile || profile.active !== true || typeof profile.account_id !== "string" ||
           !ACCOUNT_ID.test(profile.account_id) || typeof profile.site_id !== "string" ||
-          !SITE_ID.test(profile.site_id) || !validCoordinates(profile.latitude, profile.longitude)) continue;
-      const distance = distanceMiles(latitude, longitude, profile.latitude, profile.longitude);
+          !SITE_ID.test(profile.site_id) || typeof storeLatitude !== "number" ||
+          typeof storeLongitude !== "number" || !validCoordinates(storeLatitude, storeLongitude)) continue;
+      const distance = distanceMiles(latitude, longitude, storeLatitude, storeLongitude);
       if (distance > MARKET_RADIUS_MILES) continue;
       const mapping = await readJson<{ account_id?: string; project_id?: string }>(
         env.PROJECT_STORAGE, "published-sites/index/" + profile.site_id + ".json",
