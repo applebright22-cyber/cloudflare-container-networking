@@ -138,7 +138,30 @@ export default {
         return json({ error: "unauthorized" }, 401);
       }
 
+      let purgeRequest: { dry_run?: unknown; confirm?: unknown };
+      try { purgeRequest = await request.json() as typeof purgeRequest; }
+      catch { return json({ error: "invalid_json" }, 400); }
+      const dryRun = purgeRequest.dry_run !== false;
       const authRegistry = env.ACCOUNT_REGISTRY.get(env.ACCOUNT_REGISTRY.idFromName("auth-users"));
+
+      // Preview is the default. Destructive execution requires an explicit body confirmation.
+      if (dryRun) {
+        const inventory = await authRegistry.fetch("https://account-registry.internal/admin/list-accounts", { method: "GET" });
+        if (!inventory.ok) return json({ error: "account_registry_list_failed", status: inventory.status }, 502);
+        const listed = await inventory.json() as { accounts?: Array<{ username?: unknown; account_id?: unknown }> };
+        const accounts = Array.isArray(listed.accounts) ? listed.accounts.filter((entry) =>
+          typeof entry.account_id === "string" && /^acct-[a-f0-9-]{36}$/.test(entry.account_id)
+        ) : [];
+        return json({
+          ok: true, dry_run: true, account_count: accounts.length,
+          accounts: accounts.map((entry) => ({ username: entry.username, account_id: entry.account_id })),
+          next_step: "Repeat DELETE /api/admin/accounts with {\\"dry_run\\":false,\\"confirm\\":\\"PURGE_ALL_VAMPIREQUID_ACCOUNTS\\"} to execute.",
+        });
+      }
+      if (purgeRequest.confirm !== "PURGE_ALL_VAMPIREQUID_ACCOUNTS") {
+        return json({ error: "confirmation_required", required: "PURGE_ALL_VAMPIREQUID_ACCOUNTS" }, 400);
+      }
+
       const cleared = await authRegistry.fetch("https://account-registry.internal/admin/clear-accounts", { method: "POST" });
       if (!cleared.ok) return json({ error: "account_registry_clear_failed", status: cleared.status }, 502);
       const result = await cleared.json() as { accounts?: Array<{ account_id?: unknown; username?: unknown }> };
