@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#10152b">
+<meta name="description" content="Discover products from independent Orlando shops on Vampirequid.">
+<title>Shop local · Vampirequid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{font-family:Montserrat,Arial,sans-serif;color:#f5f6ff;background:#090d1c;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 12% 0,#23234b 0,transparent 36%),#090d1c}
+button,input,select{font:inherit}button{cursor:pointer}
+.top{height:76px;padding:0 max(22px,calc((100vw - 1240px)/2));display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff16;background:#090d1ccc;position:sticky;top:0;z-index:4;backdrop-filter:blur(16px)}
+.brand{font-weight:800;font-size:23px;letter-spacing:-1px;color:#fff;text-decoration:none}.brand span{color:#c18aff}
+.top-right{display:flex;gap:12px;align-items:center}.top a.link{color:#c5c9dd;text-decoration:none;font-size:12px}
+.button{border:0;border-radius:10px;padding:12px 16px;font-weight:700;background:#ad79eb;color:#160c25}.button.secondary{background:#252c46;color:#eef1ff;border:1px solid #404967}
+main{width:min(1240px,calc(100% - 40px));margin:0 auto}
+.hero{padding:55px 0 28px;display:grid;grid-template-columns:1.2fr .8fr;gap:28px;align-items:end}
+.eyebrow{font-size:10px;letter-spacing:2px;font-weight:800;color:#c18aff}
+h1{font-size:clamp(35px,5.5vw,60px);line-height:1.04;letter-spacing:-2px;margin:13px 0 12px;max-width:720px}
+.lede{color:#aab2ce;line-height:1.7;font-size:14px;max-width:650px;margin:0}
+.hero-note{justify-self:end;border:1px solid #ffffff1c;border-radius:16px;background:#161c31;padding:18px 20px;max-width:310px}
+.hero-note b{font-size:13px}.hero-note p{font-size:11px;line-height:1.6;color:#aab2ce;margin:8px 0 0}
+.toolbar{display:grid;grid-template-columns:minmax(200px,1fr) 190px auto;gap:10px;padding:16px;background:#12182b;border:1px solid #ffffff1a;border-radius:16px}
+.field{display:flex;align-items:center;gap:9px;border:1px solid #343d5a;background:#0b1123;border-radius:10px;padding:0 13px;min-width:0}
+.field input,.field select{min-width:0;width:100%;border:0;outline:0;background:transparent;color:#fff;padding:13px 0;font-size:12px}
+.field select option{background:#11182a}
+.location-row{display:flex;justify-content:space-between;gap:15px;align-items:center;margin:12px 2px 22px}
+#location-status{font-size:11px;color:#aab2ce}
+.results-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 2px 14px}
+.results-head h2{font-size:17px;margin:0}.results-head span{font-size:11px;color:#9da7c4}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;padding-bottom:50px}
+.product{min-width:0;overflow:hidden;border:1px solid #ffffff1b;background:#12182b;border-radius:14px;display:flex;flex-direction:column}
+.photo{height:220px;background:linear-gradient(135deg,#252d4b,#182037);display:grid;place-items:center;color:#818bab;font-size:42px;overflow:hidden}
+.photo img{height:100%;width:100%;object-fit:cover}
+.product-info{padding:14px;display:flex;flex:1;flex-direction:column}
+.product-info h3{font-size:13px;line-height:1.4;margin:0 0 5px}
+.description{font-size:10px;line-height:1.5;color:#9da7c4;min-height:30px;margin:0 0 12px}
+.product-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto}
+.price{font-size:15px;font-weight:800}
+.add{border:0;background:#b98bf0;color:#190e29;padding:9px 11px;border-radius:8px;font-size:10px;font-weight:800}
+.storeline{font-size:9px;line-height:1.5;color:#8e9ab9;margin:0 0 10px}
+.distance{display:inline-block;color:#d0b1ff;font-size:9px;margin-top:2px}
+.empty{grid-column:1/-1;padding:55px 15px;text-align:center;border:1px dashed #455071;border-radius:14px;color:#aab2ce;font-size:13px}
+.empty b{display:block;color:#fff;font-size:17px;margin-bottom:7px}
+footer{border-top:1px solid #ffffff16;padding:25px 20px;text-align:center;color:#7884a6;font-size:10px}
+.cartbar{position:fixed;z-index:5;bottom:18px;right:18px;display:flex;gap:12px;align-items:center;padding:11px 13px 11px 17px;background:#f4eaff;color:#1e1230;border-radius:14px;box-shadow:0 10px 50px #0008}
+.cartbar strong{font-size:12px}.cartbar small{display:block;font-size:9px;opacity:.7;margin-top:2px}
+.cartbar button{border:0;border-radius:9px;background:#9f65e0;color:#fff;padding:11px 14px;font-size:11px;font-weight:800}
+.cartbar button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:950px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.photo{height:195px}}
+@media(max-width:690px){.hero{grid-template-columns:1fr;padding-top:35px}.hero-note{justify-self:stretch;max-width:none}.toolbar{grid-template-columns:1fr 1fr}.toolbar .search{grid-column:1/-1}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.photo{height:180px}}
+@media(max-width:420px){main{width:calc(100% - 24px)}.top{height:64px;padding:0 14px}.top-right .link{display:none}.brand{font-size:20px}.grid{gap:9px}.photo{height:145px}.product-info{padding:10px}.product-info h3{font-size:11px}.price{font-size:13px}.add{padding:8px;font-size:9px}.cartbar{left:12px;right:12px;bottom:12px;justify-content:space-between}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">Vampire<span>quid</span></a>
+  <div class="top-right"><a class="link" href="/vm.html">Merchant sign in</a><button class="button secondary" id="use-location-top" type="button">Use my location</button></div>
+</header>
+<main>
+  <section class="hero">
+    <div><div class="eyebrow">THE ORLANDO LOCAL EDIT</div><h1>Find something good.<br><span style="color:#c18aff">Close to home.</span></h1><p class="lede">Discover products from independent shops near you. Search local inventory, compare stores, and check out directly with the shop.</p></div>
+    <aside class="hero-note"><b>Shop local, within 10 miles</b><p>Results are based on your current location and live store inventory. Product availability can change while you shop.</p></aside>
+  </section>
+  <section class="toolbar" aria-label="Product search">
+    <label class="field search"><span>⌕</span><input id="search" type="search" maxlength="100" placeholder="Search clothing, shoes, accessories…"></label>
+    <label class="field"><select id="category"><option value="">All categories</option></select></label>
+    <button class="button" id="search-button" type="button">Search products</button>
+  </section>
+  <div class="location-row"><span id="location-status" role="status">Set your location to find nearby Orlando stores.</span><button class="button secondary" id="use-location" type="button">Use current location</button></div>
+  <div class="results-head"><h2>Products near you</h2><span id="result-count">Location required</span></div>
+  <section class="grid" id="products" aria-live="polite"><div class="empty"><b>Start with your location</b>Use current location to see products from nearby shops.</div></section>
+</main>
+<footer>© 2026 Vampirequid · Local products, listed by independent merchants.</footer>
+<div class="cartbar"><div><strong id="cart-summary">Your cart is empty</strong><small id="cart-store">One store per order</small></div><button id="checkout" type="button" disabled>Continue to checkout</button></div>
+<script>
+(() => {
+  const $ = (selector) => document.querySelector(selector);
+  const state = { location: null, products: [], siteId: null, storeName: null, items: new Map(), busy: false };
+  const money = (value) => "$" + Number(value || 0).toFixed(2);
+  const status = (message) => { $("#location-status").textContent = message; };
+  function setLoading(message) {
+    const grid = $("#products");
+    grid.replaceChildren();
+    const box = document.createElement("div");
+    box.className = "empty";
+    box.textContent = message;
+    grid.append(box);
+  }
+  function renderCategories(categories) {
+    const select = $("#category"), current = select.value;
+    select.replaceChildren(new Option("All categories", ""));
+    for (const value of categories || []) select.add(new Option(value, value));
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+  }
+  function renderProducts(products) {
+    const grid = $("#products");
+    grid.replaceChildren();
+    $("#result-count").textContent = products.length + (products.length === 1 ? " product" : " products") + " · within 10 miles";
+    if (!products.length) {
+      const box = document.createElement("div");
+      box.className = "empty";
+      const title = document.createElement("b");
+      title.textContent = "No matching products nearby";
+      box.append(title, document.createTextNode("Try another search or category, or check again from a different location."));
+      grid.append(box);
+      return;
+    }
+    for (const product of products) {
+      const card = document.createElement("article");
+      card.className = "product";
+      const photo = document.createElement("div");
+      photo.className = "photo";
+      if (product.image_url) {
+        const image = document.createElement("img");
+        image.src = product.image_url;
+        image.alt = String(product.name || "Product");
+        image.loading = "lazy";
+        photo.append(image);
+      } else photo.textContent = "✦";
+      const info = document.createElement("div");
+      info.className = "product-info";
+      const name = document.createElement("h3");
+      name.textContent = String(product.name || "Product");
+      const description = document.createElement("p");
+      description.className = "description";
+      description.textContent = String(product.description || product.category || "Available from a local shop.");
+      const store = document.createElement("p");
+      store.className = "storeline";
+      store.textContent = String(product.store?.name || "Local store") + " · " + String(product.store?.city || "Orlando");
+      const distance = document.createElement("span");
+      distance.className = "distance";
+      distance.textContent = Number(product.distance_miles || 0).toFixed(1) + " mi away";
+      store.append(document.createElement("br"), distance);
+      const foot = document.createElement("div");
+      foot.className = "product-foot";
+      const price = document.createElement("span");
+      price.className = "price";
+      price.textContent = money(product.price);
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "add";
+      add.textContent = "Add to cart +";
+      add.addEventListener("click", () => addToCart(product));
+      foot.append(price, add);
+      info.append(name, description, store, foot);
+      card.append(photo, info);
+      grid.append(card);
+    }
+  }
+  function updateCart() {
+    const quantity = [...state.items.values()].reduce((sum, item) => sum + item.quantity, 0);
+    const total = [...state.items.values()].reduce((sum, item) => sum + item.quantity * Number(item.price), 0);
+    $("#cart-summary").textContent = quantity ? quantity + (quantity === 1 ? " item · " : " items · ") + money(total) : "Your cart is empty";
+    $("#cart-store").textContent = state.storeName ? state.storeName + " · one store per order" : "One store per order";
+    $("#checkout").disabled = quantity === 0 || state.busy;
+  }
+  function addToCart(product) {
+    if (state.siteId && state.siteId !== product.site_id) {
+      const clear = window.confirm("Your cart has items from " + state.storeName + ". Start a new cart for " + product.store.name + "?");
+      if (!clear) return;
+      state.items.clear();
+    }
+    state.siteId = product.site_id;
+    state.storeName = String(product.store?.name || "Local store");
+    const existing = state.items.get(product.product_id);
+    if (existing) existing.quantity += 1;
+    else state.items.set(product.product_id, { product_id: product.product_id, name: product.name, price: product.price, quantity: 1 });
+    updateCart();
+  }
+  async function search() {
+    if (!state.location) {
+      status("Choose your location first. Nearby results use a 10-mile radius.");
+      return;
+    }
+    setLoading("Searching live products from nearby stores…");
+    const params = new URLSearchParams({
+      lat: String(state.location.latitude),
+      lng: String(state.location.longitude),
+      q: $("#search").value.trim(),
+      category: $("#category").value,
+    });
+    try {
+      const response = await fetch("/api/marketplace/products?" + params.toString(), { headers: { accept: "application/json" } });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Marketplace search failed.");
+      state.products = Array.isArray(data.products) ? data.products : [];
+      renderCategories(data.categories || []);
+      renderProducts(state.products);
+      status("Showing live, in-stock products within " + data.radius_miles + " miles of your location.");
+    } catch (error) {
+      setLoading(error.message || "Products could not be loaded.");
+      status("Marketplace search is temporarily unavailable.");
+    }
+  }
+  function locate() {
+    if (!navigator.geolocation) {
+      status("This browser does not provide location access. Use a browser with location enabled.");
+      return;
+    }
+    status("Requesting your current location…");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        state.location = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        status("Location set. Searching nearby shops…");
+        void search();
+      },
+      (error) => {
+        const message = error.code === 1 ? "Location permission was denied. Allow location access in your browser to search nearby." :
+          error.code === 2 ? "Your location could not be determined. Check device location settings." :
+          "Location lookup timed out. Please try again.";
+        status(message);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  }
+  $("#use-location").addEventListener("click", locate);
+  $("#use-location-top").addEventListener("click", locate);
+  $("#search-button").addEventListener("click", () => void search());
+  $("#category").addEventListener("change", () => void search());
+  $("#search").addEventListener("keydown", (event) => { if (event.key === "Enter") void search(); });
+  $("#checkout").addEventListener("click", async () => {
+    if (!state.siteId || !state.items.size || state.busy) return;
+    state.busy = true;
+    updateCart();
+    $("#checkout").textContent = "Preparing…";
+    try {
+      const response = await fetch("/api/payments/public/checkout/" + encodeURIComponent(state.siteId), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: [...state.items.values()].map((item) => ({ product_id: item.product_id, quantity: item.quantity })) }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Secure checkout could not be created.");
+      if (typeof data.url !== "string" || !data.url.startsWith(location.origin + "/checkout.html?")) throw new Error("The checkout service returned an invalid address.");
+      location.assign(data.url);
+    } catch (error) {
+      status(error.message || "Checkout failed. Please try again.");
+      state.busy = false;
+      $("#checkout").textContent = "Continue to checkout";
+      updateCart();
+    }
+  });
+  updateCart();
+})();
+</script>
+</body>
+</html>
