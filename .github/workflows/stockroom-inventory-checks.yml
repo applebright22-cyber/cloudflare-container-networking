@@ -8,6 +8,7 @@ on:
       - "cloudflare/src/payments.ts"
       - "cloudflare/src/marketplace-directory.ts"
       - "cloudflare/test/marketplace-directory.test.ts"
+      - "cloudflare/test/paypal-checkout.test.ts"
       - "cloudflare/src/index.ts"
       - "wrangler.toml"
       - "cloudflare/wrangler.toml"
