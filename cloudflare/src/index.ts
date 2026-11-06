@@ -11,6 +11,7 @@ import { handleProjectStorageRequest } from "./project-storage";
 import { handlePayments } from "./payments";
 import { BusinessDatabase, businessDatabaseFetch, handleBusinessDatabaseRequest } from "./business-database";
 import { InventoryLedger } from "./inventory-ledger";
+import { handleMarketplaceRequest } from "./marketplace-directory";
 export { TunnelHub, NodeRegistry, NodeRuntime, VmExecution, AccountRegistry, AccountProvisioner, WispRelay, BusinessDatabase, InventoryLedger };
 
 export interface Env {
@@ -1599,6 +1600,9 @@ export default {
       return json({ ok: true });
     }
 
+
+    const marketplaceResponse = await handleMarketplaceRequest(request, env);
+    if (marketplaceResponse) return marketplaceResponse;
 
     const businessDatabaseResponse = await handleBusinessDatabaseRequest(request, env);
     if (businessDatabaseResponse) return businessDatabaseResponse;
