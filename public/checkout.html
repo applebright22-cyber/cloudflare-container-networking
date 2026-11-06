@@ -8,7 +8,7 @@
 <div id="status" class="muted" role="status"></div><p class="muted">Payments are made directly to the merchant. Vampirequid does not hold customer funds.</p></main>
 <script>
 const id=new URLSearchParams(location.search).get("id");const statusEl=document.getElementById("status");let data;
-async function load(){if(!id){statusEl.textContent="Missing checkout ID.";return}try{const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id));data=await r.json();if(!r.ok)throw Error(data.error||"Checkout unavailable");document.getElementById("description").textContent=data.checkout.description;document.getElementById("amount").textContent="$"+data.checkout.amount_usd+" USD";document.getElementById("expires").textContent="Expires "+new Date(data.checkout.expires_at).toLocaleString();if(data.methods.crypto){document.getElementById("crypto").classList.remove("hidden");document.getElementById("wallet").textContent=data.wallet_address}if(data.methods.paypal && data.paypal?.client_id){document.getElementById("paypal").classList.remove("hidden");loadPayPalButtons()}if(data.checkout.status==="paid")statusEl.textContent="Payment confirmed."; }catch(e){statusEl.textContent=e.message}}
+async function load(){if(!id){statusEl.textContent="Missing checkout ID.";return}try{const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id));data=await r.json();if(!r.ok)throw Error(data.error||"Checkout unavailable");document.getElementById("description").textContent=data.checkout.description;document.getElementById("amount").textContent="$"+data.checkout.amount_usd+" USD";document.getElementById("expires").textContent="Expires "+new Date(data.checkout.expires_at).toLocaleString();if(data.checkout.status==="paid"){statusEl.textContent="Payment confirmed. This checkout has already been paid.";return}if(Date.now()>Date.parse(data.checkout.expires_at)){statusEl.textContent="This checkout has expired. Ask the merchant to create a new checkout.";return}if(data.methods.crypto){document.getElementById("crypto").classList.remove("hidden");document.getElementById("wallet").textContent=data.wallet_address}if(data.methods.paypal && data.paypal?.client_id){document.getElementById("paypal").classList.remove("hidden");loadPayPalButtons()} }catch(e){statusEl.textContent=e.message}}
 
 let paypalSdkPromise;
 async function loadPayPalButtons(){
@@ -47,7 +47,7 @@ async function loadPayPalButtons(){
     status("Confirming your payment…");
     const r=await fetch("/api/payments/checkout/"+encodeURIComponent(id)+"/paypal/capture",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({order_id:details.orderID})});
     const d=await r.json();if(!r.ok)throw new Error(d.error||"PayPal capture failed");
-    status(d.status==="paid"?"Payment confirmed. Thank you!":"PayPal returned an unconfirmed payment. Contact the merchant before retrying.");
+    if(d.status==="paid"){status("Payment confirmed. Thank you!");document.getElementById("paypal").classList.add("hidden");document.getElementById("crypto").classList.add("hidden");}else status("PayPal returned an unconfirmed payment. Contact the merchant before retrying.");
    },
    onCancel:()=>status("PayPal payment was cancelled. You have not been charged."),
    onError:error=>status("PayPal checkout error: "+(error?.message||"Please try again."))
