@@ -84,6 +84,7 @@ test("PayPal merchant connection, buyer checkout, capture and inventory commit u
   const originalFetch = globalThis.fetch;
   let orderCreates = 0;
   let captureCalls = 0;
+  let captureHost = "";
   const oauthClients: string[] = [];
   let createRequestId = "";
   let captureRequestId = "";
@@ -102,6 +103,7 @@ test("PayPal merchant connection, buyer checkout, capture and inventory commit u
     }
     if (url.endsWith("/v2/checkout/orders/PAYPAL-ORDER-123/capture")) {
       captureCalls += 1;
+      captureHost = url;
       captureRequestId = new Headers(init?.headers).get("PayPal-Request-Id") || "";
       return Response.json({
         id: "PAYPAL-ORDER-123",
@@ -117,7 +119,7 @@ test("PayPal merchant connection, buyer checkout, capture and inventory commit u
   }) as typeof fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
 
-  const { env } = memoryEnv();
+  const { env, commitCount } = memoryEnv();
   const accountQuery = "?account_id=" + account;
 
   let result = await call(env, request("/api/payments/paypal/connect" + accountQuery, {
@@ -176,15 +178,14 @@ test("PayPal merchant connection, buyer checkout, capture and inventory commit u
   assert.equal(captureCalls, 1);
   assert.equal(captureRequestId, checkoutId + "-capture");
   assert.equal(oauthClients.at(-1), "sandbox-client-id");
-  assert.equal(env.PROJECT_STORAGE, env.PROJECT_STORAGE);
-  assert.equal((await env.PROJECT_STORAGE.get("accounts/" + account + "/payments/checkout-" + checkoutId)).json().then((page: any) => page.paypal_mode), "sandbox");
+  assert.match(captureHost, /api-m\.sandbox\.paypal\.com/);
+  const savedCheckout = await (await env.PROJECT_STORAGE.get("accounts/" + account + "/payments/checkout-" + checkoutId)).json();
+  assert.equal(savedCheckout.paypal_mode, "sandbox");
 
   const duplicateCapture = await call(env, request("/api/payments/checkout/" + checkoutId + "/paypal/capture", {
     method: "POST", body: { order_id: "PAYPAL-ORDER-123" },
   }));
   assert.equal(duplicateCapture.data.status, "paid");
   assert.equal(captureCalls, 1);
-  assert.equal(commitCountSafe(), 1);
-
-  function commitCountSafe() { return 1; }
+  assert.equal(commitCount(), 1);
 });
