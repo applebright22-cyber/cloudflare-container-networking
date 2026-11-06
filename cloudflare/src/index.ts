@@ -155,7 +155,7 @@ export default {
         return json({
           ok: true, dry_run: true, account_count: accounts.length,
           accounts: accounts.map((entry) => ({ username: entry.username, account_id: entry.account_id })),
-          next_step: "Repeat DELETE /api/admin/accounts with {\\"dry_run\\":false,\\"confirm\\":\\"PURGE_ALL_VAMPIREQUID_ACCOUNTS\\"} to execute.",
+          next_step: 'Repeat DELETE /api/admin/accounts with a JSON body containing dry_run=false and confirm="PURGE_ALL_VAMPIREQUID_ACCOUNTS" to execute.',
         });
       }
       if (purgeRequest.confirm !== "PURGE_ALL_VAMPIREQUID_ACCOUNTS") {
